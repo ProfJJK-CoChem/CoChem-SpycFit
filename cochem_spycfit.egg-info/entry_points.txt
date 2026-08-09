@@ -1,0 +1,2 @@
+[cochem_studio]
+cochem_spycfit = cochem_spycfit.plugin

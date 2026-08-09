@@ -1,0 +1,11 @@
+{
+    "initialized": true,
+    "components": {
+        "jax_precision": "float64",
+        "memory_mapping": "disabled",
+        "optimizer": "levenberg_marquardt",
+        "cross_validation": "loio",
+        "legacy_support": "enabled",
+        "lam_protocol_active": true
+    }
+}

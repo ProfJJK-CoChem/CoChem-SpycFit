@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cochem-spycfit"
+version = "0.1.0"
+description = "Interactive Bayesian Fitting & Active Learning UI for CoChem-Studio"
+dependencies = [
+    "PySide6",
+    "pluggy"
+]
+
+[project.entry-points."cochem_studio"]
+cochem_spycfit = "cochem_spycfit.plugin"
+
+[tool.setuptools.packages.find]
+include = ["cochem_spycfit*"]
