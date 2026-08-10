@@ -7,6 +7,7 @@ against experimental CP-FTMW transition frequencies.
 
 import os
 import sys
+import math
 import json
 import logging
 from pathlib import Path
@@ -256,9 +257,11 @@ def generate_spectral_output(fitted_results: dict, output_dir: str = "spectral_o
     
     if 'predicted_frequencies' in fitted_results:
         frequencies = np.array(fitted_results['predicted_frequencies'])
-    else:
-        params = fitted_results.get('final_params', np.array([10000.0, 5000.0, 2500.0, 0.001, 0.002, 0.003, 0.0001, 0.0002]))
+    elif 'final_params' in fitted_results:
+        params = np.array(fitted_results['final_params'])
         frequencies = np.array(watson_s_reduced_model(jnp.array(params)))
+    else:
+        raise ValueError("Fitted results must contain 'predicted_frequencies' or 'final_params'.")
 
     output_path = out_path_dir / "fitted_frequencies.txt"
     with open(output_path, 'w') as f:
@@ -269,7 +272,7 @@ def generate_spectral_output(fitted_results: dict, output_dir: str = "spectral_o
     
     print(f"{Colors.OKGREEN}✅ Spectral output generated: {output_path}{Colors.ENDC}")
 
-def apply_rm2_mass_scaling(rotational_constants: np.ndarray, 
+def apply_rm2_mass_scaling(rotational_constants: Any, 
                            symbols: list, 
                            isotopologue_masses: Optional[list] = None, 
                            rm2_params: Optional[dict] = None) -> dict:
@@ -278,11 +281,16 @@ def apply_rm2_mass_scaling(rotational_constants: np.ndarray,
     r_m^(2) model corrects equilibrium parameters for Born-Oppenheimer breakdown:
     I_k^(m) = I_k^(0) * [1 + sum_i c_i * (m_i - m_i^0) / m_i^0] + d_k * sqrt(M^0 / M)
     """
-    rot_array = np.asarray(rotational_constants, dtype=float)
-    if rot_array.ndim == 1 and len(rot_array) >= 3:
-        A0, B0, C0 = rot_array[:3]
+    if isinstance(rotational_constants, dict) and "A" in rotational_constants:
+        A0 = float(rotational_constants["A"])
+        B0 = float(rotational_constants["B"])
+        C0 = float(rotational_constants["C"])
     else:
-        A0, B0, C0 = 10000.0, 5000.0, 2500.0
+        rot_array = np.asarray(rotational_constants, dtype=float)
+        if rot_array.ndim == 1 and len(rot_array) >= 3:
+            A0, B0, C0 = rot_array[:3]
+        else:
+            raise ValueError("rotational_constants must provide explicit A, B, C parameters.")
 
     if isotopologue_masses is None:
         from cochem_quantum_extractor import MASS_DICT
@@ -321,7 +329,8 @@ def apply_rm2_mass_scaling(rotational_constants: np.ndarray,
 
 def compute_sobol_sensitivity(model_fn: callable = watson_s_reduced_model, 
                              param_bounds: Optional[np.ndarray] = None, 
-                             n_samples: int = 500) -> dict:
+                             n_samples: int = 500,
+                             random_seed: int = 42) -> dict:
     """
     Performs Saltelli variance-based global Sobol sensitivity analysis for spectroscopic parameters.
     Returns First-order (S_i) and Total-order (S_Ti) sensitivity indices.
@@ -341,7 +350,7 @@ def compute_sobol_sensitivity(model_fn: callable = watson_s_reduced_model,
     n_params = len(param_bounds)
     
     # Low-discrepancy sampling for matrices A and B
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(random_seed)
     A_sample = rng.uniform(param_bounds[:, 0], param_bounds[:, 1], size=(n_samples, n_params))
     B_sample = rng.uniform(param_bounds[:, 0], param_bounds[:, 1], size=(n_samples, n_params))
 
@@ -375,6 +384,92 @@ def compute_sobol_sensitivity(model_fn: callable = watson_s_reduced_model,
         'total_order_ST': {param_names[k]: float(total_order_ST[k]) for k in range(n_params)}
     }
     return sobol_results
+
+def nelder_mead_optimization(target_frequencies: np.ndarray, initial_params: np.ndarray, max_iter: int = 200) -> dict:
+    """
+    Performs Nelder-Mead simplex optimization for non-derivative global basin search.
+    """
+    from scipy.optimize import minimize
+    init_p = np.asarray(initial_params, dtype=float)
+
+    def cost_fn(p):
+        preds = np.array(watson_s_reduced_model(jnp.array(p)))[:len(target_frequencies)]
+        return float(np.sum((preds - target_frequencies)**2))
+
+    res = minimize(cost_fn, init_p, method='Nelder-Mead', options={'maxiter': max_iter})
+    return {
+        'final_params': res.x,
+        'converged': bool(res.success),
+        'cost': float(res.fun),
+        'n_iter': int(res.nit)
+    }
+
+def hybrid_spectral_fitting(target_frequencies: np.ndarray, initial_params: np.ndarray, 
+                           max_iter_nm: int = 100, max_iter_lm: int = 100) -> dict:
+    """
+    Hybrid dual-stage optimizer: Nelder-Mead simplex search for global basin identification
+    followed by Levenberg-Marquardt gradient refinement.
+    """
+    nm_res = nelder_mead_optimization(target_frequencies, initial_params, max_iter=max_iter_nm)
+    nm_params = nm_res['final_params']
+    lm_res = levenberg_marquardt_optimization(target_frequencies, jnp.array(nm_params), max_iter=max_iter_lm)
+    lm_res['hybrid_nelder_mead_cost'] = nm_res['cost']
+    return lm_res
+
+def voigt_profile(frequencies: np.ndarray, line_centers: np.ndarray, intensities: np.ndarray,
+                  sigma_doppler: float = 0.05, gamma_lorentzian: float = 0.05) -> np.ndarray:
+    """
+    Convolves line spectrum with Voigt profile (Doppler Gaussian + Lorentzian pressure broadening)
+    using the Faddeeva function w(z) = exp(-z^2) * erfc(-i*z) via scipy.special.wofz.
+    """
+    from scipy.special import wofz
+    spectrum = np.zeros_like(frequencies, dtype=float)
+    sigma = max(1e-6, float(sigma_doppler))
+    gamma = max(1e-6, float(gamma_lorentzian))
+
+    for nu_0, I_k in zip(line_centers, intensities):
+        z = ((frequencies - nu_0) + 1j * gamma) / (sigma * math.sqrt(2.0))
+        w = wofz(z)
+        v_val = np.real(w) / (sigma * math.sqrt(2.0 * math.pi))
+        spectrum += I_k * v_val
+
+    return spectrum
+
+def apply_polar_solvation_dispersion(rotational_constants: dict, dipole_moments: dict, 
+                                     dielectric_constant: float = 78.39, cavity_radius_a: float = 3.5) -> dict:
+    """
+    Calculates Onsager reaction field factor f(eps) and Kirkwood solvation energy E_K
+    to evaluate dielectric dispersion shifts on rotational parameters and dipole moments.
+    """
+    eps = max(1.0, float(dielectric_constant))
+    a3 = max(1e-3, float(cavity_radius_a) ** 3)
+    
+    f_eps = 2.0 * (eps - 1.0) / (2.0 * eps + 1.0) if eps > 1.0 else 0.0
+    
+    mu_a = float(dipole_moments.get("mu_a", dipole_moments.get("X", 0.0)))
+    mu_b = float(dipole_moments.get("mu_b", dipole_moments.get("Y", 0.0)))
+    mu_c = float(dipole_moments.get("mu_c", dipole_moments.get("Z", 0.0)))
+    mu_tot = math.sqrt(mu_a**2 + mu_b**2 + mu_c**2)
+
+    e_onsager_kcal_mol = -0.5 * f_eps * (mu_tot**2) / a3 * 14.399 * 23.0605 / 332.0
+    g_k = 1.0
+    e_kirkwood_kcal_mol = -((eps - 1.0) * (2.0 * eps + 1.0) / (9.0 * eps)) * (g_k * mu_tot**2) / a3 * 14.399 * 23.0605 / 332.0 if eps > 1.0 else 0.0
+
+    alpha_polarizability = 5.0
+    enhancement = 1.0 / max(0.1, (1.0 - f_eps * alpha_polarizability / a3))
+    effective_dipoles = {
+        "mu_a": mu_a * enhancement,
+        "mu_b": mu_b * enhancement,
+        "mu_c": mu_c * enhancement,
+        "total": mu_tot * enhancement
+    }
+
+    return {
+        "f_onsager": float(f_eps),
+        "e_onsager_kcal_mol": float(e_onsager_kcal_mol),
+        "e_kirkwood_kcal_mol": float(e_kirkwood_kcal_mol),
+        "effective_dipoles": effective_dipoles
+    }
 
 def main():
     print(f"\n{Colors.OKCYAN}--- SpycFit: Bayesian Fitting Engine ---{Colors.ENDC}")

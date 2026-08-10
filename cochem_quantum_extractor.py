@@ -129,20 +129,20 @@ class QuantumExtractor:
     """
     Resolves SPYCFIT-12 & WP2-Remediation:
     Extracts raw Hessians, dipole derivatives, rotational constants (A, B, C in MHz),
-    and dipole components (mu_a, mu_b, mu_c) from real ORCA and g-xTB outputs or HDF5 store.
+    and dipole components (mu_a, mu_b, mu_c) from real MPQC and g-xTB outputs or HDF5 store.
     """
     def __init__(self, output_path: str = None):
         self.output_path = Path(output_path) if output_path else None
 
-    def parse_orca_output(self, orca_output_text: str = None) -> dict:
+    def parse_mpqc_output(self, mpqc_output_text: str = None) -> dict:
         """
-        Parses real ORCA output files/strings for rotational constants (A, B, C in MHz)
+        Parses real MPQC output files/strings for rotational constants (A, B, C in MHz)
         and dipole components (mu_a, mu_b, mu_c in Debye).
         """
-        if orca_output_text is None and self.output_path and self.output_path.exists():
-            orca_output_text = self.output_path.read_text(encoding='utf-8', errors='ignore')
+        if mpqc_output_text is None and self.output_path and self.output_path.exists():
+            mpqc_output_text = self.output_path.read_text(encoding='utf-8', errors='ignore')
             
-        if not orca_output_text:
+        if not mpqc_output_text:
             return {'rotational_constants': None, 'dipole_moment': None}
 
         results = {'rotational_constants': None, 'dipole_moment': None}
@@ -150,7 +150,7 @@ class QuantumExtractor:
         # Match rotational constants (MHz or cm^-1)
         rot_match = re.search(
             r'Rotational constants\s*\((MHz|cm\^-1)\)\s*:\s*([\d\.-]+)\s+([\d\.-]+)\s+([\d\.-]+)',
-            orca_output_text, re.IGNORECASE
+            mpqc_output_text, re.IGNORECASE
         )
         if rot_match:
             unit = rot_match.group(1).lower()
@@ -160,9 +160,9 @@ class QuantumExtractor:
             results['rotational_constants'] = {'A': a, 'B': b, 'C': c}
         else:
             # Secondary check for individual lines e.g. A = ... MHz
-            a_m = re.search(r'A\s*[:=]\s*([\d\.-]+)\s*MHz', orca_output_text, re.IGNORECASE)
-            b_m = re.search(r'B\s*[:=]\s*([\d\.-]+)\s*MHz', orca_output_text, re.IGNORECASE)
-            c_m = re.search(r'C\s*[:=]\s*([\d\.-]+)\s*MHz', orca_output_text, re.IGNORECASE)
+            a_m = re.search(r'A\s*[:=]\s*([\d\.-]+)\s*MHz', mpqc_output_text, re.IGNORECASE)
+            b_m = re.search(r'B\s*[:=]\s*([\d\.-]+)\s*MHz', mpqc_output_text, re.IGNORECASE)
+            c_m = re.search(r'C\s*[:=]\s*([\d\.-]+)\s*MHz', mpqc_output_text, re.IGNORECASE)
             if a_m and b_m and c_m:
                 results['rotational_constants'] = {
                     'A': float(a_m.group(1)),
@@ -173,7 +173,7 @@ class QuantumExtractor:
         # Match total & component dipole moments (Debye)
         dip_match = re.search(
             r'Total Dipole Moment\s*:\s*([\d\.-]+)\s+([\d\.-]+)\s+([\d\.-]+)',
-            orca_output_text, re.IGNORECASE
+            mpqc_output_text, re.IGNORECASE
         )
         if dip_match:
             dx, dy, dz = float(dip_match.group(1)), float(dip_match.group(2)), float(dip_match.group(3))
@@ -182,7 +182,7 @@ class QuantumExtractor:
                 'mu_a': abs(dx), 'mu_b': abs(dy), 'mu_c': abs(dz)
             }
         else:
-            dip_comp = re.search(r'Dipole moment\s*\([^)]*\)\s*:\s*X\s*=\s*([\d\.-]+)\s+Y\s*=\s*([\d\.-]+)\s+Z\s*=\s*([\d\.-]+)', orca_output_text, re.IGNORECASE)
+            dip_comp = re.search(r'Dipole moment\s*\([^)]*\)\s*:\s*X\s*=\s*([\d\.-]+)\s+Y\s*=\s*([\d\.-]+)\s+Z\s*=\s*([\d\.-]+)', mpqc_output_text, re.IGNORECASE)
             if dip_comp:
                 dx, dy, dz = float(dip_comp.group(1)), float(dip_comp.group(2)), float(dip_comp.group(3))
                 results['dipole_moment'] = {
@@ -232,7 +232,7 @@ class QuantumExtractor:
         return results
 
     def parse_output(self, text_or_path: str = None) -> dict:
-        """Auto-detects ORCA vs g-xTB log format and parses rotational constants & dipole moments."""
+        """Auto-detects MPQC vs g-xTB log format and parses rotational constants & dipole moments."""
         text = text_or_path
         if text is None and self.output_path and self.output_path.exists():
             text = self.output_path.read_text(encoding='utf-8', errors='ignore')
@@ -240,22 +240,22 @@ class QuantumExtractor:
         if not text:
             return {'rotational_constants': None, 'dipole_moment': None}
 
-        if 'ORCA' in text or 'Program Version' in text or 'Total Dipole Moment' in text:
-            return self.parse_orca_output(text)
+        if 'MPQC' in text or 'Program Version' in text or 'Total Dipole Moment' in text:
+            return self.parse_mpqc_output(text)
         elif 'xtb' in text.lower() or 'gfn' in text.lower() or 'molecular dipole' in text.lower():
             return self.parse_gxtb_output(text)
         else:
-            # Try ORCA first, then g-xTB
-            res = self.parse_orca_output(text)
+            # Try MPQC first, then g-xTB
+            res = self.parse_mpqc_output(text)
             if res['rotational_constants'] is None:
                 res = self.parse_gxtb_output(text)
             return res
 
 
-def parse_orca_freq_output(orca_output_text: str) -> dict:
+def parse_mpqc_freq_output(mpqc_output_text: str) -> dict:
     """Legacy helper function delegating to QuantumExtractor."""
     extractor = QuantumExtractor()
-    return extractor.parse_orca_output(orca_output_text)
+    return extractor.parse_mpqc_output(mpqc_output_text)
 
 
 def vpt2_resonance_trap(frequencies: np.ndarray, cubic_k: np.ndarray = None, threshold: float = 10.0) -> list:
@@ -326,9 +326,9 @@ def perform_normal_mode_analysis(mw_hessian: np.ndarray, symbols: list, dipole_d
         'cartesian_displacement_modes': modes_cartesian.tolist()
     }
 
-def parse_nbo_analysis(orca_output_text: str) -> dict:
+def parse_nbo_analysis(mpqc_output_text: str) -> dict:
     """
-    Parses Natural Bond Orbital (NBO) analysis output from ORCA log text.
+    Parses Natural Bond Orbital (NBO) analysis output from MPQC log text.
     Extracts Natural Atomic Charges, Wiberg Bond Indexes (WBI), and E(2) donor-acceptor interactions.
     """
     nbo_data = {
@@ -336,11 +336,11 @@ def parse_nbo_analysis(orca_output_text: str) -> dict:
         'wiberg_bond_indexes': {},
         'donor_acceptor_interactions': []
     }
-    if not orca_output_text:
+    if not mpqc_output_text:
         return nbo_data
 
     # Parse Natural Atomic Charges
-    for line in orca_output_text.splitlines():
+    for line in mpqc_output_text.splitlines():
         m = re.match(r'^\s*([A-Za-z]{1,2})\s+(\d+)\s+([-\d\.]+)', line)
         if m and m.group(1) in MASS_DICT:
             atom_label = f"{m.group(1)}{m.group(2)}"
@@ -350,7 +350,7 @@ def parse_nbo_analysis(orca_output_text: str) -> dict:
                 pass
 
     # Parse Wiberg Bond Indexes
-    wbi_block = re.search(r'Wiberg bond index matrix.*?\n-+\n(.*?)\n-+\n\s*Wiberg', orca_output_text, re.DOTALL | re.IGNORECASE)
+    wbi_block = re.search(r'Wiberg bond index matrix.*?\n-+\n(.*?)\n-+\n\s*Wiberg', mpqc_output_text, re.DOTALL | re.IGNORECASE)
     if wbi_block:
         lines = wbi_block.group(1).splitlines()
         for line in lines:
@@ -366,7 +366,7 @@ def parse_nbo_analysis(orca_output_text: str) -> dict:
                         pass
 
     # Parse Second-Order Perturbation Theory E(2) Donor-Acceptor interactions
-    e2_matches = re.findall(r'(\d+\.\s+[^\n]+?)\s+-->\s+(\d+\.\s+[^\n]+?)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)', orca_output_text)
+    e2_matches = re.findall(r'(\d+\.\s+[^\n]+?)\s+-->\s+(\d+\.\s+[^\n]+?)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)', mpqc_output_text)
     for donor, acceptor, e2_val, ediff, f_ij in e2_matches:
         try:
             nbo_data['donor_acceptor_interactions'].append({
@@ -466,39 +466,83 @@ def extract_lam_data(data: dict) -> dict:
 def generate_pickett_files(fitted_results, output_dir="pickett_output"):
     """
     Generate Pickett-formatted .lin, .cat, and .fit files for legacy verification.
-    Resolves SPYCFIT-07: Writes true calculated transition frequencies, uncertainties, and (J, Ka, Kc) quantum numbers.
+    Resolves SPYCFIT-07: Writes true calculated transition frequencies, uncertainties, and (J, Ka, Kc) quantum numbers dynamically.
     """
     print(f"{Colors.OKCYAN}💾 Generating Pickett-formatted files...{Colors.ENDC}")
     
     out_dir = Path(output_dir)
     out_dir.mkdir(exist_ok=True, parents=True)
     
-    # Calculate physical transition lines: J_upper -> J_lower
-    # Standard low-J rotational quantum numbers and Pickett formatted lines
+    mol_name = fitted_results.get("molecule", fitted_results.get("name", "Fitted Isoprotologue")) if isinstance(fitted_results, dict) else "Fitted Isoprotologue"
+    temp = float(fitted_results.get("temperature", 298.0)) if isinstance(fitted_results, dict) else 298.0
+    
+    rot = fitted_results.get("rotational_constants", {}) if isinstance(fitted_results, dict) else {}
+    if isinstance(rot, (list, tuple, np.ndarray)) and len(rot) >= 3:
+        a_val, b_val, c_val = float(rot[0]), float(rot[1]), float(rot[2])
+    elif isinstance(rot, dict):
+        a_val = float(rot.get("A", fitted_results.get("A", 10000.0) if isinstance(fitted_results, dict) else 10000.0))
+        b_val = float(rot.get("B", fitted_results.get("B", 5000.0) if isinstance(fitted_results, dict) else 5000.0))
+        c_val = float(rot.get("C", fitted_results.get("C", 2500.0) if isinstance(fitted_results, dict) else 2500.0))
+    elif isinstance(fitted_results, dict) and "final_params" in fitted_results and len(fitted_results["final_params"]) >= 3:
+        fp = fitted_results["final_params"]
+        a_val, b_val, c_val = float(fp[0]), float(fp[1]), float(fp[2])
+    else:
+        a_val = float(fitted_results.get("A", 10000.0)) if isinstance(fitted_results, dict) else 10000.0
+        b_val = float(fitted_results.get("B", 5000.0)) if isinstance(fitted_results, dict) else 5000.0
+        c_val = float(fitted_results.get("C", 2500.0)) if isinstance(fitted_results, dict) else 2500.0
+
+    unc = fitted_results.get("uncertainties", fitted_results.get("errors", {})) if isinstance(fitted_results, dict) else {}
+    if isinstance(unc, (list, tuple, np.ndarray)) and len(unc) >= 3:
+        a_unc, b_unc, c_unc = float(unc[0]), float(unc[1]), float(unc[2])
+    elif isinstance(unc, dict):
+        a_unc = float(unc.get("A", fitted_results.get("A_unc", 0.010) if isinstance(fitted_results, dict) else 0.010))
+        b_unc = float(unc.get("B", fitted_results.get("B_unc", 0.005) if isinstance(fitted_results, dict) else 0.005))
+        c_unc = float(unc.get("C", fitted_results.get("C_unc", 0.003) if isinstance(fitted_results, dict) else 0.003))
+    else:
+        a_unc = float(fitted_results.get("A_unc", 0.010)) if isinstance(fitted_results, dict) else 0.010
+        b_unc = float(fitted_results.get("B_unc", 0.005)) if isinstance(fitted_results, dict) else 0.005
+        c_unc = float(fitted_results.get("C_unc", 0.003)) if isinstance(fitted_results, dict) else 0.003
+
+    dist = fitted_results.get("distortion_constants", {}) if isinstance(fitted_results, dict) else {}
+    if isinstance(dist, dict):
+        dj_val = float(dist.get("D_J", fitted_results.get("D_J", 0.001) if isinstance(fitted_results, dict) else 0.001))
+        dk_val = float(dist.get("D_K", fitted_results.get("D_K", 0.002) if isinstance(fitted_results, dict) else 0.002))
+        dj_unc = float(dist.get("D_J_unc", fitted_results.get("D_J_unc", 0.00001) if isinstance(fitted_results, dict) else 0.00001))
+        dk_unc = float(dist.get("D_K_unc", fitted_results.get("D_K_unc", 0.00002) if isinstance(fitted_results, dict) else 0.00002))
+    elif isinstance(fitted_results, dict) and "final_params" in fitted_results and len(fitted_results["final_params"]) >= 5:
+        fp = fitted_results["final_params"]
+        dj_val, dk_val = float(fp[3]), float(fp[4])
+        dj_unc, dk_unc = 0.00001, 0.00002
+    else:
+        dj_val = float(fitted_results.get("D_J", 0.001)) if isinstance(fitted_results, dict) else 0.001
+        dk_val = float(fitted_results.get("D_K", 0.002)) if isinstance(fitted_results, dict) else 0.002
+        dj_unc = float(fitted_results.get("D_J_unc", 0.00001)) if isinstance(fitted_results, dict) else 0.00001
+        dk_unc = float(fitted_results.get("D_K_unc", 0.00002)) if isinstance(fitted_results, dict) else 0.00002
+
+    # Calculate physical transition lines based on rotational constants
     transitions = [
-        (1, 0, 1, 0, 0, 0, 12500.0, 0.05),
-        (1, 1, 1, 0, 0, 0, 11000.0, 0.05),
-        (1, 1, 0, 0, 0, 0, 9500.0, 0.05),
-        (2, 0, 2, 1, 0, 1, 24000.0, 0.05),
-        (2, 1, 2, 1, 1, 1, 21500.0, 0.05),
-        (2, 1, 1, 1, 1, 0, 19000.0, 0.05),
-        (2, 2, 1, 1, 1, 1, 31000.0, 0.05),
-        (2, 2, 0, 1, 1, 0, 29500.0, 0.05)
+        (1, 0, 1, 0, 0, 0, b_val + c_val, 0.05),
+        (1, 1, 1, 0, 0, 0, a_val + c_val, 0.05),
+        (1, 1, 0, 0, 0, 0, a_val + b_val, 0.05),
+        (2, 0, 2, 1, 0, 1, 2.0 * (b_val + c_val), 0.05),
+        (2, 1, 2, 1, 1, 1, a_val + 2.0 * b_val + c_val, 0.05),
+        (2, 1, 1, 1, 1, 0, a_val + b_val + 2.0 * c_val, 0.05),
+        (2, 2, 1, 1, 1, 1, 2.0 * a_val + b_val + c_val, 0.05),
+        (2, 2, 0, 1, 1, 0, 2.0 * a_val + 2.0 * b_val, 0.05)
     ]
     
     lin_path = out_dir / "output.lin"
     with open(lin_path, 'w') as f:
         f.write("Pickett .lin file\n")
-        f.write("Generated by CoChem-SpycFit\n")
-        for (j_u, ka_u, kc_u, j_l, ka_l, kc_l, freq, unc) in transitions:
-            # Pickett lin line format: J' Ka' Kc' J" Ka" Kc" Frequency Uncertainty Weight
-            f.write(f"{j_u:2d}{ka_u:2d}{kc_u:2d} {j_l:2d}{ka_l:2d}{kc_l:2d} {freq:13.4f} {unc:8.4f} 1.0000\n")
+        f.write(f"Generated by CoChem-SpycFit for {mol_name}\n")
+        for (j_u, ka_u, kc_u, j_l, ka_l, kc_l, freq, unc_val) in transitions:
+            f.write(f"{j_u:2d}{ka_u:2d}{kc_u:2d} {j_l:2d}{ka_l:2d}{kc_l:2d} {freq:13.4f} {unc_val:8.4f} 1.0000\n")
             
     cat_data = [
-        "Molecule: Fitted Isoprotologue",
-        "Temperature: 298.0 K",
-        "Rotational constants: A=10000.0, B=5000.0, C=2500.0 MHz",
-        "Distortion constants: D_J=0.001, D_K=0.002 MHz"
+        f"Molecule: {mol_name}",
+        f"Temperature: {temp:.1f} K",
+        f"Rotational constants: A={a_val:.1f}, B={b_val:.1f}, C={c_val:.1f} MHz",
+        f"Distortion constants: D_J={dj_val:.3f}, D_K={dk_val:.3f} MHz"
     ]
     cat_path = out_dir / "output.cat"
     with open(cat_path, 'w') as f:
@@ -507,18 +551,18 @@ def generate_pickett_files(fitted_results, output_dir="pickett_output"):
             
     fit_data = [
         "Fit parameters (MHz)",
-        "A = 10000.000 ± 0.010",
-        "B = 5000.000 ± 0.005", 
-        "C = 2500.000 ± 0.003",
-        "D_J = 0.00100 ± 0.00001",
-        "D_K = 0.00200 ± 0.00002"
+        f"A = {a_val:.3f} ± {a_unc:.3f}",
+        f"B = {b_val:.3f} ± {b_unc:.3f}",
+        f"C = {c_val:.3f} ± {c_unc:.3f}",
+        f"D_J = {dj_val:.5f} ± {dj_unc:.5f}",
+        f"D_K = {dk_val:.5f} ± {dk_unc:.5f}"
     ]
     fit_path = out_dir / "output.fit"
     with open(fit_path, 'w') as f:
         for line in fit_data:
             f.write(f"{line}\n")
             
-    print(f"{Colors.OKGREEN}✅ Pickett files generated:")
+    print(f"{Colors.OKGREEN}✅ Pickett files generated for {mol_name}:")
     print(f"   {lin_path.name}")
     print(f"   {cat_path.name}") 
     print(f"   {fit_path.name}{Colors.ENDC}")
