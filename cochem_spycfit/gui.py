@@ -1,3 +1,4 @@
+from typing import Any, Dict, List, Optional
 #!/usr/bin/env python3
 """
 CoChem-SpycFit GUI Component
@@ -19,7 +20,7 @@ except ImportError:
 
 class SpycFitTab(QWidget):
     """SpycFit: Interactive Bayesian Fitting & Active Learning UI"""
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         layout = QVBoxLayout(self)
 
@@ -80,13 +81,13 @@ class SpycFitTab(QWidget):
         
         layout.addStretch()
 
-    def load_lin_file(self):
+    def load_lin_file(self) -> Any:
         """Resolves SPYCFIT-14: Handler for loading Pickett .lin file."""
         file_path, _ = QFileDialog.getOpenFileName(self, "Open Pickett .lin File", "", "Pickett Files (*.lin);;All Files (*)")
         if file_path:
             self.lbl_status.setText(f"Loaded: {file_path}")
 
-    def run_optimization(self):
+    def run_optimization(self) -> Any:
         """Resolves SPYCFIT-14: Handler for launching optimization."""
         self.lbl_status.setText("Status: Optimization running (Levenberg-Marquardt)...")
         # Perform dynamic update of table and status
@@ -99,7 +100,7 @@ class SpycFitTab(QWidget):
         self.update_active_learning_table(updated_transitions)
         self.lbl_status.setText("Status: Optimization Complete. RMSE: 0.012 MHz.")
 
-    def update_active_learning_table(self, transitions_data: list):
+    def update_active_learning_table(self, transitions_data: list) -> Any:
         """Resolves SPYCFIT-15: Dynamically populates QTableWidget from active fit data arrays."""
         self.table.setRowCount(len(transitions_data))
         for row, (trans, intensity, err) in enumerate(transitions_data):

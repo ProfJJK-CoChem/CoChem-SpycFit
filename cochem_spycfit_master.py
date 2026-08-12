@@ -1,3 +1,4 @@
+import hashlib
 #!/usr/bin/env python3
 """
 CoChem-SpycFit: Master Pipeline Controller & LAM PES Scan Engine
@@ -9,6 +10,7 @@ import os
 import sys
 import json
 import logging
+logger = logging.getLogger(__name__)
 import re
 from pathlib import Path
 import numpy as np
@@ -56,13 +58,13 @@ def compute_vibrationally_averaged_constants(inertia_tensors_q: np.ndarray, weig
 
     return rotational_constants_mhz
 
-def reweight_isotopologue_hessian(cartesian_hessian: np.ndarray, 
+def reweight_isotopologue_hessian(cartesian_hessian : np.ndarray, 
                                   symbols: list, 
                                   mass_overrides: Optional[dict] = None, 
                                   new_symbols: Optional[list] = None) -> dict:
     """
     Isotopologue Re-analysis Shortcut (§6.10 Method Matrix v4):
-    Re-analyzes the parent Cartesian Hessian F_cart under substituted atomic masses m_i'
+        Re-analyzes the parent Cartesian Hessian F_cart under substituted atomic masses m_i'
     to compute isotopologue normal modes and vibrational frequencies at zero electronic structure cost.
     
     Args:
@@ -140,7 +142,7 @@ def reweight_isotopologue_hessian(cartesian_hessian: np.ndarray,
     }
 
 class SpycFitMaster:
-    def __init__(self, h5_path: str = "landscape.h5"):
+    def __init__(self, h5_path: str = "landscape.h5") -> None:
         self.h5_path = Path(h5_path)
         self.extractor = QuantumExtractor()
 
@@ -188,7 +190,7 @@ class SpycFitMaster:
 
         inp = [
             method_header,
-            "%geom",
+            "%geom # TolMaxG 1e-5",
             "  TolE     1e-7",
             "  TolRMSG  3e-6",
             "  TolMaxG  1e-5",
@@ -204,6 +206,8 @@ class SpycFitMaster:
         inp.append("*")
         return "\n".join(inp)
 
+    generate_orca_1d_pes_input = generate_mpqc_1d_pes_input
+
     def execute_lam_correction(self, r_min: float = 1.5, r_max: float = 3.0, n_steps: int = 15) -> dict:
         """
         Launches 1D PES scan along weak intermolecular coordinate (1.5 - 3.0 Å).
@@ -211,7 +215,7 @@ class SpycFitMaster:
         computing B_0 using Jensen's inequality inverse inertia tensor averaging <1/I>.
         """
         logging.info(f"Launching 1D PES scan from {r_min:.2f} Å to {r_max:.2f} Å across {n_steps} steps...")
-        print(f"⚡ [SpycFitMaster] Launching 1D PES scan ({r_min:.1f} - {r_max:.1f} Å) for Large Amplitude Motion...")
+        logger.info(f"⚡ [SpycFitMaster] Launching 1D PES scan ({r_min:.1f} - {r_max:.1f} Å) for Large Amplitude Motion...")
 
         distances = np.linspace(r_min, r_max, n_steps + 1)
 
@@ -287,9 +291,9 @@ class SpycFitMaster:
         )
 
         logging.info(f"1D PES Scan complete. R_opt = {r_opt:.3f} Å. Be: A={rot_A_e:.1f}, B={rot_B_e:.1f}, C={rot_C_e:.1f} MHz | B0: A={rot_A_0:.1f}, B={rot_B_0:.1f}, C={rot_C_0:.1f} MHz.")
-        print(f"✅ [SpycFitMaster] 1D PES scan complete. Minimum at {r_opt:.3f} Å.")
-        print(f"   B_e: A_e={rot_A_e:.1f}, B_e={rot_B_e:.1f}, C_e={rot_C_e:.1f} MHz")
-        print(f"   B_0: A_0={rot_A_0:.1f}, B_0={rot_B_0:.1f}, C_0={rot_C_0:.1f} MHz (Jensen <1/I> active)")
+        logger.info(f"✅ [SpycFitMaster] 1D PES scan complete. Minimum at {r_opt:.3f} Å.")
+        logger.info(f"   B_e: A_e={rot_A_e:.1f}, B_e={rot_B_e:.1f}, C_e={rot_C_e:.1f} MHz")
+        logger.info(f"   B_0: A_0={rot_A_0:.1f}, B_0={rot_B_0:.1f}, C_0={rot_C_0:.1f} MHz (Jensen <1/I> active)")
 
         return lam_results
 
@@ -299,7 +303,7 @@ class SpycFitMaster:
         if lam_needed:
             return self.execute_lam_correction()
         else:
-            print("ℹ️ [SpycFitMaster] Standard rigid-rotor pathway (LAM not required).")
+            logger.info("ℹ️ [SpycFitMaster] Standard rigid-rotor pathway (LAM not required).")
             return {"lam_active": False}
 
 def execute_lam_correction(r_min: float = 1.5, r_max: float = 3.0, n_steps: int = 15) -> dict:
@@ -309,4 +313,14 @@ def execute_lam_correction(r_min: float = 1.5, r_max: float = 3.0, n_steps: int 
 if __name__ == "__main__":
     master = SpycFitMaster()
     res = master.run()
-    print("Master Execution Result:", res)
+    logger.info("Master Execution Result:", res)
+def calculate_artifact_sha256(filepath: str | Path) -> str:
+    """Calculates SHA-256 hash of a computational artifact."""
+    p = Path(filepath)
+    if not p.exists():
+        raise FileNotFoundError(f"Artifact file not found: {filepath}")
+    hasher = hashlib.sha256()
+    with open(p, "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    return hasher.hexdigest()

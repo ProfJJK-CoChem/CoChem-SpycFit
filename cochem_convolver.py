@@ -10,6 +10,7 @@ import sys
 import math
 import json
 import logging
+logger = logging.getLogger(__name__)
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 import numpy as np
@@ -22,7 +23,7 @@ try:
 except ImportError:
     HAS_JAX = False
     import numpy as jnp
-    def jit(fn):
+    def jit(fn) -> Any:
         return fn
 
 class Colors:
@@ -39,7 +40,7 @@ logging.basicConfig(filename=str(artifact_dir / 'cochem_spycfit_convolver.log'),
 
 def load_tensor_buffer() -> dict:
     """Loads the pre-processed tensor buffers from the quantum extractor."""
-    print(f"{Colors.OKCYAN}📥 Loading Bayesian Tensor Buffers...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}📥 Loading Bayesian Tensor Buffers...{Colors.ENDC}")
     
     buffer_path = Path("spycfit_tensor_buffer.npz")
     if not buffer_path.exists():
@@ -55,7 +56,7 @@ def load_tensor_buffer() -> dict:
 
 def load_lam_buffer() -> dict:
     """Loads the LAM-specific buffers if LAM protocol was used."""
-    print(f"{Colors.OKCYAN}📥 Loading LAM Tensor Buffers...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}📥 Loading LAM Tensor Buffers...{Colors.ENDC}")
     
     buffer_path = Path("spycfit_lam_buffer.npz")
     if not buffer_path.exists():
@@ -73,7 +74,7 @@ def compute_frequency_matrix(hessian: np.ndarray, mass_weighted: bool = True) ->
     Computes the vibrational frequency matrix from the Hessian.
     Resolves SPYCFIT-20: Uses true physical conversion factor 5140.48714 cm^-1 from Hartree/bohr^2/amu.
     """
-    print(f"{Colors.OKCYAN}🔄 Computing Vibrational Frequencies...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}🔄 Computing Vibrational Frequencies...{Colors.ENDC}")
     
     HARTREE_BOHR2_AMU_TO_CM1 = 5140.48714
     eigvals = np.linalg.eigvalsh(hessian)
@@ -85,7 +86,7 @@ def loio_cross_validation(fitted_params: dict, test_data: np.ndarray) -> dict:
     Performs Leave-One-Isotope-Out (LOIO) cross-validation for robust parameter estimation.
     Resolves SPYCFIT-04: Genuine LOIO loop holding out one isotopologue at a time.
     """
-    print(f"{Colors.OKCYAN}🔍 Performing LOIO Cross-Validation...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}🔍 Performing LOIO Cross-Validation...{Colors.ENDC}")
     
     n_isotopes = len(test_data)
     if n_isotopes < 2:
@@ -127,7 +128,7 @@ def loio_cross_validation(fitted_params: dict, test_data: np.ndarray) -> dict:
         'cv_scores': cv_scores
     }
     
-    print(f"{Colors.OKGREEN}✅ LOIO Cross-Validation Complete. RMSE: {cv_results['rmse']:.3f}, R^2: {cv_results['r_squared']:.4f}{Colors.ENDC}")
+    logger.info(f"{Colors.OKGREEN}✅ LOIO Cross-Validation Complete. RMSE: {cv_results['rmse']:.3f}, R^2: {cv_results['r_squared']:.4f}{Colors.ENDC}")
     return cv_results
 
 def penalty_function(params: np.ndarray, data: np.ndarray, model: callable = None) -> float:
@@ -135,7 +136,7 @@ def penalty_function(params: np.ndarray, data: np.ndarray, model: callable = Non
     Computes the penalty function for Bayesian optimization.
     Resolves SPYCFIT-05: Compatible argument signature for model(params, data) or model(params).
     """
-    print(f"{Colors.OKCYAN}🧮 Computing Penalty Function...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}🧮 Computing Penalty Function...{Colors.ENDC}")
     
     if model is None:
         model = watson_s_reduced_model
@@ -148,7 +149,7 @@ def penalty_function(params: np.ndarray, data: np.ndarray, model: callable = Non
     residuals = data - predicted
     penalty = float(np.sum(residuals**2) + 0.1 * np.sum(params**2))
     
-    print(f"{Colors.OKGREEN}✅ Penalty Function Computed: {penalty:.6f}{Colors.ENDC}")
+    logger.info(f"{Colors.OKGREEN}✅ Penalty Function Computed: {penalty:.6f}{Colors.ENDC}")
     return penalty
 
 @jit
@@ -178,18 +179,18 @@ def watson_s_reduced_model(params: jnp.ndarray) -> jnp.ndarray:
 
     return jnp.array([f_101_000, f_111_000, f_110_000, f_202_101, f_212_111, f_211_110, f_221_111, f_220_110])
 
-def levenberg_marquardt_optimization(target_frequencies: jnp.ndarray, 
+def levenberg_marquardt_optimization(target_frequencies : jnp.ndarray, 
                                    initial_params: jnp.ndarray,
                                    max_iter: int = 100) -> dict:
     """
     Implements Levenberg-Marquardt optimization for spectral fitting.
     Resolves SPYCFIT-01 and SPYCFIT-02: True physical Watson model & vector residuals.
     """
-    print(f"{Colors.OKCYAN}⚙️  Performing Levenberg-Marquardt Optimization...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}⚙️  Performing Levenberg-Marquardt Optimization...{Colors.ENDC}")
 
     target_len = target_frequencies.shape[0]
 
-    def residual(params):
+    def residual(params) -> Any:
         preds = watson_s_reduced_model(params)
         sl = preds[:target_len] if target_len <= preds.shape[0] else jnp.pad(preds, (0, target_len - preds.shape[0]))
         return sl - target_frequencies
@@ -197,7 +198,7 @@ def levenberg_marquardt_optimization(target_frequencies: jnp.ndarray,
     if HAS_JAX:
         jac_fn = jit(jax.jacfwd(residual))
     else:
-        def jac_fn(p, eps=1e-5):
+        def jac_fn(p, eps=1e-5) -> Any:
             r0 = residual(p)
             J = np.zeros((len(r0), len(p)))
             for k in range(len(p)):
@@ -242,7 +243,7 @@ def levenberg_marquardt_optimization(target_frequencies: jnp.ndarray,
         'chi_squared': float(np.sum(final_r**2))
     }
     
-    print(f"{Colors.OKGREEN}✅ Levenberg-Marquardt Optimization Complete. Final RMSE: {result['final_rmse']:.3f}{Colors.ENDC}")
+    logger.info(f"{Colors.OKGREEN}✅ Levenberg-Marquardt Optimization Complete. Final RMSE: {result['final_rmse']:.3f}{Colors.ENDC}")
     return result
 
 def generate_spectral_output(fitted_results: dict, output_dir: str = "spectral_output") -> None:
@@ -250,7 +251,7 @@ def generate_spectral_output(fitted_results: dict, output_dir: str = "spectral_o
     Generates final spectral output files for analysis.
     Resolves SPYCFIT-03: Outputs actual Watson model transition frequencies instead of random numbers.
     """
-    print(f"{Colors.OKCYAN}💾 Generating Spectral Output Files...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}💾 Generating Spectral Output Files...{Colors.ENDC}")
     
     out_path_dir = Path(output_dir)
     out_path_dir.mkdir(exist_ok=True, parents=True)
@@ -270,16 +271,16 @@ def generate_spectral_output(fitted_results: dict, output_dir: str = "spectral_o
         for i, freq in enumerate(frequencies):
             f.write(f"{i+1:3d}: {freq:12.4f}\n")
     
-    print(f"{Colors.OKGREEN}✅ Spectral output generated: {output_path}{Colors.ENDC}")
+            logger.info(f"{Colors.OKGREEN}✅ Spectral output generated: {output_path}{Colors.ENDC}")
 
-def apply_rm2_mass_scaling(rotational_constants: Any, 
+def apply_rm2_mass_scaling(rotational_constants : Any, 
                            symbols: list, 
                            isotopologue_masses: Optional[list] = None, 
                            rm2_params: Optional[dict] = None) -> dict:
     """
     Computes Watson r_m^(2) mass-scaled rotational constants across isotopologues.
     r_m^(2) model corrects equilibrium parameters for Born-Oppenheimer breakdown:
-    I_k^(m) = I_k^(0) * [1 + sum_i c_i * (m_i - m_i^0) / m_i^0] + d_k * sqrt(M^0 / M)
+        I_k^(m) = I_k^(0) * [1 + sum_i c_i * (m_i - m_i^0) / m_i^0] + d_k * sqrt(M^0 / M)
     """
     if isinstance(rotational_constants, dict) and "A" in rotational_constants:
         A0 = float(rotational_constants["A"])
@@ -327,7 +328,7 @@ def apply_rm2_mass_scaling(rotational_constants: Any,
         'moments_of_inertia': [float(I_A_scaled), float(I_B_scaled), float(I_C_scaled)]
     }
 
-def compute_sobol_sensitivity(model_fn: callable = watson_s_reduced_model, 
+def compute_sobol_sensitivity(model_fn : callable = watson_s_reduced_model, 
                              param_bounds: Optional[np.ndarray] = None, 
                              n_samples: int = 500,
                              random_seed: int = 42) -> dict:
@@ -392,7 +393,7 @@ def nelder_mead_optimization(target_frequencies: np.ndarray, initial_params: np.
     from scipy.optimize import minimize
     init_p = np.asarray(initial_params, dtype=float)
 
-    def cost_fn(p):
+    def cost_fn(p) -> Any:
         preds = np.array(watson_s_reduced_model(jnp.array(p)))[:len(target_frequencies)]
         return float(np.sum((preds - target_frequencies)**2))
 
@@ -404,7 +405,7 @@ def nelder_mead_optimization(target_frequencies: np.ndarray, initial_params: np.
         'n_iter': int(res.nit)
     }
 
-def hybrid_spectral_fitting(target_frequencies: np.ndarray, initial_params: np.ndarray, 
+def hybrid_spectral_fitting(target_frequencies: np.ndarray, initial_params : np.ndarray, 
                            max_iter_nm: int = 100, max_iter_lm: int = 100) -> dict:
     """
     Hybrid dual-stage optimizer: Nelder-Mead simplex search for global basin identification
@@ -416,7 +417,7 @@ def hybrid_spectral_fitting(target_frequencies: np.ndarray, initial_params: np.n
     lm_res['hybrid_nelder_mead_cost'] = nm_res['cost']
     return lm_res
 
-def voigt_profile(frequencies: np.ndarray, line_centers: np.ndarray, intensities: np.ndarray,
+def voigt_profile(frequencies: np.ndarray, line_centers: np.ndarray, intensities : np.ndarray,
                   sigma_doppler: float = 0.05, gamma_lorentzian: float = 0.05) -> np.ndarray:
     """
     Convolves line spectrum with Voigt profile (Doppler Gaussian + Lorentzian pressure broadening)
@@ -435,7 +436,7 @@ def voigt_profile(frequencies: np.ndarray, line_centers: np.ndarray, intensities
 
     return spectrum
 
-def apply_polar_solvation_dispersion(rotational_constants: dict, dipole_moments: dict, 
+def apply_polar_solvation_dispersion(rotational_constants: dict, dipole_moments : dict, 
                                      dielectric_constant: float = 78.39, cavity_radius_a: float = 3.5) -> dict:
     """
     Calculates Onsager reaction field factor f(eps) and Kirkwood solvation energy E_K
@@ -471,13 +472,13 @@ def apply_polar_solvation_dispersion(rotational_constants: dict, dipole_moments:
         "effective_dipoles": effective_dipoles
     }
 
-def main():
-    print(f"\n{Colors.OKCYAN}--- SpycFit: Bayesian Fitting Engine ---{Colors.ENDC}")
+def main() -> Any:
+    logger.info(f"\n{Colors.OKCYAN}--- SpycFit: Bayesian Fitting Engine ---{Colors.ENDC}")
     
     try:
         tensors = load_tensor_buffer()
         if tensors['lam_trigger']:
-            print(f"{Colors.OKCYAN}🔍 LAM Protocol Detected - Using Pre-Diagonalized Data{Colors.ENDC}")
+            logger.info(f"{Colors.OKCYAN}🔍 LAM Protocol Detected - Using Pre-Diagonalized Data{Colors.ENDC}")
             lam_data = load_lam_buffer()
             
         frequencies = compute_frequency_matrix(tensors['mw_hessian'])
@@ -491,13 +492,13 @@ def main():
         
         # Sobol sensitivity check
         sobol = compute_sobol_sensitivity()
-        print(f"{Colors.OKGREEN}✅ Sobol Sensitivity Analysis Complete. S_i(A)={sobol['first_order_S']['A']:.3f}{Colors.ENDC}")
+        logger.info(f"{Colors.OKGREEN}✅ Sobol Sensitivity Analysis Complete. S_i(A)={sobol['first_order_S']['A']:.3f}{Colors.ENDC}")
         
-        print(f"{Colors.OKGREEN}✅ Bayesian Fitting Complete. Results saved to spectral_output/{Colors.ENDC}")
+        logger.info(f"{Colors.OKGREEN}✅ Bayesian Fitting Complete. Results saved to spectral_output/{Colors.ENDC}")
         logging.info("Bayesian fitting completed successfully.")
         
     except Exception as e:
-        print(f"{Colors.FAIL}❌ Bayesian Fitting Failed: {str(e)}{Colors.ENDC}")
+        logger.info(f"{Colors.FAIL}❌ Bayesian Fitting Failed: {str(e)}{Colors.ENDC}")
         logging.error(f"Bayesian fitting failed: {str(e)}")
         raise
 

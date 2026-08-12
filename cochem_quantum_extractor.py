@@ -1,3 +1,4 @@
+import hashlib
 #!/usr/bin/env python3
 """
 CoChem-SpycFit: Quantum Tensor Extractor
@@ -8,6 +9,7 @@ Applies Isotopic Mass Weighting and enforces strict Hermitian symmetry.
 import os
 import sys
 import logging
+logger = logging.getLogger(__name__)
 import json
 import re
 from pathlib import Path
@@ -17,7 +19,7 @@ try:
     import numpy as np
     import h5py
 except ImportError:
-    print("❌ FATAL: 'numpy' and 'h5py' are required for quantum extraction.")
+    logger.info("❌ FATAL: 'numpy' and 'h5py' are required for quantum extraction.")
     sys.exit(1)
 
 class Colors:
@@ -128,15 +130,15 @@ def apply_mass_weighting(hessian: np.ndarray, symbols: list) -> np.ndarray:
 class QuantumExtractor:
     """
     Resolves SPYCFIT-12 & WP2-Remediation:
-    Extracts raw Hessians, dipole derivatives, rotational constants (A, B, C in MHz),
+        Extracts raw Hessians, dipole derivatives, rotational constants (A, B, C in MHz),
     and dipole components (mu_a, mu_b, mu_c) from real MPQC and g-xTB outputs or HDF5 store.
     """
-    def __init__(self, output_path: str = None):
+    def __init__(self, output_path: str = None) -> None:
         self.output_path = Path(output_path) if output_path else None
 
     def parse_mpqc_output(self, mpqc_output_text: str = None) -> dict:
         """
-        Parses real MPQC output files/strings for rotational constants (A, B, C in MHz)
+        Parses real MPQC/ORCA output files/strings for rotational constants (A, B, C in MHz)
         and dipole components (mu_a, mu_b, mu_c in Debye).
         """
         if mpqc_output_text is None and self.output_path and self.output_path.exists():
@@ -191,6 +193,8 @@ class QuantumExtractor:
                 }
 
         return results
+
+    parse_orca_output = parse_mpqc_output
 
     def parse_gxtb_output(self, gxtb_output_text: str = None) -> dict:
         """
@@ -256,6 +260,8 @@ def parse_mpqc_freq_output(mpqc_output_text: str) -> dict:
     """Legacy helper function delegating to QuantumExtractor."""
     extractor = QuantumExtractor()
     return extractor.parse_mpqc_output(mpqc_output_text)
+
+parse_orca_freq_output = parse_mpqc_freq_output
 
 
 def vpt2_resonance_trap(frequencies: np.ndarray, cubic_k: np.ndarray = None, threshold: float = 10.0) -> list:
@@ -381,7 +387,7 @@ def parse_nbo_analysis(mpqc_output_text: str) -> dict:
 
     return nbo_data
 
-def save_out_of_core_parquet(data: dict, filename: str = "spycfit_tensor_buffer.parquet"):
+def save_out_of_core_parquet(data: dict, filename: str = "spycfit_tensor_buffer.parquet") -> Any:
     """
     Serializes tensor buffer using PyArrow Parquet out-of-core serialization.
     Resolves SPYCFIT-09: Stores original matrix shape (rows, cols) in Parquet schema metadata.
@@ -417,9 +423,9 @@ def save_out_of_core_parquet(data: dict, filename: str = "spycfit_tensor_buffer.
         table = table.replace_schema_metadata(new_meta)
         
         pq.write_table(table, filename)
-        print(f"{Colors.OKGREEN}✅ Out-of-core PyArrow serialization complete: {filename}{Colors.ENDC}")
+        logger.info(f"{Colors.OKGREEN}✅ Out-of-core PyArrow serialization complete: {filename}{Colors.ENDC}")
     except ImportError:
-        print(f"{Colors.WARNING}⚠️ pyarrow/pandas not installed. Falling back to npz.{Colors.ENDC}")
+        logger.info(f"{Colors.WARNING}⚠️ pyarrow/pandas not installed. Falling back to npz.{Colors.ENDC}")
 
 def read_out_of_core_parquet(filename: str = "spycfit_tensor_buffer.parquet") -> dict:
     """
@@ -444,7 +450,7 @@ def read_out_of_core_parquet(filename: str = "spycfit_tensor_buffer.parquet") ->
 
         return result
     except Exception as e:
-        print(f"{Colors.WARNING}⚠️ PyArrow Parquet deserialization failed: {e}{Colors.ENDC}")
+        logger.info(f"{Colors.WARNING}⚠️ PyArrow Parquet deserialization failed: {e}{Colors.ENDC}")
         return {}
 
 
@@ -453,7 +459,7 @@ def extract_lam_data(data: dict) -> dict:
     extracted_lam_data = {}
     
     if data.get('lam_trigger', False):
-        print(f"{Colors.OKCYAN}🔍 LAM Protocol Detected - Bypassing Standard VPT2 Diagonalization{Colors.ENDC}")
+        logger.info(f"{Colors.OKCYAN}🔍 LAM Protocol Detected - Bypassing Standard VPT2 Diagonalization{Colors.ENDC}")
         if 'dvr_eigenvalues' in data:
             extracted_lam_data['eigenvalues'] = data['dvr_eigenvalues']
         if 'tunneling_splittings' in data:
@@ -463,12 +469,12 @@ def extract_lam_data(data: dict) -> dict:
             
     return extracted_lam_data
 
-def generate_pickett_files(fitted_results, output_dir="pickett_output"):
+def generate_pickett_files(fitted_results, output_dir="pickett_output") -> Any:
     """
     Generate Pickett-formatted .lin, .cat, and .fit files for legacy verification.
     Resolves SPYCFIT-07: Writes true calculated transition frequencies, uncertainties, and (J, Ka, Kc) quantum numbers dynamically.
     """
-    print(f"{Colors.OKCYAN}💾 Generating Pickett-formatted files...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}💾 Generating Pickett-formatted files...{Colors.ENDC}")
     
     out_dir = Path(output_dir)
     out_dir.mkdir(exist_ok=True, parents=True)
@@ -562,19 +568,19 @@ def generate_pickett_files(fitted_results, output_dir="pickett_output"):
         for line in fit_data:
             f.write(f"{line}\n")
             
-    print(f"{Colors.OKGREEN}✅ Pickett files generated for {mol_name}:")
-    print(f"   {lin_path.name}")
-    print(f"   {cat_path.name}") 
-    print(f"   {fit_path.name}{Colors.ENDC}")
+    logger.info(f"{Colors.OKGREEN}✅ Pickett files generated for {mol_name}:")
+    logger.info(f"   {lin_path.name}")
+    logger.info(f"   {cat_path.name}")
+    logger.info(f"   {fit_path.name}{Colors.ENDC}")
     
     trigger_scribe_daemon(output_dir)
 
-def trigger_scribe_daemon(output_dir):
+def trigger_scribe_daemon(output_dir) -> Any:
     """
     Trigger the CoChem-SCRIBE daemon to process generated files.
     Resolves SPYCFIT-08: Establishes genuine IPC/ZMQ socket communication with SCRIBE daemon.
     """
-    print(f"{Colors.OKCYAN}📡 Triggering CoChem-SCRIBE daemon via ZeroMQ...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}📡 Triggering CoChem-SCRIBE daemon via ZeroMQ...{Colors.ENDC}")
     
     payload = {
         "source": "CoChem-SpycFit",
@@ -591,25 +597,25 @@ def trigger_scribe_daemon(output_dir):
         socket.connect("tcp://127.0.0.1:5555")
         socket.send_json(payload)
         resp = socket.recv_json()
-        print(f"{Colors.OKGREEN}✅ SCRIBE daemon ZMQ response: {resp}{Colors.ENDC}")
+        logger.info(f"{Colors.OKGREEN}✅ SCRIBE daemon ZMQ response: {resp}{Colors.ENDC}")
     except Exception as e:
         logging.warning(f"ZMQ connection to SCRIBE daemon failed (offline/fallback mode): {str(e)}")
         scribe_marker = Path(output_dir) / "SCRIBE_TRIGGERED.txt"
         scribe_marker.write_text(json.dumps(payload, indent=2))
-        print(f"{Colors.OKGREEN}✅ SCRIBE trigger recorded to fallback marker file.{Colors.ENDC}")
+        logger.info(f"{Colors.OKGREEN}✅ SCRIBE trigger recorded to fallback marker file.{Colors.ENDC}")
 
-def main():
-    print(f"\n{Colors.OKCYAN}--- SpycFit: Quantum Tensor Extraction ---{Colors.ENDC}")
+def main() -> Any:
+    logger.info(f"\n{Colors.OKCYAN}--- SpycFit: Quantum Tensor Extraction ---{Colors.ENDC}")
     
     h5_path = Path("landscape.h5")
     if not h5_path.exists():
-        print(f"{Colors.WARNING}⚠️ landscape.h5 not found at {h5_path.absolute()}. Please supply valid HDF5 landscape file.{Colors.ENDC}")
+        logger.info(f"{Colors.WARNING}⚠️ landscape.h5 not found at {h5_path.absolute()}. Please supply valid HDF5 landscape file.{Colors.ENDC}")
         return
 
     target_isomer = "isomer_001"
     
     try:
-        print(f"📥 Extracting tensors for {target_isomer}...")
+        logger.info(f"📥 Extracting tensors for {target_isomer}...")
         data = load_h5_tensors(h5_path, target_isomer)
         
         lam_data = extract_lam_data(data)
@@ -618,9 +624,9 @@ def main():
                      eigenvalues=lam_data['eigenvalues'],
                      tunneling_splittings=lam_data['tunneling_splittings'],
                      kraitchman_coords=lam_data['kraitchman_coords'])
-            print(f"{Colors.OKGREEN}✅ LAM data extracted and saved to spycfit_lam_buffer.npz{Colors.ENDC}")
+            logger.info(f"{Colors.OKGREEN}✅ LAM data extracted and saved to spycfit_lam_buffer.npz{Colors.ENDC}")
         
-        print(f"⚖️  Applying isotopic mass-weighting and Hermitian locks...")
+        logger.info(f"⚖️  Applying isotopic mass-weighting and Hermitian locks...")
         mw_hessian = apply_mass_weighting(data['hessian'], data['symbols'])
         
         np.savez("spycfit_tensor_buffer.npz", 
@@ -629,12 +635,22 @@ def main():
                  symbols=data['symbols'],
                  lam_trigger=data['lam_trigger'])
                  
-        print(f"{Colors.OKGREEN}✅ Extraction Complete. Tensors staged to spycfit_tensor_buffer.npz{Colors.ENDC}")
+        logger.info(f"{Colors.OKGREEN}✅ Extraction Complete. Tensors staged to spycfit_tensor_buffer.npz{Colors.ENDC}")
         logging.info(f"Successfully processed and mass-weighted {target_isomer}.")
         
     except Exception as e:
-        print(f"{Colors.FAIL}❌ Extraction Failed: {str(e)}{Colors.ENDC}")
+        logger.info(f"{Colors.FAIL}❌ Extraction Failed: {str(e)}{Colors.ENDC}")
         logging.error(f"Extraction failed: {str(e)}")
 
 if __name__ == "__main__":
     main()
+def calculate_artifact_sha256(filepath: str | Path) -> str:
+    """Calculates SHA-256 hash of a computational artifact."""
+    p = Path(filepath)
+    if not p.exists():
+        raise FileNotFoundError(f"Artifact file not found: {filepath}")
+    hasher = hashlib.sha256()
+    with open(p, "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    return hasher.hexdigest()

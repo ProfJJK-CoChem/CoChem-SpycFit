@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 #!/usr/bin/env python3
 """
 CoChem-SpycFit: Quantum Extractor & Spectroscopic Fitter Module
@@ -18,6 +20,6 @@ if __name__ == "__main__":
         path = sys.argv[1]
         extractor = QuantumExtractor(path)
         res = extractor.parse_output()
-        print("Extracted Quantum Observables:", res)
+        logger.info("Extracted Quantum Observables:", res)
     else:
-        print("CoChem-SpycFit Quantum Extractor module loaded.")
+        logger.info("CoChem-SpycFit Quantum Extractor module loaded.")

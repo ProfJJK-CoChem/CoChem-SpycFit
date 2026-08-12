@@ -1,3 +1,5 @@
+import hashlib
+from typing import Any, Dict, List, Optional
 #!/usr/bin/env python3
 """
 CoChem-SpycFit: Initialization & JAX Gatekeeper
@@ -9,6 +11,7 @@ import os
 import sys
 import json
 import logging
+logger = logging.getLogger(__name__)
 from pathlib import Path
 
 class Colors:
@@ -31,7 +34,7 @@ logging.basicConfig(
 
 def enforce_jax_precision() -> dict:
     """Hooks into the JAX backend to override float32 ML defaults."""
-    print(f"{Colors.OKCYAN}▶ Initializing SpycFit XLA Compiler Environment...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}▶ Initializing SpycFit XLA Compiler Environment...{Colors.ENDC}")
     
     try:
         import jax
@@ -47,8 +50,8 @@ def enforce_jax_precision() -> dict:
         if test_array.dtype != jax.numpy.float64:
             raise RuntimeError("JAX failed to lock float64 precision.")
             
-        print(f"{Colors.OKGREEN}✅ JAX Float64 Precision Locked.{Colors.ENDC}")
-        print(f"🖥️  XLA Backend: {backend_type} (Devices: {device_count})")
+            logger.info(f"{Colors.OKGREEN}✅ JAX Float64 Precision Locked.{Colors.ENDC}")
+        logger.info(f"🖥️  XLA Backend: {backend_type} (Devices: {device_count})")
         
         logging.info(f"JAX Initialized. Backend: {backend_type}, Devices: {device_count}, Float64: Active.")
         
@@ -61,12 +64,12 @@ def enforce_jax_precision() -> dict:
         
     except ImportError:
         error_msg = "FATAL: 'jax' or 'jaxlib' is not installed. SpycFit requires JAX for GPU convolutions."
-        print(f"{Colors.FAIL}❌ {error_msg}{Colors.ENDC}")
+        logger.info(f"{Colors.FAIL}❌ {error_msg}{Colors.ENDC}")
         logging.error(error_msg)
         sys.exit(1)
     except Exception as e:
         error_msg = f"FATAL: JAX Environment failure: {str(e)}"
-        print(f"{Colors.FAIL}❌ {error_msg}{Colors.ENDC}")
+        logger.info(f"{Colors.FAIL}❌ {error_msg}{Colors.ENDC}")
         logging.error(error_msg)
         sys.exit(1)
 
@@ -75,7 +78,7 @@ def intercept_lam_trigger(h5_path: Path = Path("landscape.h5")) -> bool:
     Resolves SPYCFIT-13: Intercepts LAM_TRIGGER_REQUIRED flag from input HDF5 attributes / buffer
     and launches 1D PES scan module for weak non-covalent complexes when True.
     """
-    print(f"{Colors.OKCYAN}▶ Intercepting LAM_TRIGGER_REQUIRED flag...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}▶ Intercepting LAM_TRIGGER_REQUIRED flag...{Colors.ENDC}")
     lam_required = False
     
     if h5_path.exists():
@@ -100,10 +103,10 @@ def intercept_lam_trigger(h5_path: Path = Path("landscape.h5")) -> bool:
             pass
 
     if lam_required:
-        print(f"{Colors.OKGREEN}⚡ LAM_TRIGGER_REQUIRED is True! Launching 1D PES scan module for weak non-covalent complex...{Colors.ENDC}")
+        logger.info(f"{Colors.OKGREEN}⚡ LAM_TRIGGER_REQUIRED is True! Launching 1D PES scan module for weak non-covalent complex...{Colors.ENDC}")
         logging.info("LAM_TRIGGER_REQUIRED flag detected: 1D PES scan module initiated.")
     else:
-        print(f"{Colors.OKCYAN}ℹ️ LAM_TRIGGER_REQUIRED is False. Standard rigid/semi-rigid pathway.{Colors.ENDC}")
+        logger.info(f"{Colors.OKCYAN}ℹ️ LAM_TRIGGER_REQUIRED is False. Standard rigid/semi-rigid pathway.{Colors.ENDC}")
 
     return lam_required
 
@@ -193,7 +196,7 @@ def compute_pas_dipole_projections(coords: list, symbols: list, dipole_vector: l
 
 def initialize_spycfit_components() -> dict:
     """Initialize all core SpycFit components for the Bayesian fitting engine."""
-    print(f"{Colors.OKCYAN}▶ Initializing Bayesian Fitting Components...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}▶ Initializing Bayesian Fitting Components...{Colors.ENDC}")
     
     lam_active = intercept_lam_trigger()
     
@@ -217,39 +220,39 @@ def initialize_spycfit_components() -> dict:
     with open(state_path, "w") as f:
         json.dump(state, f, indent=4)
         
-    print(f"{Colors.OKGREEN}✅ SpycFit Components Initialized.{Colors.ENDC}")
+    logger.info(f"{Colors.OKGREEN}✅ SpycFit Components Initialized.{Colors.ENDC}")
     return state
 
 def setup_memory_mapping() -> dict:
     """Set up memory-mapped tensor handling for large rotational partition functions."""
-    print(f"{Colors.OKCYAN}▶ Setting up Memory-Mapped Tensor Handling...{Colors.ENDC}")
+    logger.info(f"{Colors.OKCYAN}▶ Setting up Memory-Mapped Tensor Handling...{Colors.ENDC}")
     
     try:
         import psutil
         total_memory = psutil.virtual_memory().total
         available_memory = psutil.virtual_memory().available
         
-        print(f"🧠 System Memory: {total_memory / (1024**3):.2f} GB")
-        print(f"📋 Available Memory: {available_memory / (1024**3):.2f} GB")
+        logger.info(f"🧠 System Memory: {total_memory / (1024**3):.2f} GB")
+        logger.info(f"📋 Available Memory: {available_memory / (1024**3):.2f} GB")
         
         memory_mapping_enabled = True if available_memory < 8 * (1024**3) else True
         
         state_path = Path("cochem_spycfit_state.json")
         if state_path.exists():
             with open(state_path, "r") as f:
-                state = json.load(f)
+                state = json.loads(f.read())
             state["components"]["memory_mapping"] = "enabled" if memory_mapping_enabled else "disabled"
             with open(state_path, "w") as f:
                 json.dump(state, f, indent=4)
             
-        print(f"{Colors.OKGREEN}✅ Memory mapping configuration complete.{Colors.ENDC}")
+        logger.info(f"{Colors.OKGREEN}✅ Memory mapping configuration complete.{Colors.ENDC}")
         return {
             "status": "configured",
             "memory_mapping": memory_mapping_enabled,
             "available_memory": available_memory
         }
     except ImportError:
-        print(f"{Colors.WARNING}⚠️ psutil not available. Memory mapping will be limited.{Colors.ENDC}")
+        logger.info(f"{Colors.WARNING}⚠️ psutil not available. Memory mapping will be limited.{Colors.ENDC}")
         return {
             "status": "configured",
             "memory_mapping": False,
@@ -257,22 +260,32 @@ def setup_memory_mapping() -> dict:
         }
     except Exception as e:
         logging.error(f"Memory mapping setup failed: {str(e)}")
-        print(f"{Colors.FAIL}❌ Memory mapping setup failed: {str(e)}{Colors.ENDC}")
+        logger.info(f"{Colors.FAIL}❌ Memory mapping setup failed: {str(e)}{Colors.ENDC}")
         return {
             "status": "failed",
             "memory_mapping": False,
             "error": str(e)
         }
 
-def main():
-    print(f"\n{Colors.BOLD}--- CoChem-SpycFit: Environment Pre-Flight ---{Colors.ENDC}")
+def main() -> Any:
+    logger.info(f"\n{Colors.BOLD}--- CoChem-SpycFit: Environment Pre-Flight ---{Colors.ENDC}")
     
     env_state = enforce_jax_precision()
     init_state = initialize_spycfit_components()
     mem_state = setup_memory_mapping()
     
     final_state = {**env_state, **init_state, **mem_state}
-    print(f"{Colors.OKGREEN}✅ SpycFit Initialization Complete. Ready for tensor extraction.{Colors.ENDC}\n")
+    logger.info(f"{Colors.OKGREEN}✅ SpycFit Initialization Complete. Ready for tensor extraction.{Colors.ENDC}\n")
 
 if __name__ == "__main__":
     main()
+def calculate_artifact_sha256(filepath: str | Path) -> str:
+    """Calculates SHA-256 hash of a computational artifact."""
+    p = Path(filepath)
+    if not p.exists():
+        raise FileNotFoundError(f"Artifact file not found: {filepath}")
+    hasher = hashlib.sha256()
+    with open(p, "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    return hasher.hexdigest()
