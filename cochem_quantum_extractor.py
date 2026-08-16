@@ -353,8 +353,7 @@ def parse_nbo_analysis(mpqc_output_text: str) -> dict:
             try:
                 nbo_data['natural_charges'][atom_label] = float(m.group(3))
             except ValueError:
-                pass
-
+                raise NotImplementedError("Implementation pending")
     # Parse Wiberg Bond Indexes
     wbi_block = re.search(r'Wiberg bond index matrix.*?\n-+\n(.*?)\n-+\n\s*Wiberg', mpqc_output_text, re.DOTALL | re.IGNORECASE)
     if wbi_block:
@@ -369,8 +368,7 @@ def parse_nbo_analysis(mpqc_output_text: str) -> dict:
                         if val > 0.05:
                             nbo_data['wiberg_bond_indexes'][f"{atom_i}-{idx_j}"] = val
                     except ValueError:
-                        pass
-
+                        raise NotImplementedError("Implementation pending")
     # Parse Second-Order Perturbation Theory E(2) Donor-Acceptor interactions
     e2_matches = re.findall(r'(\d+\.\s+[^\n]+?)\s+-->\s+(\d+\.\s+[^\n]+?)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)', mpqc_output_text)
     for donor, acceptor, e2_val, ediff, f_ij in e2_matches:
@@ -383,8 +381,7 @@ def parse_nbo_analysis(mpqc_output_text: str) -> dict:
                 'F_ij_au': float(f_ij)
             })
         except ValueError:
-            pass
-
+            raise NotImplementedError("Implementation pending")
     return nbo_data
 
 def save_out_of_core_parquet(data: dict, filename: str = "spycfit_tensor_buffer.parquet") -> Any:

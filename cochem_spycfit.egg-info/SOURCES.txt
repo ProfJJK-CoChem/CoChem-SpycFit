@@ -10,3 +10,4 @@ cochem_spycfit.egg-info/dependency_links.txt
 cochem_spycfit.egg-info/entry_points.txt
 cochem_spycfit.egg-info/requires.txt
 cochem_spycfit.egg-info/top_level.txt
+tests/test_spycfit.py

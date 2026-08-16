@@ -100,8 +100,7 @@ def intercept_lam_trigger(h5_path: Path = Path("landscape.h5")) -> bool:
                 if 'lam_trigger' in data and bool(data['lam_trigger']):
                     lam_required = True
         except Exception:
-            pass
-
+            raise NotImplementedError("Implementation pending")
     if lam_required:
         logger.info(f"{Colors.OKGREEN}⚡ LAM_TRIGGER_REQUIRED is True! Launching 1D PES scan module for weak non-covalent complex...{Colors.ENDC}")
         logging.info("LAM_TRIGGER_REQUIRED flag detected: 1D PES scan module initiated.")
