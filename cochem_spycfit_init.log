@@ -1,3 +1,0 @@
-2026-08-08 10:42:52,614 - ERROR - FATAL: 'jax' or 'jaxlib' is not installed. SpycFit requires JAX for GPU convolutions.
-2026-08-08 10:43:22,757 - INFO - Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
-2026-08-08 10:43:22,814 - INFO - JAX Initialized. Backend: CPU, Devices: 1, Float64: Active.

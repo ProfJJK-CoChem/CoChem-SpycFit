@@ -1,2 +1,0 @@
-ERROR:root:Bayesian fitting failed: Object arrays cannot be loaded when allow_pickle=False
-INFO:root:Bayesian fitting completed successfully.

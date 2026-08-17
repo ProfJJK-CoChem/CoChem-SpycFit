@@ -1,5 +1,5 @@
-import hashlib
 #!/usr/bin/env python3
+import hashlib
 """
 CoChem-SpycFit: Quantum Tensor Extractor
 Extracts Raw Hessians and Dipole Derivatives from the central landscape.h5.
@@ -62,7 +62,7 @@ MASS_DICT = {
     'Lv': 293.196000, 'Ts': 294.210460, 'Og': 294.213920
 }
 
-def load_h5_tensors(filepath: Path, isomer_id: str) -> dict:
+def load_h5_tensors(filepath: Path, isomer_id: str) -> Dict[str, Any]:
     """
     Extracts raw geometry and tensor arrays from the CoChem HDF5 landscape.
     Resolves SPYCFIT-11: Robust string/bytes decoding for symbols.
@@ -111,7 +111,7 @@ def load_h5_tensors(filepath: Path, isomer_id: str) -> dict:
             
     return extracted_data
 
-def apply_mass_weighting(hessian: np.ndarray, symbols: list) -> np.ndarray:
+def apply_mass_weighting(hessian: np.ndarray, symbols: List[str]) -> np.ndarray:
     """
     Constructs the exact mass-weighted Hessian M^(-1/2) H M^(-1/2) required for physical vibrational analysis.
     Resolves SPYCFIT-06: Replaces empirical scaling with exact physical IUPAC mass weighting.
@@ -133,10 +133,10 @@ class QuantumExtractor:
         Extracts raw Hessians, dipole derivatives, rotational constants (A, B, C in MHz),
     and dipole components (mu_a, mu_b, mu_c) from real MPQC and g-xTB outputs or HDF5 store.
     """
-    def __init__(self, output_path: str = None) -> None:
+    def __init__(self, output_path: Optional[str] = None) -> None:
         self.output_path = Path(output_path) if output_path else None
 
-    def parse_mpqc_output(self, mpqc_output_text: str = None) -> dict:
+    def parse_mpqc_output(self, mpqc_output_text: Optional[str] = None) -> Dict[str, Any]:
         """
         Parses real MPQC/ORCA output files/strings for rotational constants (A, B, C in MHz)
         and dipole components (mu_a, mu_b, mu_c in Debye).
@@ -207,7 +207,7 @@ class QuantumExtractor:
 
     parse_orca_output = parse_mpqc_output
 
-    def parse_gxtb_output(self, gxtb_output_text: str = None) -> dict:
+    def parse_gxtb_output(self, gxtb_output_text: Optional[str] = None) -> Dict[str, Any]:
         """
         Parses real g-xTB (GFN2-xTB) output files/strings for rotational constants (A, B, C in MHz)
         and dipole components (mu_a, mu_b, mu_c in Debye).
@@ -246,7 +246,7 @@ class QuantumExtractor:
 
         return results
 
-    def parse_output(self, text_or_path: str = None) -> dict:
+    def parse_output(self, text_or_path: Optional[str] = None) -> Dict[str, Any]:
         """Auto-detects MPQC vs g-xTB log format and parses rotational constants & dipole moments."""
         text = text_or_path
         if text is None and self.output_path and self.output_path.exists():
@@ -267,7 +267,7 @@ class QuantumExtractor:
             return res
 
 
-def parse_mpqc_freq_output(mpqc_output_text: str) -> dict:
+def parse_mpqc_freq_output(mpqc_output_text: str) -> Dict[str, Any]:
     """Legacy helper function delegating to QuantumExtractor."""
     extractor = QuantumExtractor()
     return extractor.parse_mpqc_output(mpqc_output_text)
@@ -275,7 +275,7 @@ def parse_mpqc_freq_output(mpqc_output_text: str) -> dict:
 parse_orca_freq_output = parse_mpqc_freq_output
 
 
-def vpt2_resonance_trap(frequencies: np.ndarray, cubic_k: np.ndarray = None, threshold: float = 10.0) -> list:
+def vpt2_resonance_trap(frequencies: np.ndarray, cubic_k: Optional[np.ndarray] = None, threshold: float = 10.0) -> List[Tuple[int, int, int, int, float]]:
     """
     Detects Fermi and Darling-Dennison resonances in VPT2.
     Resolves SPYCFIT-18: Checks cubic force constants k_ijk to evaluate true Fermi interaction matrix elements.
@@ -287,19 +287,19 @@ def vpt2_resonance_trap(frequencies: np.ndarray, cubic_k: np.ndarray = None, thr
             freq_diff = abs(2 * frequencies[i] - frequencies[j])
             if freq_diff < threshold:
                 # Check cubic force constant matrix element if available
-                k_ijk = cubic_k[i, i, j] if (cubic_k is not None and cubic_k.shape == (n, n, n)) else 1.0
+                k_ijk = cubic_k[i, i, j] if (cubic_k is not None and cubic_k.shape == (n, n, n)) else 0.0
                 phi_ijk = abs(k_ijk) / (2.0 * np.sqrt(2.0))
                 if phi_ijk > 0.01:
-                    resonances.append(('Fermi', i, j, phi_ijk))
+                    resonances.append((1, i, j, -1, phi_ijk))
             for k in range(j+1, n):
                 freq_diff_dd = abs(frequencies[i] + frequencies[j] - frequencies[k])
                 if freq_diff_dd < threshold:
-                    k_ijk_dd = cubic_k[i, j, k] if (cubic_k is not None and cubic_k.shape == (n, n, n)) else 1.0
+                    k_ijk_dd = cubic_k[i, j, k] if (cubic_k is not None and cubic_k.shape == (n, n, n)) else 0.0
                     if abs(k_ijk_dd) > 0.01:
-                        resonances.append(('Darling-Dennison', i, j, k, abs(k_ijk_dd)))
+                        resonances.append((2, i, j, k, abs(k_ijk_dd)))
     return resonances
 
-def perform_normal_mode_analysis(mw_hessian: np.ndarray, symbols: list, dipole_derivs: Optional[np.ndarray] = None) -> dict:
+def perform_normal_mode_analysis(mw_hessian: np.ndarray, symbols: List[str], dipole_derivs: Optional[np.ndarray] = None) -> Dict[str, Any]:
     """
     Performs Normal Mode Analysis (NMA) from mass-weighted Hessian.
     Computes harmonic vibrational frequencies (cm^-1), normal mode displacement vectors,
@@ -343,7 +343,7 @@ def perform_normal_mode_analysis(mw_hessian: np.ndarray, symbols: list, dipole_d
         'cartesian_displacement_modes': modes_cartesian.tolist()
     }
 
-def parse_nbo_analysis(mpqc_output_text: str) -> dict:
+def parse_nbo_analysis(mpqc_output_text: str) -> Dict[str, Any]:
     """
     Parses Natural Bond Orbital (NBO) analysis output from MPQC log text.
     Extracts Natural Atomic Charges, Wiberg Bond Indexes (WBI), and E(2) donor-acceptor interactions.
@@ -395,7 +395,7 @@ def parse_nbo_analysis(mpqc_output_text: str) -> dict:
             logging.warning(f"Could not parse E2 interaction values.")
     return nbo_data
 
-def save_out_of_core_parquet(data: dict, filename: str = "spycfit_tensor_buffer.parquet") -> Any:
+def save_out_of_core_parquet(data: Dict[str, Any], filename: str = "spycfit_tensor_buffer.parquet") -> None:
     """
     Serializes tensor buffer using PyArrow Parquet out-of-core serialization.
     Resolves SPYCFIT-09: Stores original matrix shape (rows, cols) in Parquet schema metadata.
@@ -435,34 +435,30 @@ def save_out_of_core_parquet(data: dict, filename: str = "spycfit_tensor_buffer.
     except ImportError:
         logger.info(f"{Colors.WARNING}⚠️ pyarrow/pandas not installed. Falling back to npz.{Colors.ENDC}")
 
-def read_out_of_core_parquet(filename: str = "spycfit_tensor_buffer.parquet") -> dict:
+def read_out_of_core_parquet(filename: str = "spycfit_tensor_buffer.parquet") -> Dict[str, Any]:
     """
     Deserializes PyArrow Parquet tensor buffer and reconstructs original matrix shapes.
     """
-    try:
-        import pyarrow.parquet as pq
-        table = pq.read_table(filename)
-        metadata = table.schema.metadata or {}
-        df = table.to_pandas()
-        
-        result = {}
-        if b'mw_hessian_shape' in metadata:
-            shape = json.loads(metadata[b'mw_hessian_shape'].decode('utf-8'))
-            size = np.prod(shape)
-            result['mw_hessian'] = df['mw_hessian'].values[:size].reshape(shape)
+    import pyarrow.parquet as pq
+    table = pq.read_table(filename)
+    metadata = table.schema.metadata or {}
+    df = table.to_pandas()
+    
+    result = {}
+    if b'mw_hessian_shape' in metadata:
+        shape = json.loads(metadata[b'mw_hessian_shape'].decode('utf-8'))
+        size = np.prod(shape)
+        result['mw_hessian'] = df['mw_hessian'].values[:size].reshape(shape)
 
-        if b'dipole_derivs_shape' in metadata and 'dipole_derivs' in df:
-            shape = json.loads(metadata[b'dipole_derivs_shape'].decode('utf-8'))
-            size = np.prod(shape)
-            result['dipole_derivs'] = df['dipole_derivs'].values[:size].reshape(shape)
+    if b'dipole_derivs_shape' in metadata and 'dipole_derivs' in df:
+        shape = json.loads(metadata[b'dipole_derivs_shape'].decode('utf-8'))
+        size = np.prod(shape)
+        result['dipole_derivs'] = df['dipole_derivs'].values[:size].reshape(shape)
 
-        return result
-    except Exception as e:
-        logger.info(f"{Colors.WARNING}⚠️ PyArrow Parquet deserialization failed: {e}{Colors.ENDC}")
-        return {}
+    return result
 
 
-def extract_lam_data(data: dict) -> dict:
+def extract_lam_data(data: Dict[str, Any]) -> Dict[str, Any]:
     """Extracts pre-diagonalized data if LAM protocol was used."""
     extracted_lam_data = {}
     
@@ -477,7 +473,7 @@ def extract_lam_data(data: dict) -> dict:
             
     return extracted_lam_data
 
-def generate_pickett_files(fitted_results, output_dir="pickett_output") -> Any:
+def generate_pickett_files(fitted_results: Dict[str, Any], output_dir: str | Path = "pickett_output") -> None:
     """
     Generate Pickett-formatted .lin, .cat, and .fit files for legacy verification.
     Resolves SPYCFIT-07: Writes true calculated transition frequencies, uncertainties, and (J, Ka, Kc) quantum numbers dynamically.
@@ -487,71 +483,72 @@ def generate_pickett_files(fitted_results, output_dir="pickett_output") -> Any:
     out_dir = artifact_dir / output_dir
     out_dir.mkdir(exist_ok=True, parents=True)
     
-    mol_name = fitted_results.get("molecule", fitted_results.get("name", "Fitted Isoprotologue")) if isinstance(fitted_results, dict) else "Fitted Isoprotologue"
-    temp = float(fitted_results.get("temperature", 298.15)) if isinstance(fitted_results, dict) else 298.15
+    if not isinstance(fitted_results, dict):
+        raise TypeError("fitted_results must be a dictionary.")
+
+    mol_name = fitted_results.get("molecule", fitted_results.get("name", "Fitted Isoprotologue"))
+    temp = float(fitted_results.get("temperature", 298.15))
     
-    rot = fitted_results.get("rotational_constants", {}) if isinstance(fitted_results, dict) else {}
+    rot = fitted_results.get("rotational_constants")
+    if rot is None:
+        if "final_params" in fitted_results and len(fitted_results["final_params"]) >= 3:
+            rot = fitted_results["final_params"][:3]
+        elif "A" in fitted_results and "B" in fitted_results and "C" in fitted_results:
+            rot = {"A": fitted_results["A"], "B": fitted_results["B"], "C": fitted_results["C"]}
+        else:
+            raise ValueError("Missing rotational constants (A, B, C).")
+
     if isinstance(rot, (list, tuple, np.ndarray)) and len(rot) >= 3:
         a_val, b_val, c_val = float(rot[0]), float(rot[1]), float(rot[2])
     elif isinstance(rot, dict):
-        a_val = float(rot.get("A", fitted_results.get("A", 10000.0) if isinstance(fitted_results, dict) else 10000.0))
-        b_val = float(rot.get("B", fitted_results.get("B", 5000.0) if isinstance(fitted_results, dict) else 5000.0))
-        c_val = float(rot.get("C", fitted_results.get("C", 2500.0) if isinstance(fitted_results, dict) else 2500.0))
-    elif isinstance(fitted_results, dict) and "final_params" in fitted_results and len(fitted_results["final_params"]) >= 3:
-        fp = fitted_results["final_params"]
-        a_val, b_val, c_val = float(fp[0]), float(fp[1]), float(fp[2])
+        if "A" not in rot or "B" not in rot or "C" not in rot:
+             raise ValueError("Missing rotational constants (A, B, C).")
+        a_val = float(rot["A"])
+        b_val = float(rot["B"])
+        c_val = float(rot["C"])
     else:
-        a_val = float(fitted_results.get("A", 10000.0)) if isinstance(fitted_results, dict) else 10000.0
-        b_val = float(fitted_results.get("B", 5000.0)) if isinstance(fitted_results, dict) else 5000.0
-        c_val = float(fitted_results.get("C", 2500.0)) if isinstance(fitted_results, dict) else 2500.0
+        raise ValueError("Invalid format for rotational constants.")
 
-    unc = fitted_results.get("uncertainties", fitted_results.get("errors", {})) if isinstance(fitted_results, dict) else {}
+    unc = fitted_results.get("uncertainties", fitted_results.get("errors"))
+    if unc is None:
+        if "A_unc" in fitted_results and "B_unc" in fitted_results and "C_unc" in fitted_results:
+            unc = {"A": fitted_results["A_unc"], "B": fitted_results["B_unc"], "C": fitted_results["C_unc"]}
+        else:
+            raise ValueError("Missing uncertainties for rotational constants.")
+
     if isinstance(unc, (list, tuple, np.ndarray)) and len(unc) >= 3:
         a_unc, b_unc, c_unc = float(unc[0]), float(unc[1]), float(unc[2])
     elif isinstance(unc, dict):
-        a_unc = float(unc.get("A", fitted_results.get("A_unc", 0.010) if isinstance(fitted_results, dict) else 0.010))
-        b_unc = float(unc.get("B", fitted_results.get("B_unc", 0.005) if isinstance(fitted_results, dict) else 0.005))
-        c_unc = float(unc.get("C", fitted_results.get("C_unc", 0.003) if isinstance(fitted_results, dict) else 0.003))
+        if "A" not in unc or "B" not in unc or "C" not in unc:
+            raise ValueError("Missing uncertainties (A, B, C).")
+        a_unc = float(unc["A"])
+        b_unc = float(unc["B"])
+        c_unc = float(unc["C"])
     else:
-        a_unc = float(fitted_results.get("A_unc", 0.010)) if isinstance(fitted_results, dict) else 0.010
-        b_unc = float(fitted_results.get("B_unc", 0.005)) if isinstance(fitted_results, dict) else 0.005
-        c_unc = float(fitted_results.get("C_unc", 0.003)) if isinstance(fitted_results, dict) else 0.003
+        raise ValueError("Invalid format for uncertainties.")
 
-    dist = fitted_results.get("distortion_constants", {}) if isinstance(fitted_results, dict) else {}
+    dist = fitted_results.get("distortion_constants")
+    if dist is None:
+        if "final_params" in fitted_results and len(fitted_results["final_params"]) >= 5:
+            dist = {"D_J": fitted_results["final_params"][3], "D_K": fitted_results["final_params"][4], "D_J_unc": 0.0, "D_K_unc": 0.0}
+        elif "D_J" in fitted_results and "D_K" in fitted_results:
+            dist = {
+                "D_J": fitted_results["D_J"], "D_K": fitted_results["D_K"],
+                "D_J_unc": fitted_results.get("D_J_unc", 0.0), "D_K_unc": fitted_results.get("D_K_unc", 0.0)
+            }
+        else:
+            raise ValueError("Missing distortion constants (D_J, D_K).")
+
     if isinstance(dist, dict):
-        dj_val = float(dist.get("D_J", fitted_results.get("D_J", 0.001) if isinstance(fitted_results, dict) else 0.001))
-        dk_val = float(dist.get("D_K", fitted_results.get("D_K", 0.002) if isinstance(fitted_results, dict) else 0.002))
-        dj_unc = float(dist.get("D_J_unc", fitted_results.get("D_J_unc", 0.00001) if isinstance(fitted_results, dict) else 0.00001))
-        dk_unc = float(dist.get("D_K_unc", fitted_results.get("D_K_unc", 0.00002) if isinstance(fitted_results, dict) else 0.00002))
-    elif isinstance(fitted_results, dict) and "final_params" in fitted_results and len(fitted_results["final_params"]) >= 5:
-        fp = fitted_results["final_params"]
-        dj_val, dk_val = float(fp[3]), float(fp[4])
-        dj_unc, dk_unc = 0.00001, 0.00002
+        if "D_J" not in dist or "D_K" not in dist:
+             raise ValueError("Missing distortion constants (D_J, D_K).")
+        dj_val = float(dist["D_J"])
+        dk_val = float(dist["D_K"])
+        dj_unc = float(dist.get("D_J_unc", 0.0))
+        dk_unc = float(dist.get("D_K_unc", 0.0))
     else:
-        dj_val = float(fitted_results.get("D_J", 0.001)) if isinstance(fitted_results, dict) else 0.001
-        dk_val = float(fitted_results.get("D_K", 0.002)) if isinstance(fitted_results, dict) else 0.002
-        dj_unc = float(fitted_results.get("D_J_unc", 0.00001)) if isinstance(fitted_results, dict) else 0.00001
-        dk_unc = float(fitted_results.get("D_K_unc", 0.00002)) if isinstance(fitted_results, dict) else 0.00002
+        raise ValueError("Invalid format for distortion constants.")
 
-    # Calculate physical transition lines based on rotational constants
-    transitions = [
-        (1, 0, 1, 0, 0, 0, b_val + c_val, 0.05),
-        (1, 1, 1, 0, 0, 0, a_val + c_val, 0.05),
-        (1, 1, 0, 0, 0, 0, a_val + b_val, 0.05),
-        (2, 0, 2, 1, 0, 1, 2.0 * (b_val + c_val), 0.05),
-        (2, 1, 2, 1, 1, 1, a_val + 2.0 * b_val + c_val, 0.05),
-        (2, 1, 1, 1, 1, 0, a_val + b_val + 2.0 * c_val, 0.05),
-        (2, 2, 1, 1, 1, 1, 2.0 * a_val + b_val + c_val, 0.05),
-        (2, 2, 0, 1, 1, 0, 2.0 * a_val + 2.0 * b_val, 0.05)
-    ]
-    
-    lin_path = out_dir / "output.lin"
-    with open(lin_path, 'w') as f:
-        f.write("Pickett .lin file\n")
-        f.write(f"Generated by CoChem-SpycFit for {mol_name}\n")
-        for (j_u, ka_u, kc_u, j_l, ka_l, kc_l, freq, unc_val) in transitions:
-            f.write(f"{j_u:2d}{ka_u:2d}{kc_u:2d} {j_l:2d}{ka_l:2d}{kc_l:2d} {freq:13.4f} {unc_val:8.4f} 1.0000\n")
-            
     cat_data = [
         f"Molecule: {mol_name}",
         f"Temperature: {temp:.1f} K",
@@ -575,15 +572,52 @@ def generate_pickett_files(fitted_results, output_dir="pickett_output") -> Any:
     with open(fit_path, 'w') as f:
         for line in fit_data:
             f.write(f"{line}\n")
-            
+
+    par_path = out_dir / "output.par"
+    with open(par_path, 'w') as f:
+        f.write(f"{mol_name} parameters\n")
+        f.write("    5  1   0   0   0.0000E+00   0.0000E+00   1.0000E+00\n")
+        f.write(f" 10000  {a_val:20.10f} {a_unc:15.10f}\n")
+        f.write(f" 20000  {b_val:20.10f} {b_unc:15.10f}\n")
+        f.write(f" 30000  {c_val:20.10f} {c_unc:15.10f}\n")
+        f.write(f"   200  {dj_val:20.10f} {dj_unc:15.10f}\n")
+        f.write(f"  2000  {dk_val:20.10f} {dk_unc:15.10f}\n")
+    
+    int_path = out_dir / "output.int"
+    with open(int_path, 'w') as f:
+        f.write(f"{mol_name} spcat config\n")
+        f.write("0  99  2000 0  1.0  0.0  0.0  0.0  0.0  0.0\n")
+
+    import subprocess
+    try:
+        subprocess.run(["spcat", str(int_path.name), str(par_path.name)], cwd=str(out_dir), check=True, capture_output=True)
+        cat_out_path = out_dir / "output.cat" 
+        lin_path = out_dir / "output.lin"
+        if cat_out_path.exists():
+            with open(cat_out_path, "r") as f_cat, open(lin_path, "w") as f_lin:
+                f_lin.write("Pickett .lin file\n")
+                f_lin.write(f"Generated by CoChem-SpycFit SPCAT wrapper for {mol_name}\n")
+                for line in f_cat:
+                    if len(line) > 50:
+                        try:
+                            freq = float(line[0:13])
+                            err = float(line[13:21])
+                            f_lin.write(f"{line[55:67]} {line[67:79]} {freq:13.4f} {err:8.4f} 1.0000\n")
+                        except ValueError:
+                            logger.warning(f"Skipping malformed Pickett line: {line.strip()}")
+        logger.info(f"{Colors.OKGREEN}✅ SPCAT successfully generated transitions.{Colors.ENDC}")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        logger.info(f"{Colors.WARNING}⚠️ spcat executable not found or failed. Outputting parameter files only.{Colors.ENDC}")
+        lin_path = out_dir / "output.lin"
+        with open(lin_path, 'w') as f:
+            f.write("Pickett .lin file (spcat execution skipped)\n")
+
     logger.info(f"{Colors.OKGREEN}✅ Pickett files generated for {mol_name}:")
-    logger.info(f"   {lin_path.name}")
-    logger.info(f"   {cat_path.name}")
-    logger.info(f"   {fit_path.name}{Colors.ENDC}")
+    logger.info(f"   output.lin, output.cat, output.fit, output.par, output.int{Colors.ENDC}")
     
     trigger_scribe_daemon(output_dir)
 
-def trigger_scribe_daemon(output_dir) -> Any:
+def trigger_scribe_daemon(output_dir: str | Path) -> None:
     """
     Trigger the CoChem-SCRIBE daemon to process generated files.
     Resolves SPYCFIT-08: Establishes genuine IPC/ZMQ socket communication with SCRIBE daemon.
@@ -612,15 +646,21 @@ def trigger_scribe_daemon(output_dir) -> Any:
         scribe_marker.write_text(json.dumps(payload, indent=2))
         logger.info(f"{Colors.OKGREEN}✅ SCRIBE trigger recorded to fallback marker file.{Colors.ENDC}")
 
-def main() -> Any:
+def main() -> None:
     logger.info(f"\n{Colors.OKCYAN}--- SpycFit: Quantum Tensor Extraction ---{Colors.ENDC}")
     
     h5_path = artifact_dir / "landscape.h5"
     if not h5_path.exists():
         logger.info(f"{Colors.WARNING}⚠️ landscape.h5 not found at {h5_path.absolute()}. Please supply valid HDF5 landscape file.{Colors.ENDC}")
-        return
+        sys.exit(1)
 
-    target_isomer = "isomer_001"
+    if len(sys.argv) > 1:
+        target_isomer = sys.argv[1]
+    else:
+        target_isomer = os.environ.get("COCHEM_TARGET_ISOMER")
+        if not target_isomer:
+            logger.info(f"{Colors.FAIL}❌ Missing target isomer. Pass via sys.argv[1] or COCHEM_TARGET_ISOMER env var.{Colors.ENDC}")
+            sys.exit(1)
     
     try:
         logger.info(f"📥 Extracting tensors for {target_isomer}...")
@@ -649,6 +689,7 @@ def main() -> Any:
     except Exception as e:
         logger.info(f"{Colors.FAIL}❌ Extraction Failed: {str(e)}{Colors.ENDC}")
         logging.error(f"Extraction failed: {str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

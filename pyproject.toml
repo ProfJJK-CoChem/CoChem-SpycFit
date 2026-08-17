@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "Interactive Bayesian Fitting & Active Learning UI for CoChem-Studio"
 dependencies = [
     "PySide6",
-    "pluggy"
+    "pluggy",
+    "pydantic>=2.0",
+    "psutil"
 ]
 
 [project.entry-points."cochem_studio"]
@@ -22,7 +24,7 @@ line-length = 88
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "N"]
+select = ["E", "F", "I", "UP", "N", "PTH", "BLE", "TRY"]
 ignore = []
 
 [tool.mypy]
