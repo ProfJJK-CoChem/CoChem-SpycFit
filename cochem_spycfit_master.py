@@ -198,8 +198,9 @@ class SpycFitMaster:
                 with np.load(buffer_path, allow_pickle=True) as data:
                     if 'lam_trigger' in data and bool(data['lam_trigger']):
                         return True
-            except Exception:
-                raise NotImplementedError("Implementation pending")
+            except Exception as e:
+                logging.warning(f"Error loading buffer for LAM trigger: {e}")
+                return False
         return False
 
     def generate_orca_1d_pes_input(self, coords: list, config: OrcaPesInputConfig) -> str:
@@ -214,13 +215,16 @@ class SpycFitMaster:
             method_header,
             f"%pal nprocs {config.nprocs} end",
             f"%maxcore {config.maxcore}",
-            "%geom InHess XTB2",
+            "%geom",
+            "  InHess XTB2",
             "  TolE     1e-7",
             "  TolRMSG  3e-6",
             "  TolMaxG  1e-5",
             "  TolRMSD  5e-5",
             "  TolMaxD  1e-4",
-            f"  Scan B 0 1 = {config.r_min:.2f}, {config.r_max:.2f}, {config.n_steps}",
+            "  Scan",
+            f"    B 0 1 = {config.r_min:.2f}, {config.r_max:.2f}, {config.n_steps}",
+            "  end",
             "end",
             "",
             "* xyz 0 1"
@@ -251,9 +255,18 @@ class SpycFitMaster:
         inp_path.write_text(inp_str, encoding="utf-8")
         
         try:
-            result = subprocess.run([orca_bin, str(inp_path)], cwd=str(scan_dir), check=True, capture_output=True, text=True)
+            result = subprocess.run([orca_bin, inp_path.name], cwd=str(scan_dir), check=True, capture_output=True, text=True, timeout=3600)
             logger.info("✅ [SpycFitMaster] ORCA execution completed normally.")
-            return {"lam_active": True, "artifact_path": str(scan_dir / "scan.out"), "status": "completed"}
+            out_file = scan_dir / "scan.out"
+            out_file.write_text(result.stdout, encoding="utf-8")
+            gbw_file = scan_dir / "scan.gbw"
+            out_hash = calculate_artifact_sha256(out_file) if out_file.exists() else None
+            gbw_hash = calculate_artifact_sha256(gbw_file) if gbw_file.exists() else None
+            logger.info(f"Provenance hashes: .out={out_hash}, .gbw={gbw_hash}")
+            return {"lam_active": True, "artifact_path": str(out_file), "status": "completed", "out_hash": out_hash, "gbw_hash": gbw_hash}
+        except subprocess.TimeoutExpired:
+            logger.error("ORCA execution timed out after 3600s")
+            return {"lam_active": True, "error": "execution timed out after 3600s", "status": "failed"}
         except subprocess.CalledProcessError as e:
             logger.error(f"ORCA execution failed: {e.stderr}")
             return {"lam_active": True, "error": f"execution failed with code {e.returncode}", "status": "failed"}

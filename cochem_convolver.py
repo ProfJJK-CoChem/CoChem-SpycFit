@@ -42,7 +42,7 @@ def load_tensor_buffer() -> dict:
     """Loads the pre-processed tensor buffers from the quantum extractor."""
     logger.info(f"{Colors.OKCYAN}📥 Loading Bayesian Tensor Buffers...{Colors.ENDC}")
     
-    buffer_path = Path("spycfit_tensor_buffer.npz")
+    buffer_path = artifact_dir / "spycfit_tensor_buffer.npz"
     if not buffer_path.exists():
         raise FileNotFoundError("spycfit_tensor_buffer.npz not found. Run quantum extractor first.")
         
@@ -58,7 +58,7 @@ def load_lam_buffer() -> dict:
     """Loads the LAM-specific buffers if LAM protocol was used."""
     logger.info(f"{Colors.OKCYAN}📥 Loading LAM Tensor Buffers...{Colors.ENDC}")
     
-    buffer_path = Path("spycfit_lam_buffer.npz")
+    buffer_path = artifact_dir / "spycfit_lam_buffer.npz"
     if not buffer_path.exists():
         return None
         
@@ -253,7 +253,7 @@ def generate_spectral_output(fitted_results: dict, output_dir: str = "spectral_o
     """
     logger.info(f"{Colors.OKCYAN}💾 Generating Spectral Output Files...{Colors.ENDC}")
     
-    out_path_dir = Path(output_dir)
+    out_path_dir = artifact_dir / output_dir
     out_path_dir.mkdir(exist_ok=True, parents=True)
     
     if 'predicted_frequencies' in fitted_results:

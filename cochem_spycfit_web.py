@@ -13,11 +13,13 @@ def kill_zombie_processes() -> None:
     target_procs = ['orca', 'xtb', 'mpi', 'crest']
     for proc in psutil.process_iter(['name']):
         try:
-            name = proc.info['name'].lower()
-            if any(target in name for target in target_procs):
-                proc.terminate()
+            name_info = proc.info.get('name')
+            if name_info is not None:
+                name = name_info.lower()
+                if any(target in name for target in target_procs):
+                    proc.terminate()
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            raise NotImplementedError("Implementation pending")
+            pass
 atexit.register(kill_zombie_processes)
 
 st.title("🔬 CoChem-SpycFit Control Panel")
@@ -35,7 +37,8 @@ if st.button("🚀 Execute Default Pipeline"):
         module_dir = Path(__file__).resolve().parent
         master_script = module_dir / "cochem_spycfit_master.py"
         
-        artifact_dir = Path(os.environ.get("COCHEM_ARTIFACT_DIR", os.getcwd()))
+        artifact_dir = Path(os.environ.get("COCHEM_ARTIFACT_DIR", Path.home() / "cochem_artifacts"))
+        artifact_dir.mkdir(parents=True, exist_ok=True)
         env = os.environ.copy()
         env["COCHEM_TARGET_H5"] = str(artifact_dir / "landscape.h5")
         

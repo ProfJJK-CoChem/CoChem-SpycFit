@@ -192,6 +192,17 @@ class QuantumExtractor:
                     'mu_a': abs(dx), 'mu_b': abs(dy), 'mu_c': abs(dz)
                 }
 
+        # Spin contamination check for open-shell systems
+        s2_match = re.search(r'Expectation value of <S\*\*2>\s*:\s*([\d\.]+)', mpqc_output_text)
+        ideal_s2_match = re.search(r'Ideal value S\*\S+\s+for S=[\d\.]+\s*:\s*([\d\.]+)', mpqc_output_text)
+        if s2_match and ideal_s2_match:
+            s2_val = float(s2_match.group(1))
+            ideal_s2_val = float(ideal_s2_match.group(1))
+            if ideal_s2_val > 0:
+                contamination = (s2_val - ideal_s2_val) / ideal_s2_val
+                if contamination > 0.10:
+                    raise ValueError(f"Spin contamination exceeded 10%: <S**2> = {s2_val}, ideal = {ideal_s2_val}")
+
         return results
 
     parse_orca_output = parse_mpqc_output
@@ -353,7 +364,7 @@ def parse_nbo_analysis(mpqc_output_text: str) -> dict:
             try:
                 nbo_data['natural_charges'][atom_label] = float(m.group(3))
             except ValueError:
-                raise NotImplementedError("Implementation pending")
+                logging.warning(f"Could not parse natural charge from line: {line}")
     # Parse Wiberg Bond Indexes
     wbi_block = re.search(r'Wiberg bond index matrix.*?\n-+\n(.*?)\n-+\n\s*Wiberg', mpqc_output_text, re.DOTALL | re.IGNORECASE)
     if wbi_block:
@@ -368,7 +379,7 @@ def parse_nbo_analysis(mpqc_output_text: str) -> dict:
                         if val > 0.05:
                             nbo_data['wiberg_bond_indexes'][f"{atom_i}-{idx_j}"] = val
                     except ValueError:
-                        raise NotImplementedError("Implementation pending")
+                        logging.warning(f"Could not parse WBI from string: {val_str}")
     # Parse Second-Order Perturbation Theory E(2) Donor-Acceptor interactions
     e2_matches = re.findall(r'(\d+\.\s+[^\n]+?)\s+-->\s+(\d+\.\s+[^\n]+?)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)', mpqc_output_text)
     for donor, acceptor, e2_val, ediff, f_ij in e2_matches:
@@ -381,7 +392,7 @@ def parse_nbo_analysis(mpqc_output_text: str) -> dict:
                 'F_ij_au': float(f_ij)
             })
         except ValueError:
-            raise NotImplementedError("Implementation pending")
+            logging.warning(f"Could not parse E2 interaction values.")
     return nbo_data
 
 def save_out_of_core_parquet(data: dict, filename: str = "spycfit_tensor_buffer.parquet") -> Any:
@@ -473,11 +484,11 @@ def generate_pickett_files(fitted_results, output_dir="pickett_output") -> Any:
     """
     logger.info(f"{Colors.OKCYAN}💾 Generating Pickett-formatted files...{Colors.ENDC}")
     
-    out_dir = Path(output_dir)
+    out_dir = artifact_dir / output_dir
     out_dir.mkdir(exist_ok=True, parents=True)
     
     mol_name = fitted_results.get("molecule", fitted_results.get("name", "Fitted Isoprotologue")) if isinstance(fitted_results, dict) else "Fitted Isoprotologue"
-    temp = float(fitted_results.get("temperature", 298.0)) if isinstance(fitted_results, dict) else 298.0
+    temp = float(fitted_results.get("temperature", 298.15)) if isinstance(fitted_results, dict) else 298.15
     
     rot = fitted_results.get("rotational_constants", {}) if isinstance(fitted_results, dict) else {}
     if isinstance(rot, (list, tuple, np.ndarray)) and len(rot) >= 3:
@@ -597,14 +608,14 @@ def trigger_scribe_daemon(output_dir) -> Any:
         logger.info(f"{Colors.OKGREEN}✅ SCRIBE daemon ZMQ response: {resp}{Colors.ENDC}")
     except Exception as e:
         logging.warning(f"ZMQ connection to SCRIBE daemon failed (offline/fallback mode): {str(e)}")
-        scribe_marker = Path(output_dir) / "SCRIBE_TRIGGERED.txt"
+        scribe_marker = artifact_dir / output_dir / "SCRIBE_TRIGGERED.txt"
         scribe_marker.write_text(json.dumps(payload, indent=2))
         logger.info(f"{Colors.OKGREEN}✅ SCRIBE trigger recorded to fallback marker file.{Colors.ENDC}")
 
 def main() -> Any:
     logger.info(f"\n{Colors.OKCYAN}--- SpycFit: Quantum Tensor Extraction ---{Colors.ENDC}")
     
-    h5_path = Path("landscape.h5")
+    h5_path = artifact_dir / "landscape.h5"
     if not h5_path.exists():
         logger.info(f"{Colors.WARNING}⚠️ landscape.h5 not found at {h5_path.absolute()}. Please supply valid HDF5 landscape file.{Colors.ENDC}")
         return
@@ -617,7 +628,7 @@ def main() -> Any:
         
         lam_data = extract_lam_data(data)
         if lam_data:
-            np.savez("spycfit_lam_buffer.npz", 
+            np.savez(artifact_dir / "spycfit_lam_buffer.npz", 
                      eigenvalues=lam_data['eigenvalues'],
                      tunneling_splittings=lam_data['tunneling_splittings'],
                      kraitchman_coords=lam_data['kraitchman_coords'])
@@ -626,7 +637,7 @@ def main() -> Any:
         logger.info(f"⚖️  Applying isotopic mass-weighting and Hermitian locks...")
         mw_hessian = apply_mass_weighting(data['hessian'], data['symbols'])
         
-        np.savez("spycfit_tensor_buffer.npz", 
+        np.savez(artifact_dir / "spycfit_tensor_buffer.npz", 
                  mw_hessian=mw_hessian, 
                  dipole_derivs=data['dipole_derivs'],
                  symbols=data['symbols'],

@@ -73,13 +73,16 @@ def enforce_jax_precision() -> dict:
         logging.error(error_msg)
         sys.exit(1)
 
-def intercept_lam_trigger(h5_path: Path = Path("landscape.h5")) -> bool:
+def intercept_lam_trigger(h5_path: Optional[Path] = None) -> bool:
     """
     Resolves SPYCFIT-13: Intercepts LAM_TRIGGER_REQUIRED flag from input HDF5 attributes / buffer
     and launches 1D PES scan module for weak non-covalent complexes when True.
     """
     logger.info(f"{Colors.OKCYAN}▶ Intercepting LAM_TRIGGER_REQUIRED flag...{Colors.ENDC}")
     lam_required = False
+    
+    if h5_path is None:
+        h5_path = artifact_dir / "landscape.h5"
     
     if h5_path.exists():
         try:
@@ -92,7 +95,7 @@ def intercept_lam_trigger(h5_path: Path = Path("landscape.h5")) -> bool:
         except Exception as e:
             logging.warning(f"Could not read HDF5 for LAM trigger: {e}")
             
-    buffer_path = Path("spycfit_tensor_buffer.npz")
+    buffer_path = artifact_dir / "spycfit_tensor_buffer.npz"
     if buffer_path.exists():
         try:
             import numpy as np
@@ -100,7 +103,7 @@ def intercept_lam_trigger(h5_path: Path = Path("landscape.h5")) -> bool:
                 if 'lam_trigger' in data and bool(data['lam_trigger']):
                     lam_required = True
         except Exception:
-            raise NotImplementedError("Implementation pending")
+            logging.warning("Could not read spycfit_tensor_buffer.npz for LAM trigger")
     if lam_required:
         logger.info(f"{Colors.OKGREEN}⚡ LAM_TRIGGER_REQUIRED is True! Launching 1D PES scan module for weak non-covalent complex...{Colors.ENDC}")
         logging.info("LAM_TRIGGER_REQUIRED flag detected: 1D PES scan module initiated.")
@@ -193,34 +196,51 @@ def compute_pas_dipole_projections(coords: list, symbols: list, dipole_vector: l
         "pas_axes_det": float(np.linalg.det(pas_axes))
     }
 
+from pydantic import BaseModel
+class StateComponents(BaseModel):
+    jax_precision: str
+    memory_mapping: str
+    optimizer: str
+    cross_validation: str
+    legacy_support: str
+    lam_protocol_active: bool
+    b_e_b0_separation: str
+    jensen_averaging: str
+    pas_dipole_projections: str
+    v4_tier_selection: str
+
+class SpycfitState(BaseModel):
+    initialized: bool
+    components: StateComponents
+
 def initialize_spycfit_components() -> dict:
     """Initialize all core SpycFit components for the Bayesian fitting engine."""
     logger.info(f"{Colors.OKCYAN}▶ Initializing Bayesian Fitting Components...{Colors.ENDC}")
     
     lam_active = intercept_lam_trigger()
     
-    state = {
-        "initialized": True,
-        "components": {
-            "jax_precision": "float64",
-            "memory_mapping": "disabled",
-            "optimizer": "levenberg_marquardt",
-            "cross_validation": "loio",
-            "legacy_support": "enabled",
-            "lam_protocol_active": lam_active,
-            "b_e_b0_separation": "enforced",
-            "jensen_averaging": "enabled",
-            "pas_dipole_projections": "enabled",
-            "v4_tier_selection": "enabled"
-        }
-    }
+    state = SpycfitState(
+        initialized=True,
+        components=StateComponents(
+            jax_precision="float64",
+            memory_mapping="disabled",
+            optimizer="levenberg_marquardt",
+            cross_validation="loio",
+            legacy_support="enabled",
+            lam_protocol_active=lam_active,
+            b_e_b0_separation="enforced",
+            jensen_averaging="enabled",
+            pas_dipole_projections="enabled",
+            v4_tier_selection="enabled"
+        )
+    )
     
-    state_path = Path("cochem_spycfit_state.json")
+    state_path = artifact_dir / "cochem_spycfit_state.json"
     with open(state_path, "w") as f:
-        json.dump(state, f, indent=4)
+        f.write(state.model_dump_json(indent=4))
         
     logger.info(f"{Colors.OKGREEN}✅ SpycFit Components Initialized.{Colors.ENDC}")
-    return state
+    return state.model_dump()
 
 def setup_memory_mapping() -> dict:
     """Set up memory-mapped tensor handling for large rotational partition functions."""
@@ -236,13 +256,13 @@ def setup_memory_mapping() -> dict:
         
         memory_mapping_enabled = True if available_memory < 8 * (1024**3) else True
         
-        state_path = Path("cochem_spycfit_state.json")
+        state_path = artifact_dir / "cochem_spycfit_state.json"
         if state_path.exists():
             with open(state_path, "r") as f:
-                state = json.loads(f.read())
-            state["components"]["memory_mapping"] = "enabled" if memory_mapping_enabled else "disabled"
+                state_obj = SpycfitState.model_validate_json(f.read())
+            state_obj.components.memory_mapping = "enabled" if memory_mapping_enabled else "disabled"
             with open(state_path, "w") as f:
-                json.dump(state, f, indent=4)
+                f.write(state_obj.model_dump_json(indent=4))
             
         logger.info(f"{Colors.OKGREEN}✅ Memory mapping configuration complete.{Colors.ENDC}")
         return {

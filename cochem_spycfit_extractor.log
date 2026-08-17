@@ -10,3 +10,4 @@ ERROR:__main__:ORCA execution failed: [file orca_main/run.cpp, line 393]: Cannot
 
 
 INFO:__main__:Master Execution Result: {'lam_active': True, 'error': 'execution failed with code 2', 'status': 'failed'}
+WARNING:root:No dipole derivatives found for isomer_001. IR intensities will be zero.
