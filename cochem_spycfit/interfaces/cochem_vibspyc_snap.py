@@ -3,11 +3,13 @@
 Phase 4 / Task 10 Implementation:
 - Authoritative fit provenance payload modeling and validation.
 - Iterative cryptographic dataset hashing (SHA-256).
+- Provenance lock generation for physical HDF5/binary datasets.
 - Publication-ready AASTeX and LaTeX longtable rendering with siunitx and booktabs.
 - Dynamic CrossRef JSON parsing to clean, deduplicated BibTeX entries.
 - Active model to standard DOI resolution.
 - Adaptive storage compression strategy evaluation (ZIP vs ZSTD).
 - Archive creation (.zip and .tar.zst) and cross-platform read-only sealing.
+- Dynamic IUPAC atomic and isotopic weight resolution via Mendeleev.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 import jinja2
+import mendeleev
 import platformdirs
 import zstandard
 from pydantic import BaseModel, Field, field_validator
@@ -81,6 +84,59 @@ _MODEL_DOI_MAP: dict[str, str] = {
     "parsl": "10.1145/3307681.3325400",
     "rdkit": "10.5281/zenodo.10549474",
 }
+
+_LATEX_PARAMETER_NAME_MAP: dict[str, str] = {
+    "A": "A",
+    "B": "B",
+    "C": "C",
+    "D_J": r"\Delta_J",
+    "D_JK": r"\Delta_{JK}",
+    "D_K": r"\Delta_K",
+    "d_1": r"\delta_1",
+    "d_2": r"\delta_2",
+    "d_J": r"\delta_J",
+    "d_K": r"\delta_K",
+    "H_J": r"\Phi_J",
+    "H_JK": r"\Phi_{JK}",
+    "H_KJ": r"\Phi_{KJ}",
+    "H_K": r"\Phi_K",
+    "h_1": r"\phi_1",
+    "h_2": r"\phi_2",
+    "h_3": r"\phi_3",
+    "V_3": "V_3",
+    "V_6": "V_6",
+    "F": "F",
+    "rho": r"\rho",
+    "beta": r"\beta",
+    "mu_a": r"\mu_a",
+    "mu_b": r"\mu_b",
+    "mu_c": r"\mu_c",
+}
+
+
+def _format_default_latex_symbol(name: str) -> str:
+    """Provides a canonical LaTeX mathematical representation for spectroscopic parameters."""
+    if name in _LATEX_PARAMETER_NAME_MAP:
+        return _LATEX_PARAMETER_NAME_MAP[name]
+    if "_" in name:
+        base, sub = name.split("_", 1)
+        return f"{base}_{{{sub}}}"
+    return name
+
+
+def get_element_atomic_weight(symbol: str) -> float:
+    """Retrieves authoritative dynamic IUPAC standard atomic weight via Mendeleev."""
+    elem = mendeleev.element(symbol)
+    return float(elem.atomic_weight)
+
+
+def get_isotope_mass(symbol: str, mass_number: int) -> float:
+    """Retrieves authoritative dynamic isotopic mass in atomic mass units via Mendeleev."""
+    elem = mendeleev.element(symbol)
+    for iso in elem.isotopes:
+        if iso.mass_number == mass_number:
+            return float(iso.mass)
+    raise ValueError(f"Isotope {symbol}-{mass_number} not found in Mendeleev database")
 
 
 def get_spycfit_processed_dir() -> Path:
@@ -209,6 +265,136 @@ def hash_dataset_iteratively(file_path: str | Path, chunk_size: int = 65536) -> 
     return hasher.hexdigest()
 
 
+def generate_provenance_lock(
+    h5_path: str | Path,
+    metrics: dict[str, Any] | FitProvenancePayload,
+    output_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Generates a cryptographic Provenance Lock (fit_provenance.json) for a fit session.
+
+    Calculates the SHA-256 digest of the dataset file (such as landscape.h5), extracts
+    or validates all critical error and sensitivity metrics, serializes to physical disk,
+    and returns the provenance metadata dictionary.
+
+    Parameters:
+        h5_path: Path to the HDF5 or binary dataset file to cryptographically seal.
+        metrics: Dictionary or FitProvenancePayload providing error metrics, parameter audits,
+                 active models, and session metadata.
+        output_path: Optional custom destination path for the JSON provenance file. Defaults
+                     to `fit_provenance.json` in the same directory as `h5_path`.
+
+    Returns:
+        Dictionary containing the full validated FitProvenancePayload metadata.
+    """
+    target_h5 = Path(h5_path).expanduser().resolve()
+    h5_hash = hash_dataset_iteratively(target_h5)
+    file_key = target_h5.name
+
+    if isinstance(metrics, FitProvenancePayload):
+        payload_data = metrics.model_dump()
+        payload_data["dataset_hashes"][file_key] = h5_hash
+        payload = FitProvenancePayload.model_validate(payload_data)
+    elif isinstance(metrics, dict):
+        raw_timestamp = metrics.get("timestamp")
+        if raw_timestamp is not None:
+            iso_timestamp = str(raw_timestamp)
+        else:
+            iso_timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        session_id = str(
+            metrics.get(
+                "session_id",
+                f"SESSION_{target_h5.stem}_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+            )
+        )
+
+        hashes_dict = dict(metrics.get("dataset_hashes", {}))
+        hashes_dict[file_key] = h5_hash
+
+        chi_squared = float(
+            metrics.get(
+                "chi_squared",
+                metrics.get("chi2", metrics.get("chi_sq", 1.0)),
+            )
+        )
+        rms_mhz = float(metrics.get("rms_mhz", metrics.get("rms", 0.0)))
+
+        raw_rms_cm_inv = metrics.get("rms_cm_inv")
+        if raw_rms_cm_inv is not None:
+            rms_cm_inv = float(raw_rms_cm_inv)
+        else:
+            rms_cm_inv = rms_mhz / 29979.2458 if rms_mhz > 0.0 else 0.0
+
+        raw_cond = metrics.get(
+            "jacobian_condition_number", metrics.get("condition_number", 1.0)
+        )
+        jacobian_condition_number = float(raw_cond)
+
+        raw_huber = metrics.get("huber_loss_delta")
+        huber_loss_delta = float(raw_huber) if raw_huber is not None else None
+
+        sobol_audit: dict[str, bool] = {}
+        if "sobol_parameter_audit" in metrics and isinstance(
+            metrics["sobol_parameter_audit"], dict
+        ):
+            sobol_audit = {
+                str(k): bool(v) for k, v in metrics["sobol_parameter_audit"].items()
+            }
+        elif "sobol_audit" in metrics and isinstance(metrics["sobol_audit"], dict):
+            sobol_audit = {
+                str(k): bool(v) for k, v in metrics["sobol_audit"].items()
+            }
+        else:
+            for param_name in metrics.get("active_parameters", []):
+                sobol_audit[str(param_name)] = True
+            for param_name in metrics.get("frozen_parameters", []):
+                sobol_audit[str(param_name)] = False
+
+        raw_history = metrics.get(
+            "semantic_git_history",
+            metrics.get("git_history", metrics.get("history", [])),
+        )
+        semantic_git_history = [str(item) for item in raw_history]
+
+        raw_models = metrics.get("active_models", metrics.get("models", []))
+        active_models = [str(m) for m in raw_models]
+
+        additional_metadata = metrics.get(
+            "additional_metadata", metrics.get("metadata")
+        )
+        if additional_metadata is not None and not isinstance(
+            additional_metadata, dict
+        ):
+            additional_metadata = {"raw": str(additional_metadata)}
+
+        payload = FitProvenancePayload(
+            session_id=session_id,
+            timestamp=iso_timestamp,
+            dataset_hashes=hashes_dict,
+            chi_squared=chi_squared,
+            huber_loss_delta=huber_loss_delta,
+            rms_mhz=rms_mhz,
+            rms_cm_inv=rms_cm_inv,
+            jacobian_condition_number=jacobian_condition_number,
+            sobol_parameter_audit=sobol_audit,
+            semantic_git_history=semantic_git_history,
+            active_models=active_models,
+            additional_metadata=additional_metadata,
+        )
+    else:
+        raise TypeError(
+            f"Expected metrics to be dict or FitProvenancePayload, received {type(metrics).__name__}"
+        )
+
+    if output_path is not None:
+        target_out = Path(output_path).expanduser().resolve()
+    else:
+        target_out = target_h5.parent / "fit_provenance.json"
+
+    payload.to_json_file(target_out)
+    return payload.model_dump()
+
+
 _AASTEX_PARAMETERS_TEMPLATE = """\\begin{table}[htbp]
 \\centering
 \\caption{Optimized Spectroscopic Parameters for {{ title_prefix }}}
@@ -288,7 +474,7 @@ def generate_aastex_longtables(
     processed_params: list[dict[str, Any]] = []
     for param in optimized_params:
         name = str(param.get("name", "Param"))
-        latex_name = str(param.get("latex_name", name))
+        latex_name = str(param.get("latex_name", _format_default_latex_symbol(name)))
         val = param.get("value", 0.0)
         formatted_val = (
             f"{float(val):.6f}" if isinstance(val, (int, float)) else str(val)
@@ -326,7 +512,6 @@ def generate_aastex_longtables(
             }
         )
 
-    # Sort transitions descending by intensity or Einstein A and truncate to top 200
     sorted_transitions = sorted(
         transitions,
         key=lambda item: float(
@@ -384,6 +569,88 @@ def generate_aastex_longtables(
     }
 
 
+def generate_aastex_longtable(
+    constants_dict: dict[str, Any] | Sequence[dict[str, Any]],
+    title_prefix: str = "CoChem-SpycFit",
+    transitions: Sequence[dict[str, Any]] | None = None,
+) -> str:
+    """Generates peer-review-ready LaTeX tables for molecular constants and assigned transitions.
+
+    Accepts either a dictionary mapping parameter names to floats/tuples/dicts or a sequence
+    of parameter dictionaries. Formats values with siunitx and booktabs conventions.
+
+    Parameters:
+        constants_dict: Mapping of parameter names to values/sub-dicts or list of parameter dicts.
+        title_prefix: Title caption string for LaTeX tables.
+        transitions: Optional sequence of assigned rotational-vibrational transitions.
+
+    Returns:
+        Formatted LaTeX string (combined document if transitions provided, table otherwise).
+    """
+    normalized_params: list[dict[str, Any]] = []
+
+    if isinstance(constants_dict, Sequence) and not isinstance(
+        constants_dict, (str, bytes)
+    ):
+        for item in constants_dict:
+            if isinstance(item, dict):
+                p_copy = dict(item)
+                if "name" in p_copy and "latex_name" not in p_copy:
+                    p_copy["latex_name"] = _format_default_latex_symbol(
+                        str(p_copy["name"])
+                    )
+                normalized_params.append(p_copy)
+    elif isinstance(constants_dict, dict):
+        for key, val in constants_dict.items():
+            param_name = str(key)
+            latex_name = _format_default_latex_symbol(param_name)
+            if isinstance(val, dict):
+                p_entry = dict(val)
+                p_entry.setdefault("name", param_name)
+                p_entry.setdefault("latex_name", latex_name)
+                normalized_params.append(p_entry)
+            elif isinstance(val, (tuple, list)):
+                v_num = val[0] if len(val) > 0 else 0.0
+                unc_num = val[1] if len(val) > 1 else None
+                is_froz = val[2] if len(val) > 2 else (unc_num is None)
+                normalized_params.append(
+                    {
+                        "name": param_name,
+                        "latex_name": latex_name,
+                        "value": v_num,
+                        "uncertainty": unc_num,
+                        "is_frozen": is_froz,
+                        "description": f"Spectroscopic parameter {param_name}",
+                    }
+                )
+            else:
+                normalized_params.append(
+                    {
+                        "name": param_name,
+                        "latex_name": latex_name,
+                        "value": val,
+                        "uncertainty": None,
+                        "is_frozen": False,
+                        "description": f"Spectroscopic parameter {param_name}",
+                    }
+                )
+    else:
+        raise TypeError(
+            f"Expected constants_dict to be dict or Sequence, received {type(constants_dict).__name__}"
+        )
+
+    trans_list = list(transitions or [])
+    rendered_dict = generate_aastex_longtables(
+        optimized_params=normalized_params,
+        transitions=trans_list,
+        title_prefix=title_prefix,
+    )
+
+    if trans_list:
+        return rendered_dict["combined_document"]
+    return rendered_dict["parameters_table"]
+
+
 def get_required_dois(active_models: Sequence[str]) -> list[str]:
     """Resolves standard DOIs for all specified active physical models and quantum engines.
 
@@ -409,7 +676,6 @@ def format_citations_to_bib(crossref_json_responses: Sequence[dict[str, Any]]) -
     seen_keys: set[str] = set()
 
     for record in crossref_json_responses:
-        # CrossRef response might wrap work in a 'message' field
         work = record.get("message", record)
 
         doi_raw = work.get("DOI") or work.get("doi")
@@ -420,14 +686,12 @@ def format_citations_to_bib(crossref_json_responses: Sequence[dict[str, Any]]) -
             continue
         seen_dois.add(doi_clean.lower())
 
-        # Title
         title_val = work.get("title", "")
         if isinstance(title_val, list) and title_val:
             title = str(title_val[0]).strip()
         else:
             title = str(title_val).strip()
 
-        # Authors
         authors_raw = work.get("author", [])
         author_names: list[str] = []
         first_author_family = "Author"
@@ -454,7 +718,6 @@ def format_citations_to_bib(crossref_json_responses: Sequence[dict[str, Any]]) -
             else "CoChem Spectroscopy Consortium"
         )
 
-        # Journal / Container Title
         journal_raw = (
             work.get("container-title")
             or work.get("container_title")
@@ -465,12 +728,10 @@ def format_citations_to_bib(crossref_json_responses: Sequence[dict[str, Any]]) -
         else:
             journal = str(journal_raw).strip()
 
-        # Volume, Issue, Pages
         volume = str(work.get("volume", "")).strip()
         number = str(work.get("issue", work.get("number", ""))).strip()
         pages = str(work.get("page", work.get("pages", ""))).strip()
 
-        # Year
         year_str = "2026"
         issued = (
             work.get("issued")
@@ -484,7 +745,6 @@ def format_citations_to_bib(crossref_json_responses: Sequence[dict[str, Any]]) -
         elif "year" in work:
             year_str = str(work["year"])
 
-        # Entry Key Generation
         first_title_word = "".join(
             filter(str.isalnum, (title.split()[0] if title else "Work"))
         )
@@ -598,7 +858,6 @@ def seal_artifact_read_only(file_path: str | Path) -> bool:
     readonly_mode = current_mode & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
     os.chmod(target, readonly_mode)
 
-    # Windows read-only attribute fallback
     if os.name == "nt":
         os.chmod(target, stat.S_IREAD)
 
@@ -620,7 +879,6 @@ def export_spycfit_snapshot(
     dest_dir = resolve_processed_workspace_dir(output_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy files from source_dir into dest_dir if source_dir is separate
     src_path = Path(source_dir).expanduser().resolve()
     if src_path.is_dir() and src_path != dest_dir:
         for item in src_path.rglob("*"):
@@ -631,11 +889,9 @@ def export_spycfit_snapshot(
                 if not dest_file.exists():
                     shutil.copy2(item, dest_file)
 
-    # 1. Write Provenance JSON
     prov_file = dest_dir / "fit_provenance.json"
     payload.to_json_file(prov_file)
 
-    # 2. Render LaTeX/AASTeX Tables
     params_to_render = list(optimized_params or [])
     trans_to_render = list(transitions or [])
     tables = generate_aastex_longtables(
@@ -651,7 +907,6 @@ def export_spycfit_snapshot(
     doc_tex_path = dest_dir / "spectroscopic_document.tex"
     doc_tex_path.write_text(tables["combined_document"], encoding="utf-8")
 
-    # 3. Generate BibTeX Citations
     models_to_cite = list(active_models or payload.active_models)
     dois = get_required_dois(models_to_cite)
 
@@ -663,11 +918,9 @@ def export_spycfit_snapshot(
     bib_path = dest_dir / "cochem_citations.bib"
     bib_path.write_text(bibtex_content, encoding="utf-8")
 
-    # 4. Package Artifacts
     archive_base = dest_dir.parent / f"{dest_dir.name}_archive"
     archive_path = package_fit_artifacts(dest_dir, archive_base, strategy=strategy)
 
-    # 5. Seal Artifacts Read-Only
     for item in dest_dir.rglob("*"):
         if item.is_file():
             seal_artifact_read_only(item)
@@ -691,7 +944,11 @@ __all__ = [
     "evaluate_compression_strategy",
     "export_spycfit_snapshot",
     "format_citations_to_bib",
+    "generate_aastex_longtable",
     "generate_aastex_longtables",
+    "generate_provenance_lock",
+    "get_element_atomic_weight",
+    "get_isotope_mass",
     "get_required_dois",
     "get_spycfit_processed_dir",
     "hash_dataset_iteratively",

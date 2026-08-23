@@ -1,0 +1,16 @@
+jax
+jaxlib
+cupy-cuda12x
+h5py
+zarr
+pyarrow
+plotly
+ipywidgets
+mendeleev
+platformdirs
+filelock
+pyzmq
+
+[dev]
+pytest
+flake8

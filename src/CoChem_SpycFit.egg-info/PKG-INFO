@@ -1,0 +1,22 @@
+Metadata-Version: 2.4
+Name: CoChem-SpycFit
+Version: 0.1.0
+Summary: Tripartite Workspace Air-Gap enabled computational spectroscopy fitter.
+Author: CoChem Swarm
+License-File: LICENSE
+Requires-Dist: jax
+Requires-Dist: jaxlib
+Requires-Dist: cupy-cuda12x
+Requires-Dist: h5py
+Requires-Dist: zarr
+Requires-Dist: pyarrow
+Requires-Dist: plotly
+Requires-Dist: ipywidgets
+Requires-Dist: mendeleev
+Requires-Dist: platformdirs
+Requires-Dist: filelock
+Requires-Dist: pyzmq
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: flake8; extra == "dev"
+Dynamic: license-file

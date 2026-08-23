@@ -3,13 +3,16 @@
 Verifies:
 - FitProvenancePayload schema validation, field validators, serialization & deserialization.
 - hash_dataset_iteratively with physical disk operations and chunked reading.
-- generate_aastex_longtables with molecular rotational parameters, transitions, siunitx formatting,
-  frozen parameter overrides, and top 200 truncation.
+- generate_provenance_lock with physical HDF5 and binary datasets, metadata extraction,
+  and serialization to disk.
+- generate_aastex_longtable and generate_aastex_longtables with molecular rotational parameters,
+  transitions, siunitx formatting, frozen parameter overrides, and top 200 truncation.
 - get_required_dois and format_citations_to_bib with structured CrossRef metadata records.
 - evaluate_compression_strategy sizing thresholds.
 - package_fit_artifacts archiving (.zip and .tar.zst) and seal_artifact_read_only permissions.
 - export_spycfit_snapshot end-to-end pipeline execution and artifact sealing.
 - Workspace directory resolution with environment variable and platformdirs fallback.
+- Dynamic IUPAC atomic weight and isotopic mass resolution via Mendeleev.
 """
 
 from __future__ import annotations
@@ -22,6 +25,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+import h5py
+import numpy as np
 import pytest
 import zstandard
 from pydantic import ValidationError
@@ -31,7 +36,11 @@ from cochem_spycfit.interfaces.cochem_vibspyc_snap import (
     evaluate_compression_strategy,
     export_spycfit_snapshot,
     format_citations_to_bib,
+    generate_aastex_longtable,
     generate_aastex_longtables,
+    generate_provenance_lock,
+    get_element_atomic_weight,
+    get_isotope_mass,
     get_required_dois,
     get_spycfit_processed_dir,
     hash_dataset_iteratively,
@@ -331,9 +340,8 @@ def test_hash_dataset_iteratively_small_file(clean_workspace: Path):
 def test_hash_dataset_iteratively_large_file(clean_workspace: Path):
     """Verifies iterative hashing across multi-chunk files exceeding chunk boundaries."""
     data_file = clean_workspace / "large_spectrum.bin"
-    # Generate 512 KiB of structured binary data
     payload_chunk = b"RotationalTransitionRecord_1234567890_abcdefghij_" * 32
-    total_chunks = 320  # ~512 KiB
+    total_chunks = 320
     with open(data_file, "wb") as f:
         f.writelines(payload_chunk for _ in range(total_chunks))
 
@@ -344,14 +352,155 @@ def test_hash_dataset_iteratively_large_file(clean_workspace: Path):
 
 def test_hash_dataset_iteratively_missing_file(clean_workspace: Path):
     """Verifies FileNotFoundError on non-existent dataset path."""
-    missing_file = clean_workspace / "ghost_file.bin"
+    missing_file = clean_workspace / "non_existent_dataset.bin"
     with pytest.raises(FileNotFoundError):
         hash_dataset_iteratively(missing_file)
 
 
 # =====================================================================
-# 3. AASTeX / LaTeX Table Generation Tests
+# 3. Provenance Lock Generation Tests (Physical HDF5 / Binary)
 # =====================================================================
+
+
+def test_generate_provenance_lock_hdf5(clean_workspace: Path):
+    """Verifies cryptographic provenance lock creation on a physical HDF5 landscape file."""
+    h5_file = clean_workspace / "landscape.h5"
+    with h5py.File(h5_file, "w") as f:
+        grp = f.create_group("spectroscopy")
+        grp.create_dataset("frequencies", data=np.array([12450.32, 12480.11, 12510.95]))
+        grp.create_dataset("intensities", data=np.array([0.85, 0.92, 0.45]))
+        grp.attrs["molecule"] = "Methanol-CH3OH"
+        grp.attrs["fit_converged"] = True
+
+    metrics = {
+        "session_id": "SESSION_H5_LOCK_TEST_01",
+        "timestamp": "2026-08-23T15:00:00+00:00",
+        "chi_squared": 1.025,
+        "rms_mhz": 0.0142,
+        "jacobian_condition_number": 88.5,
+        "active_parameters": ["A", "B", "C", "D_J", "D_JK"],
+        "frozen_parameters": ["D_K", "V_3"],
+        "semantic_git_history": ["commit 1: Fitted ground state"],
+        "active_models": ["watson_a", "spcat"],
+        "metadata": {"spectrometer": "CP-FTMW"},
+    }
+
+    result = generate_provenance_lock(h5_file, metrics)
+
+    assert result["session_id"] == "SESSION_H5_LOCK_TEST_01"
+    assert result["chi_squared"] == 1.025
+    assert result["rms_mhz"] == 0.0142
+    assert "landscape.h5" in result["dataset_hashes"]
+    expected_hash = hash_dataset_iteratively(h5_file)
+    assert result["dataset_hashes"]["landscape.h5"] == expected_hash
+    assert result["sobol_parameter_audit"]["A"] is True
+    assert result["sobol_parameter_audit"]["D_K"] is False
+
+    default_json = clean_workspace / "fit_provenance.json"
+    assert default_json.exists()
+    loaded_payload = FitProvenancePayload.from_json_file(default_json)
+    assert loaded_payload.session_id == "SESSION_H5_LOCK_TEST_01"
+    assert loaded_payload.dataset_hashes["landscape.h5"] == expected_hash
+
+
+def test_generate_provenance_lock_with_payload_object(
+    clean_workspace: Path, authoritative_payload: FitProvenancePayload
+):
+    """Verifies generate_provenance_lock when supplied with a pre-built FitProvenancePayload."""
+    h5_file = clean_workspace / "state.h5"
+    h5_file.write_bytes(b"HDF5_STRUCTURED_BINARY_STREAM_SIMULATION")
+
+    custom_out = clean_workspace / "custom_dir" / "custom_provenance.json"
+    result = generate_provenance_lock(
+        h5_path=h5_file,
+        metrics=authoritative_payload,
+        output_path=custom_out,
+    )
+
+    assert custom_out.exists()
+    assert result["session_id"] == authoritative_payload.session_id
+    assert "state.h5" in result["dataset_hashes"]
+    assert result["dataset_hashes"]["state.h5"] == hash_dataset_iteratively(h5_file)
+
+
+def test_generate_provenance_lock_missing_h5_file(clean_workspace: Path):
+    """Verifies FileNotFoundError when dataset file is missing."""
+    missing_h5 = clean_workspace / "missing_landscape.h5"
+    with pytest.raises(FileNotFoundError):
+        generate_provenance_lock(missing_h5, {"chi_squared": 1.0, "rms_mhz": 0.01})
+
+
+def test_generate_provenance_lock_invalid_metrics_type(clean_workspace: Path):
+    """Verifies TypeError when invalid metrics argument is passed."""
+    data_file = clean_workspace / "dataset.bin"
+    data_file.write_bytes(b"DATA")
+    with pytest.raises(TypeError, match="Expected metrics to be dict or FitProvenancePayload"):
+        generate_provenance_lock(data_file, "invalid_string_metrics")  # type: ignore[arg-type]
+
+
+# =====================================================================
+# 4. AASTeX / LaTeX Table Generation Tests
+# =====================================================================
+
+
+def test_generate_aastex_longtable_with_dict():
+    """Verifies generate_aastex_longtable with simple dictionary input."""
+    constants = {
+        "A": 127634.508,
+        "B": 24684.382,
+        "C": 23758.129,
+        "D_J": 0.04021,
+    }
+    rendered = generate_aastex_longtable(constants, title_prefix="CH3OH Simple Fit")
+
+    assert "\\begin{table}[htbp]" in rendered
+    assert "\\begin{tabular}{l c S[table-format=6.4] l l}" in rendered
+    assert "CH3OH Simple Fit" in rendered
+    assert "127634.508000" in rendered
+    assert "24684.382000" in rendered
+    assert "\\Delta_J" in rendered
+    assert "\\bottomrule" in rendered
+
+
+def test_generate_aastex_longtable_with_tuples_and_frozen():
+    """Verifies generate_aastex_longtable with tuple inputs and frozen status."""
+    constants = {
+        "A": (127634.508, 0.045),
+        "B": (24684.382, 0.012),
+        "D_K": (0.892, None, True),
+        "V_3": {"value": 373.8, "status": "set", "is_frozen": True},
+    }
+    rendered = generate_aastex_longtable(constants, title_prefix="CH3OH Tuple Test")
+
+    assert "0.045000" in rendered
+    assert "0.012000" in rendered
+    assert "Fixed" in rendered
+    assert "Set" in rendered
+    assert "V_3" in rendered
+
+
+def test_generate_aastex_longtable_with_transitions(
+    molecular_parameters: list[dict[str, Any]],
+    molecular_transitions: list[dict[str, Any]],
+):
+    """Verifies generate_aastex_longtable with transitions producing full combined document."""
+    rendered = generate_aastex_longtable(
+        constants_dict=molecular_parameters,
+        title_prefix="Methanol Combined Publication",
+        transitions=molecular_transitions,
+    )
+
+    assert "\\documentclass[twocolumn]{aastex631}" in rendered
+    assert "\\begin{longtable}" in rendered
+    assert "\\begin{table}[htbp]" in rendered
+    assert "Methanol Combined Publication" in rendered
+    assert "\\end{document}" in rendered
+
+
+def test_generate_aastex_longtable_invalid_input_type():
+    """Verifies TypeError when constants_dict is not dict or Sequence."""
+    with pytest.raises(TypeError, match="Expected constants_dict to be dict or Sequence"):
+        generate_aastex_longtable(12345)
 
 
 def test_generate_aastex_longtables_structure(
@@ -373,7 +522,6 @@ def test_generate_aastex_longtables_structure(
     trans_tex = result["transitions_table"]
     doc_tex = result["combined_document"]
 
-    # Verify parameters table LaTeX environment & formatting
     assert "\\begin{table}[htbp]" in params_tex
     assert "\\begin{tabular}{l c S[table-format=6.4] l l}" in params_tex
     assert (
@@ -385,13 +533,11 @@ def test_generate_aastex_longtables_structure(
     assert "\\bottomrule" in params_tex
     assert "Rotational constant around principal a-axis" in params_tex
 
-    # Verify frozen parameter handling ("Fixed" and "Set")
     assert "127634.508000" in params_tex
     assert "0.045000" in params_tex
     assert "Fixed" in params_tex
     assert "Set" in params_tex
 
-    # Verify transitions table LaTeX environment & truncation
     assert "\\begin{longtable}{c c S[table-format=6.4]" in trans_tex
     assert (
         "\\caption{Observed and Calculated Transitions for Methanol CH3OH Ground State (Truncated to Top 200)}"
@@ -402,7 +548,6 @@ def test_generate_aastex_longtables_structure(
     assert "\\endfoot" in trans_tex
     assert "\\endlastfoot" in trans_tex
 
-    # Verify combined document structure
     assert "\\documentclass[twocolumn]{aastex631}" in doc_tex
     assert "\\usepackage{siunitx}" in doc_tex
     assert "\\usepackage{booktabs}" in doc_tex
@@ -417,7 +562,6 @@ def test_generate_aastex_longtables_truncation(
     molecular_parameters: list[dict[str, Any]],
 ):
     """Verifies that transitions list is truncated to the top 200 by intensity."""
-    # Create 300 transitions
     many_transitions = [
         {
             "upper_state": f"State_{i}_up",
@@ -439,15 +583,68 @@ def test_generate_aastex_longtables_truncation(
 
     trans_table = result["transitions_table"]
     assert "(Truncated to Top 200)" in trans_table
-    # The highest intensity transitions (300 down to 101) should be present
     assert "State_300_up" in trans_table
     assert "State_101_up" in trans_table
-    # The lowest intensity transition (1) should be excluded
     assert "State_1_up" not in trans_table
 
 
+def test_generate_aastex_longtables_unparseable_uncertainty():
+    """Verifies graceful handling of non-numeric string uncertainties."""
+    params = [
+        {
+            "name": "CustomParam",
+            "value": 12.3456,
+            "uncertainty": "est. 0.05",
+            "is_frozen": False,
+            "sobol_audit": True,
+            "status": "converged",
+        }
+    ]
+    res = generate_aastex_longtables(params, [])
+    assert "est. 0.05" in res["parameters_table"]
+
+
 # =====================================================================
-# 4. DOI Resolution and BibTeX Citation Tests
+# 5. Mendeleev Dynamic Atomic Mass Resolution Tests
+# =====================================================================
+
+
+def test_mendeleev_element_atomic_weights():
+    """Verifies dynamic IUPAC standard atomic weight retrieval via Mendeleev."""
+    carbon_weight = get_element_atomic_weight("C")
+    hydrogen_weight = get_element_atomic_weight("H")
+    oxygen_weight = get_element_atomic_weight("O")
+    nitrogen_weight = get_element_atomic_weight("N")
+
+    assert 12.010 <= carbon_weight <= 12.012
+    assert 1.007 <= hydrogen_weight <= 1.009
+    assert 15.998 <= oxygen_weight <= 16.000
+    assert 14.006 <= nitrogen_weight <= 14.008
+
+
+def test_mendeleev_isotope_masses():
+    """Verifies dynamic isotopic mass retrieval in atomic mass units via Mendeleev."""
+    c12_mass = get_isotope_mass("C", 12)
+    c13_mass = get_isotope_mass("C", 13)
+    h1_mass = get_isotope_mass("H", 1)
+    h2_mass = get_isotope_mass("H", 2)
+    o16_mass = get_isotope_mass("O", 16)
+
+    assert 11.999 <= c12_mass <= 12.001
+    assert 13.002 <= c13_mass <= 13.004
+    assert 1.007 <= h1_mass <= 1.009
+    assert 2.013 <= h2_mass <= 2.015
+    assert 15.994 <= o16_mass <= 15.996
+
+
+def test_mendeleev_missing_isotope_error():
+    """Verifies ValueError when requesting a non-existent isotope number."""
+    with pytest.raises(ValueError, match="not found in Mendeleev database"):
+        get_isotope_mass("C", 999)
+
+
+# =====================================================================
+# 6. DOI Resolution and BibTeX Citation Tests
 # =====================================================================
 
 
@@ -463,12 +660,11 @@ def test_get_required_dois():
     ]
     resolved = get_required_dois(active_models)
 
-    assert "10.1016/0022-2852(77)90184-7" in resolved  # Watson A
-    assert "10.1016/0022-2852(91)90393-O" in resolved  # SPCAT
-    assert "10.1063/5.0004608" in resolved  # ORCA v6
-    assert "10.5281/zenodo.4766323" in resolved  # JAX
-    assert "10.5281/zenodo.4006056" in resolved  # PyArrow
-    # Preserves uniqueness and excludes unknown models
+    assert "10.1016/0022-2852(77)90184-7" in resolved
+    assert "10.1016/0022-2852(91)90393-O" in resolved
+    assert "10.1063/5.0004608" in resolved
+    assert "10.5281/zenodo.4766323" in resolved
+    assert "10.5281/zenodo.4006056" in resolved
     assert len(resolved) == 5
 
 
@@ -501,7 +697,6 @@ def test_format_citations_to_bib():
                 "issued": {"date-parts": [[1991, 8, 1]]},
             }
         },
-        # Duplicate DOI entry should be ignored
         {
             "DOI": "10.1016/0022-2852(77)90184-7",
             "title": ["Duplicate Watson citation"],
@@ -527,24 +722,57 @@ def test_format_citations_to_bib():
     assert "doi = {10.1016/0022-2852(91)90393-O}" in bib_text
     assert "year = {1991}" in bib_text
 
-    # Verify duplicate was rejected
     assert bib_text.count("10.1016/0022-2852(77)90184-7") == 1
 
 
+def test_format_citations_to_bib_extended_schemas():
+    """Verifies parsing of various author schemas, missing DOIs, and year fallbacks."""
+    records = [
+        {"title": "Missing DOI Entry", "author": "No DOI Author"},
+        {
+            "DOI": "10.1000/str_author",
+            "title": ["Single String Author Paper"],
+            "author": ["Jane Doe"],
+            "year": "2024",
+        },
+        {
+            "DOI": "10.1000/family_only",
+            "title": "Family Only Paper",
+            "author": [{"family": "Heisenberg"}],
+            "year": 1927,
+        },
+        {
+            "DOI": "10.1000/heisenberg_2",
+            "title": "Family Only Paper 2",
+            "author": [{"family": "Heisenberg"}],
+            "year": 1927,
+        },
+    ]
+
+    bib_text = format_citations_to_bib(records)
+    assert "Missing DOI Entry" not in bib_text
+    assert "author = {Jane Doe}" in bib_text
+    assert "author = {Heisenberg}" in bib_text
+    assert "year = {2024}" in bib_text
+    assert "year = {1927}" in bib_text
+    assert "Heisenberg1927Family" in bib_text
+    assert "Heisenberg1927Family_1" in bib_text
+
+
 # =====================================================================
-# 5. Compression Strategy and Packaging Tests
+# 7. Compression Strategy and Packaging Tests
 # =====================================================================
 
 
 def test_evaluate_compression_strategy():
     """Verifies mathematical threshold evaluations for storage packaging."""
-    small_size = 50 * 1024 * 1024  # 50 MiB
+    small_size = 50 * 1024 * 1024
     assert evaluate_compression_strategy(small_size) == "ZIP"
 
-    exact_threshold = 104857600  # 100 MiB
+    exact_threshold = 104857600
     assert evaluate_compression_strategy(exact_threshold) == "ZSTD"
 
-    large_size = 500 * 1024 * 1024  # 500 MiB
+    large_size = 500 * 1024 * 1024
     assert evaluate_compression_strategy(large_size) == "ZSTD"
 
 
@@ -588,7 +816,6 @@ def test_package_fit_artifacts_zstd(clean_workspace: Path):
     assert archive_path.exists()
     assert archive_path.name == "export_archive_zstd.tar.zst"
 
-    # Decompress with zstandard and inspect tar stream
     compressed_bytes = archive_path.read_bytes()
     dctx = zstandard.ZstdDecompressor()
     decompressed_tar = dctx.decompress(compressed_bytes)
@@ -599,8 +826,39 @@ def test_package_fit_artifacts_zstd(clean_workspace: Path):
         assert "info.json" in names
 
 
+def test_package_fit_artifacts_edge_cases(clean_workspace: Path):
+    """Verifies automatic strategy evaluation, extension normalization, and error handling."""
+    src = clean_workspace / "edge_case_src"
+    src.mkdir(parents=True, exist_ok=True)
+    (src / "dataset.txt").write_text("Adversarial audit payload", encoding="utf-8")
+
+    auto_archive = package_fit_artifacts(src, clean_workspace / "auto_archive")
+    assert auto_archive.exists()
+    assert auto_archive.suffix == ".zip"
+
+    tar_zst_archive = package_fit_artifacts(
+        src, clean_workspace / "explicit.tar.zst", strategy="ZSTD"
+    )
+    assert tar_zst_archive.name == "explicit.tar.zst"
+    assert tar_zst_archive.exists()
+
+    tar_archive = package_fit_artifacts(
+        src, clean_workspace / "explicit.tar", strategy="ZSTD"
+    )
+    assert tar_archive.name == "explicit.tar.zst"
+    assert tar_archive.exists()
+
+    with pytest.raises(ValueError, match="Unsupported packaging strategy"):
+        package_fit_artifacts(src, clean_workspace / "bad_strat", strategy="SEVEN_ZIP")
+
+    with pytest.raises(NotADirectoryError):
+        package_fit_artifacts(
+            clean_workspace / "non_existent_folder", clean_workspace / "out"
+        )
+
+
 # =====================================================================
-# 6. Read-Only Sealing Tests
+# 8. Read-Only Sealing Tests
 # =====================================================================
 
 
@@ -611,11 +869,9 @@ def test_seal_artifact_read_only(clean_workspace: Path):
 
     assert seal_artifact_read_only(target_file) is True
 
-    # Check write bit removal
     mode = target_file.stat().st_mode
     assert not (mode & stat.S_IWUSR)
 
-    # Attempting write in append mode should fail on read-only files
     if os.name != "nt":
         with pytest.raises(PermissionError), open(target_file, "a") as f:
             f.write("mutation")
@@ -629,7 +885,7 @@ def test_seal_artifact_read_only_missing_file(clean_workspace: Path):
 
 
 # =====================================================================
-# 7. End-to-End export_spycfit_snapshot Orchestration Tests
+# 9. End-to-End export_spycfit_snapshot Orchestration Tests
 # =====================================================================
 
 
@@ -687,17 +943,15 @@ def test_export_spycfit_snapshot_pipeline(
     assert bib_path.exists()
     assert archive_path.exists()
 
-    # Verify provenance JSON on disk
     loaded_prov = FitProvenancePayload.from_json_file(prov_path)
     assert loaded_prov.session_id == authoritative_payload.session_id
 
-    # Verify read-only sealing
     assert not (prov_path.stat().st_mode & stat.S_IWUSR)
     assert not (archive_path.stat().st_mode & stat.S_IWUSR)
 
 
 # =====================================================================
-# 8. Workspace Directory Resolution Tests
+# 10. Workspace Directory Resolution Tests
 # =====================================================================
 
 
@@ -705,115 +959,15 @@ def test_resolve_processed_workspace_dir(
     monkeypatch: pytest.MonkeyPatch, clean_workspace: Path
 ):
     """Verifies directory resolution with custom paths, environment variable override, and defaults."""
-    # 1. Custom directory override
     custom_target = clean_workspace / "custom_processed"
     assert resolve_processed_workspace_dir(custom_target) == custom_target.resolve()
 
-    # 2. Environment variable override
     env_dir = clean_workspace / "env_state_dir"
     monkeypatch.setenv("COCHEM_STATE_DIR", str(env_dir))
     expected_env_target = env_dir / "SpycFit_Workspace" / "Processed"
     assert resolve_processed_workspace_dir() == expected_env_target.resolve()
 
-    # 3. Default fallback when env var is absent
     monkeypatch.delenv("COCHEM_STATE_DIR", raising=False)
     resolved_default = get_spycfit_processed_dir()
     assert "SpycFit_Workspace" in str(resolved_default)
     assert "Processed" in str(resolved_default)
-
-
-# =====================================================================
-# 9. Exhaustive Edge Cases and Error Branch Validation Tests
-# =====================================================================
-
-
-def test_package_fit_artifacts_edge_cases(clean_workspace: Path):
-    """Verifies automatic strategy evaluation, extension normalization, and error handling."""
-    src = clean_workspace / "edge_case_src"
-    src.mkdir(parents=True, exist_ok=True)
-    (src / "dataset.txt").write_text("Adversarial audit payload", encoding="utf-8")
-
-    # 1. Automatic strategy selection (strategy=None)
-    auto_archive = package_fit_artifacts(src, clean_workspace / "auto_archive")
-    assert auto_archive.exists()
-    assert auto_archive.suffix == ".zip"
-
-    # 2. Output path ending in .tar.zst
-    tar_zst_archive = package_fit_artifacts(
-        src, clean_workspace / "explicit.tar.zst", strategy="ZSTD"
-    )
-    assert tar_zst_archive.name == "explicit.tar.zst"
-    assert tar_zst_archive.exists()
-
-    # 3. Output path ending in .tar
-    tar_archive = package_fit_artifacts(
-        src, clean_workspace / "explicit.tar", strategy="ZSTD"
-    )
-    assert tar_archive.name == "explicit.tar.zst"
-    assert tar_archive.exists()
-
-    # 4. Invalid strategy error handling
-    with pytest.raises(ValueError, match="Unsupported packaging strategy"):
-        package_fit_artifacts(src, clean_workspace / "bad_strat", strategy="SEVEN_ZIP")
-
-    # 5. Non-existent source directory error handling
-    with pytest.raises(NotADirectoryError):
-        package_fit_artifacts(
-            clean_workspace / "non_existent_folder", clean_workspace / "out"
-        )
-
-
-def test_format_citations_to_bib_extended_schemas():
-    """Verifies parsing of various author schemas, missing DOIs, and year fallbacks."""
-    records = [
-        # Missing DOI -> skipped
-        {"title": "Missing DOI Entry", "author": "No DOI Author"},
-        # Author as single string
-        {
-            "DOI": "10.1000/str_author",
-            "title": ["Single String Author Paper"],
-            "author": ["Jane Doe"],
-            "year": "2024",
-        },
-        # Author dict with family name only
-        {
-            "DOI": "10.1000/family_only",
-            "title": "Family Only Paper",
-            "author": [{"family": "Heisenberg"}],
-            "year": 1927,
-        },
-        # Key collision test
-        {
-            "DOI": "10.1000/heisenberg_2",
-            "title": "Family Only Paper 2",
-            "author": [{"family": "Heisenberg"}],
-            "year": 1927,
-        },
-    ]
-
-    bib_text = format_citations_to_bib(records)
-    assert "Missing DOI Entry" not in bib_text
-    assert "author = {Jane Doe}" in bib_text
-    assert "author = {Heisenberg}" in bib_text
-    assert "year = {2024}" in bib_text
-    assert "year = {1927}" in bib_text
-    assert "Heisenberg1927Family" in bib_text
-    assert "Heisenberg1927Family_1" in bib_text
-
-
-def test_generate_aastex_longtables_unparseable_uncertainty():
-    """Verifies graceful handling of non-numeric string uncertainties."""
-    params = [
-        {
-            "name": "CustomParam",
-            "value": 12.3456,
-            "uncertainty": "est. 0.05",
-            "is_frozen": False,
-            "sobol_audit": True,
-            "status": "converged",
-        }
-    ]
-    res = generate_aastex_longtables(params, [])
-    assert "est. 0.05" in res["parameters_table"]
-
-
