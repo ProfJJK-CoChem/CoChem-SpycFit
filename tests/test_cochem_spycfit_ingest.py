@@ -473,3 +473,113 @@ def test_pydantic_schema_strictness_forbid_extra() -> None:
             label="B",
             extra_field=True,  # type: ignore
         )
+
+
+# =============================================================================
+# 10. ADVANCED ADVERSARIAL EDGE CASE TESTS
+# =============================================================================
+
+def test_parse_pickett_cdms_jpl_catalog_format(tmp_path: Path) -> None:
+    """Tests parsing realistic CDMS / JPL catalog lines with species tags and format codes."""
+    cat_content = """  22235.0800    0.0050   -3.2000  3     0.0000  3 -18001 1403  1  1  0  1  0  1
+ 183310.0800    0.0100   -1.5000  3   136.1600  3 -18001 1403  3  1  3  0  0  0  2  2  0  0  0  0
+ 556936.0020    0.0100   -0.5000  3     0.0000  3 -18001 1403  1  1  0  0  0  0  1  0  1  0  0  0
+"""
+    cat_file = tmp_path / "c018001.cat"
+    cat_file.write_text(cat_content, encoding="utf-8")
+
+    df, failed = parse_pickett_lin(cat_file)
+    assert len(df) == 3
+    assert len(failed) == 0
+    assert np.isclose(df.iloc[0]["Frequency_MHz"], 22235.08)
+    assert df.iloc[0]["J_upper"] == 1
+    assert df.iloc[0]["Ka_upper"] == 1
+    assert df.iloc[0]["Kc_upper"] == 0
+    assert df.iloc[0]["J_lower"] == 1
+    assert df.iloc[0]["Ka_lower"] == 0
+    assert df.iloc[0]["Kc_lower"] == 1
+    assert df.iloc[1]["J_upper"] == 3
+    assert df.iloc[1]["Ka_upper"] == 1
+    assert df.iloc[1]["Kc_upper"] == 3
+    assert df.iloc[1]["J_lower"] == 2
+    assert df.iloc[1]["Ka_lower"] == 2
+    assert df.iloc[1]["Kc_lower"] == 0
+
+
+def test_spectroscopy_transition_model_validator_physics() -> None:
+    """Verifies that SpectroscopyTransition model validator rejects unphysical quantum states."""
+    # 1. Valid instantiation auto-populates branch, parities, and dipole type
+    t = SpectroscopyTransition(
+        frequency_mhz=22235.08,
+        uncertainty_mhz=0.005,
+        intensity=1.0,
+        j_upper=1,
+        ka_upper=1,
+        kc_upper=0,
+        j_lower=1,
+        ka_lower=0,
+        kc_lower=1,
+    )
+    assert t.delta_j == 0
+    assert t.branch == BranchType.Q
+    assert t.upper_parity == Parity.OE
+    assert t.lower_parity == Parity.EO
+    assert t.dipole_type == DipoleType.B
+
+    # 2. Ka > J violates quantum bounds
+    with pytest.raises(ValidationError):
+        SpectroscopyTransition(
+            frequency_mhz=100.0,
+            uncertainty_mhz=0.01,
+            intensity=1.0,
+            j_upper=1,
+            ka_upper=2,
+            kc_upper=0,
+            j_lower=0,
+            ka_lower=0,
+            kc_lower=0,
+        )
+
+    # 3. Ka + Kc != J and != J+1 violates asymmetric top sum rule
+    with pytest.raises(ValidationError):
+        SpectroscopyTransition(
+            frequency_mhz=100.0,
+            uncertainty_mhz=0.01,
+            intensity=1.0,
+            j_upper=5,
+            ka_upper=4,
+            kc_upper=3,
+            j_lower=4,
+            ka_lower=2,
+            kc_lower=2,
+        )
+
+
+def test_missing_file_paths_raise_file_not_found() -> None:
+    """Verifies that non-existent paths raise FileNotFoundError rather than generic errors."""
+    with pytest.raises(FileNotFoundError):
+        parse_pickett_lin(Path("non_existent_file.lin"))
+
+    with pytest.raises(FileNotFoundError):
+        parse_pickett_par(Path("non_existent_file.par"))
+
+    with pytest.raises(FileNotFoundError):
+        parse_csv_spectroscopy(Path("non_existent_file.csv"))
+
+
+def test_parse_pickett_var_parameter_file(tmp_path: Path) -> None:
+    """Verifies parsing of Pickett .var parameter files."""
+    var_content = """Formaldehyde H2CO Watson S-reduction
+   3   50    0    0   1.0D+00   1.0D+00   1.0D+00   50
+       10000   3.883398900000000D+04   1.000000000000000D-04  / (B+C)/2
+       20000   2.431580700000000D+05   1.000000000000000D-04  / A-(B+C)/2
+       30000   2.368940000000000D+03   1.000000000000000D-04  / (B-C)/4
+"""
+    var_file = tmp_path / "h2co.var"
+    var_file.write_text(var_content, encoding="utf-8")
+
+    res = parse_spectroscopy_data(var_file)
+    assert res.success is True
+    assert len(res.df) == 3
+    assert np.isclose(res.df.iloc[0]["value"], 38833.989)
+

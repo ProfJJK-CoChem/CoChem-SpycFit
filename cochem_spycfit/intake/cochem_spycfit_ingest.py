@@ -42,7 +42,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 import jax
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Logging configuration
 logger = logging.getLogger("CoChem-SpycFit.Ingest")
@@ -145,6 +145,80 @@ class SpectroscopyTransition(BaseModel):
     lower_parity: Optional[Parity] = Field(default=None, description="Lower state parity (ee, eo, oe, oo).")
     valid: bool = Field(default=True, description="Whether transition passed syntax and selection rules.")
     drop_reason: Optional[str] = Field(default=None, description="Detailed explanation if line was dropped.")
+
+    @model_validator(mode="after")
+    def validate_quantum_physics(self) -> SpectroscopyTransition:
+        """Enforces asymmetric rotor quantum bounds and parity sum rules."""
+        # 1. Ka <= J and Kc <= J bounds
+        if self.ka_upper > self.j_upper:
+            raise ValueError(f"Upper Ka ({self.ka_upper}) cannot exceed J ({self.j_upper})")
+        if self.kc_upper > self.j_upper:
+            raise ValueError(f"Upper Kc ({self.kc_upper}) cannot exceed J ({self.j_upper})")
+        if self.ka_lower > self.j_lower:
+            raise ValueError(f"Lower Ka ({self.ka_lower}) cannot exceed J ({self.j_lower})")
+        if self.kc_lower > self.j_lower:
+            raise ValueError(f"Lower Kc ({self.kc_lower}) cannot exceed J ({self.j_lower})")
+
+        # 2. Asymmetric top sum rule: Ka + Kc in {J, J+1}
+        sum_up = self.ka_upper + self.kc_upper
+        if sum_up != self.j_upper and sum_up != (self.j_upper + 1):
+            raise ValueError(
+                f"Upper state Ka+Kc ({sum_up}) violates asymmetric top sum rule for J={self.j_upper}"
+            )
+        sum_low = self.ka_lower + self.kc_lower
+        if sum_low != self.j_lower and sum_low != (self.j_lower + 1):
+            raise ValueError(
+                f"Lower state Ka+Kc ({sum_low}) violates asymmetric top sum rule for J={self.j_lower}"
+            )
+
+        # 3. Auto-populate differences if None
+        if self.delta_j is None:
+            self.delta_j = self.j_upper - self.j_lower
+        if self.delta_ka is None:
+            self.delta_ka = self.ka_upper - self.ka_lower
+        if self.delta_kc is None:
+            self.delta_kc = self.kc_upper - self.kc_lower
+
+        # 4. Auto-populate parity
+        parity_map = {
+            (0, 0): Parity.EE,
+            (0, 1): Parity.EO,
+            (1, 0): Parity.OE,
+            (1, 1): Parity.OO,
+        }
+        if self.upper_parity is None:
+            self.upper_parity = parity_map[(self.ka_upper % 2, self.kc_upper % 2)]
+        if self.lower_parity is None:
+            self.lower_parity = parity_map[(self.ka_lower % 2, self.kc_lower % 2)]
+
+        # 5. Auto-populate branch
+        if self.branch is None:
+            if self.delta_j == -1:
+                self.branch = BranchType.P
+            elif self.delta_j == 0:
+                self.branch = BranchType.Q
+            elif self.delta_j == 1:
+                self.branch = BranchType.R
+            else:
+                self.branch = BranchType.INVALID
+
+        # 6. Auto-populate dipole classification
+        if self.dipole_type is None:
+            if (self.j_upper == 0 and self.j_lower == 0) or abs(self.delta_j) > 1:
+                self.dipole_type = DipoleType.FORBIDDEN
+            else:
+                d_ka_even = (abs(self.delta_ka) % 2 == 0)
+                d_kc_even = (abs(self.delta_kc) % 2 == 0)
+                if d_ka_even and not d_kc_even:
+                    self.dipole_type = DipoleType.A
+                elif not d_ka_even and not d_kc_even:
+                    self.dipole_type = DipoleType.B
+                elif not d_ka_even and d_kc_even:
+                    self.dipole_type = DipoleType.C
+                else:
+                    self.dipole_type = DipoleType.FORBIDDEN
+
+        return self
 
 
 class PickettParameter(BaseModel):
@@ -286,17 +360,17 @@ def enforce_fp64_boundary(df: pd.DataFrame) -> pd.DataFrame:
 
     df_out = df.copy()
 
-    # 2. Float columns to enforce
-    float_cols = ["Frequency_MHz", "Uncertainty", "Intensity", "Delta_J", "Delta_Ka", "Delta_Kc"]
+    # 2. Float columns to enforce (strictly np.float64)
+    float_cols = ["Frequency_MHz", "Uncertainty", "Intensity"]
+    int_cols = ["J_upper", "Ka_upper", "Kc_upper", "J_lower", "Ka_lower", "Kc_lower", "Delta_J", "Delta_Ka", "Delta_Kc"]
+
     for col in df_out.columns:
-        if col in float_cols or pd.api.types.is_float_dtype(df_out[col]):
+        if col in float_cols or (col not in int_cols and pd.api.types.is_float_dtype(df_out[col])):
             df_out[col] = df_out[col].astype(np.float64)
 
-    # 3. Integer quantum number columns to enforce
-    qn_cols = ["J_upper", "Ka_upper", "Kc_upper", "J_lower", "Ka_lower", "Kc_lower"]
-    for col in qn_cols:
+    # 3. Integer quantum number columns to enforce (strictly np.int64)
+    for col in int_cols:
         if col in df_out.columns:
-            # Handle potential floats in quantum number columns by rounding then casting to int64
             df_out[col] = pd.to_numeric(df_out[col], errors="coerce").fillna(0).round().astype(np.int64)
 
     return df_out
@@ -674,15 +748,23 @@ def parse_pickett_lin(
     cfg = config or IngestConfig()
     lines: List[str] = []
 
-    if isinstance(content_or_path, (str, Path)) and os.path.exists(str(content_or_path)):
+    if isinstance(content_or_path, Path):
+        if not content_or_path.is_file():
+            raise FileNotFoundError(f"Pickett file not found: {content_or_path}")
         with open(str(content_or_path), "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
+    elif isinstance(content_or_path, str):
+        if "\n" not in content_or_path and os.path.exists(content_or_path):
+            with open(content_or_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+        elif "\n" not in content_or_path and (content_or_path.endswith((".lin", ".cat", ".par", ".var")) or "/" in content_or_path or "\\" in content_or_path):
+            raise FileNotFoundError(f"Pickett file not found: {content_or_path}")
+        else:
+            lines = content_or_path.splitlines()
     elif isinstance(content_or_path, bytes):
         lines = content_or_path.decode("utf-8", errors="replace").splitlines()
     elif isinstance(content_or_path, io.StringIO):
         lines = content_or_path.getvalue().splitlines()
-    elif isinstance(content_or_path, str):
-        lines = content_or_path.splitlines()
     else:
         raise ValueError(f"Unsupported content input type: {type(content_or_path)}")
 
@@ -699,10 +781,18 @@ def parse_pickett_lin(
         r"(?:\s+([+-]?\d+(?:\.\d*)?(?:[dDeE][+-]?\d+)?))?"
     )
 
-    # 2. JPL / CDMS catalog format: Freq Unc Int Deg Energy ... QNs
+    # 2. JPL / CDMS catalog format: Freq Unc Int Deg Energy Gup Tag Qnfmt QNs...
     jpl_cat_pattern = re.compile(
-        r"^\s*([+-]?\d+\.\d+)\s+([+-]?\d+\.\d+)\s+([+-]?\d+\.\d+)\s+\d+\s+[+-]?\d+\.\d+\s+\d+\s+"
-        r"(\d+)\s+(\d+)\s+(\d+)(?:\s+\d+){0,3}\s+(\d+)\s+(\d+)\s+(\d+)"
+        r"^\s*([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+"
+        r"([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+"
+        r"([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+"
+        r"([+-]?\d+)\s+"
+        r"([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+"
+        r"([+-]?\d+)\s+"
+        r"([+-]?\d+)\s+"
+        r"(\d+)\s+"
+        r"([+-]?\d+)\s+([+-]?\d+)\s+([+-]?\d+)(?:\s+[+-]?\d+){0,3}\s+"
+        r"([+-]?\d+)\s+([+-]?\d+)\s+([+-]?\d+)"
     )
 
     for line_no, raw_line in enumerate(lines, 1):
@@ -712,19 +802,19 @@ def parse_pickett_lin(
 
         matched = False
 
-        # Attempt JPL catalog format first if matching
+        # Attempt JPL / CDMS catalog format first if matching
         cat_match = jpl_cat_pattern.match(line)
         if cat_match:
             try:
                 freq = fortran_float_converter(cat_match.group(1))
                 unc = fortran_float_converter(cat_match.group(2))
                 intensity = fortran_float_converter(cat_match.group(3))
-                ju = int(cat_match.group(4))
-                kau = int(cat_match.group(5))
-                kcu = int(cat_match.group(6))
-                jl = int(cat_match.group(7))
-                kal = int(cat_match.group(8))
-                kcl = int(cat_match.group(9))
+                ju = int(cat_match.group(9))
+                kau = int(cat_match.group(10))
+                kcu = int(cat_match.group(11))
+                jl = int(cat_match.group(12))
+                kal = int(cat_match.group(13))
+                kcl = int(cat_match.group(14))
 
                 parsed_records.append({
                     "Frequency_MHz": np.float64(freq),
@@ -852,15 +942,23 @@ def parse_pickett_par(
         Structured PickettParFile instance.
     """
     lines: List[str] = []
-    if isinstance(content_or_path, (str, Path)) and os.path.exists(str(content_or_path)):
+    if isinstance(content_or_path, Path):
+        if not content_or_path.is_file():
+            raise FileNotFoundError(f"Pickett .par/.var file not found: {content_or_path}")
         with open(str(content_or_path), "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
+    elif isinstance(content_or_path, str):
+        if "\n" not in content_or_path and os.path.exists(content_or_path):
+            with open(content_or_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+        elif "\n" not in content_or_path and (content_or_path.endswith((".par", ".var", ".lin", ".cat")) or "/" in content_or_path or "\\" in content_or_path):
+            raise FileNotFoundError(f"Pickett .par/.var file not found: {content_or_path}")
+        else:
+            lines = content_or_path.splitlines()
     elif isinstance(content_or_path, bytes):
         lines = content_or_path.decode("utf-8", errors="replace").splitlines()
     elif isinstance(content_or_path, io.StringIO):
         lines = content_or_path.getvalue().splitlines()
-    elif isinstance(content_or_path, str):
-        lines = content_or_path.splitlines()
     else:
         raise ValueError(f"Unsupported content type: {type(content_or_path)}")
 
@@ -931,21 +1029,29 @@ def parse_csv_spectroscopy(
     cfg = config or IngestConfig()
 
     if isinstance(content_or_path, (str, Path)) and str(content_or_path).endswith(".parquet"):
+        if not os.path.exists(str(content_or_path)):
+            raise FileNotFoundError(f"Parquet file not found: {content_or_path}")
         df_raw = pd.read_parquet(str(content_or_path))
     elif isinstance(content_or_path, (str, Path)) and str(content_or_path).endswith(".json"):
+        if not os.path.exists(str(content_or_path)):
+            raise FileNotFoundError(f"JSON file not found: {content_or_path}")
         df_raw = pd.read_json(str(content_or_path))
     elif isinstance(content_or_path, io.StringIO):
         df_raw = pd.read_csv(content_or_path, sep=None, engine="python")
     elif isinstance(content_or_path, bytes):
         df_raw = pd.read_csv(io.BytesIO(content_or_path), sep=None, engine="python")
-    elif isinstance(content_or_path, (str, Path)):
-        s_path = str(content_or_path)
-        if os.path.exists(s_path):
-            # Auto-detect separator (comma, tab, whitespace)
-            df_raw = pd.read_csv(s_path, sep=None, engine="python")
+    elif isinstance(content_or_path, Path):
+        if not content_or_path.is_file():
+            raise FileNotFoundError(f"Spectroscopy file not found: {content_or_path}")
+        df_raw = pd.read_csv(str(content_or_path), sep=None, engine="python")
+    elif isinstance(content_or_path, str):
+        if "\n" not in content_or_path and os.path.exists(content_or_path):
+            df_raw = pd.read_csv(content_or_path, sep=None, engine="python")
+        elif "\n" not in content_or_path and (content_or_path.endswith((".csv", ".tsv", ".txt")) or "/" in content_or_path or "\\" in content_or_path):
+            raise FileNotFoundError(f"Spectroscopy file not found: {content_or_path}")
         else:
             # String buffer content
-            df_raw = pd.read_csv(io.StringIO(s_path), sep=None, engine="python")
+            df_raw = pd.read_csv(io.StringIO(content_or_path), sep=None, engine="python")
     else:
         raise ValueError(f"Unsupported content type: {type(content_or_path)}")
 
@@ -1078,18 +1184,27 @@ def parse_spectroscopy_data(
 
     # 1. Format detection
     fmt = (format_hint or "").lower().strip()
-    if not fmt and isinstance(file_path_or_content, (str, Path)):
-        suffix = Path(file_path_or_content).suffix.lower().replace(".", "")
-        if suffix in ["lin", "cat", "par", "csv", "tsv", "parquet", "json"]:
-            fmt = suffix
+    if not fmt:
+        if isinstance(file_path_or_content, Path):
+            suffix = file_path_or_content.suffix.lower().replace(".", "")
+            if suffix in ["lin", "cat", "par", "var", "csv", "tsv", "parquet", "json"]:
+                fmt = suffix
+        elif isinstance(file_path_or_content, str) and "\n" not in file_path_or_content:
+            try:
+                p = Path(file_path_or_content)
+                suffix = p.suffix.lower().replace(".", "")
+                if suffix in ["lin", "cat", "par", "var", "csv", "tsv", "parquet", "json"]:
+                    fmt = suffix
+            except Exception:
+                pass
 
     # 2. Parse raw data based on format
     if fmt in ["lin", "cat"]:
         raw_df, failed_lines = parse_pickett_lin(file_path_or_content, config=cfg)
         if failed_lines:
             warnings_list.append(f"{len(failed_lines)} raw line(s) failed regex parsing and were skipped.")
-    elif fmt == "par":
-        # .par parameter file parsed into PickettParFile
+    elif fmt in ["par", "var"]:
+        # .par / .var parameter file parsed into PickettParFile
         par_file = parse_pickett_par(file_path_or_content)
         # Create a parameters DataFrame for par files
         par_records = [
