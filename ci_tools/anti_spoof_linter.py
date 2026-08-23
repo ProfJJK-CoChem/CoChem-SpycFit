@@ -5,7 +5,7 @@ from pathlib import Path
 import os
 
 AMNESTY_FILE = Path(".anti_spoof_amnesty.json")
-BANNED_WORDS = ["mock", "dummy", "placeholder", "fake", "stub"]
+BANNED_WORDS = ["mock", "dummy", "placeholder", "fake", "stub", "synthetic"]
 
 def load_amnesty():
     if AMNESTY_FILE.exists():
@@ -43,6 +43,12 @@ def check_file(filepath):
             if node.module and "unittest.mock" in node.module:
                 if "tests/api_mocks" not in str(filepath.as_posix()):
                     violations.append(f"Line {node.lineno}: Banned import 'unittest.mock' outside api_mocks")
+            self.generic_visit(node)
+
+        def visit_Call(self, node):
+            if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+                if node.func.value.id == "np" and node.func.attr in ["linspace", "sin"]:
+                    violations.append(f"Line {node.lineno}: Banned mock data generator 'np.{node.func.attr}'")
             self.generic_visit(node)
 
         def visit_FunctionDef(self, node):

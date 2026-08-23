@@ -40,7 +40,6 @@ import json
 import logging
 import math
 import os
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
@@ -68,18 +67,14 @@ import zmq
 from ipywidgets import Button, FloatSlider, HBox, Label, Output, VBox
 
 # JAX Convolver integration
-try:
-    from ..physics_core.cochem_convolver import (
-        ConvolutionConfig,
-        ProfileType,
-        SpectralLines,
-        convolve_frequency_chunks_scan_1d_jax,
-        gaussian_kernel_jax,
-        lorentzian_kernel_jax,
-    )
-    HAS_CONVOLVER = True
-except (ImportError, ValueError):
-    HAS_CONVOLVER = False
+from ..physics_core.cochem_convolver import (
+    ConvolutionConfig,
+    ProfileType,
+    SpectralLines,
+    convolve_frequency_chunks_scan_1d_jax,
+    gaussian_kernel_jax,
+    lorentzian_kernel_jax,
+)
 
 logger = logging.getLogger("CoChem-SpycFit.UI")
 
@@ -509,6 +504,10 @@ class HITLAssignmentManager:
         theo_peaks: Sequence[SpectralPeak],
         assignments: Optional[Sequence[PeakAssignment]] = None,
     ) -> None:
+        if not exp_peaks or not theo_peaks:
+            raise ValueError("[MISSING DATA] exp_peaks and theo_peaks cannot be empty. Real physical data is required.")
+        if not exp_peaks or not theo_peaks:
+            raise ValueError("[MISSING DATA] exp_peaks and theo_peaks cannot be empty. Real physical data is required.")
         self.exp_peaks: List[SpectralPeak] = [p.model_copy() for p in exp_peaks]
         self.theo_peaks: List[SpectralPeak] = [p.model_copy() for p in theo_peaks]
         self.assignments: List[PeakAssignment] = [a.model_copy() for a in (assignments or [])]
@@ -977,7 +976,9 @@ def render_static_offline_html(
         Path: Path to written HTML file.
     """
     if output_path is None:
-        target = Path(tempfile.gettempdir()) / f"cochem_dashboard_{uuid.uuid4().hex[:8]}.html"
+        artifacts_dir = Path(os.getenv("COCHEM_ARTIFACTS_DIR", Path.home() / ".cochem_artifacts"))
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        target = artifacts_dir / f"cochem_dashboard_{uuid.uuid4().hex[:8]}.html"
     else:
         target = Path(output_path).expanduser().resolve()
 
@@ -1147,10 +1148,7 @@ def render_static_offline_pdf(
         doc.build(story)
     finally:
         if temp_img_path.exists():
-            try:
-                temp_img_path.unlink()
-            except OSError as err:
-                logger.debug(f"Temporary image unlink deferred: {err}")
+            temp_img_path.unlink()
 
     return target
 
@@ -1287,7 +1285,7 @@ class SpycFitZMQServer:
             self._bound = True
             self.is_running = True
 
-    def process_one_request(self, engine: Optional[WhatIfSpectrumEngine] = None) -> Optional[Dict[str, Any]]:
+    def process_one_request(self, engine: WhatIfSpectrumEngine) -> Optional[Dict[str, Any]]:
         """
         Polls and processes a single incoming request.
         Handles HEARTBEAT, COMPUTE_SPECTRUM, LTTB_DECIMATE, GET_STATE_HASH.
@@ -1312,17 +1310,13 @@ class SpycFitZMQServer:
             state_data = msg_dict.get("state", {})
             if isinstance(state_data, dict):
                 param_state = WhatIfParameterState(**state_data)
-                if engine is not None:
-                    freq_grid, spec = engine.compute_convolved_spectrum(param_state)
-                    decimate_thresh = msg_dict.get("decimate_threshold", None)
-                    if decimate_thresh is not None and isinstance(decimate_thresh, int) and len(freq_grid) > decimate_thresh:
-                        freq_grid, spec = run_lttb_decimation(freq_grid, spec, decimate_thresh)
-                    response["freqs"] = freq_grid.tolist()
-                    response["spectrum"] = spec.tolist()
-                    response["state_hash"] = update_ui_state_hash(param_state.model_dump())
-                else:
-                    response["status"] = "ERROR"
-                    response["error"] = "No WhatIfSpectrumEngine attached to server."
+                freq_grid, spec = engine.compute_convolved_spectrum(param_state)
+                decimate_thresh = msg_dict.get("decimate_threshold", None)
+                if decimate_thresh is not None and isinstance(decimate_thresh, int) and len(freq_grid) > decimate_thresh:
+                    freq_grid, spec = run_lttb_decimation(freq_grid, spec, decimate_thresh)
+                response["freqs"] = freq_grid.tolist()
+                response["spectrum"] = spec.tolist()
+                response["state_hash"] = update_ui_state_hash(param_state.model_dump())
             else:
                 response["status"] = "ERROR"
                 response["error"] = "Invalid state object in COMPUTE_SPECTRUM request."
@@ -1562,33 +1556,24 @@ class SpycFitInteractiveDashboard:
 
     def get_current_parameter_state(self) -> WhatIfParameterState:
         """Returns the current WhatIfParameterState based on slider values."""
-        if self.engine:
-            return self.engine.base_state.model_copy(
-                update={
-                    "A_mhz": float(self.slider_A.value),
-                    "B_mhz": float(self.slider_B.value),
-                    "C_mhz": float(self.slider_C.value),
-                    "temperature_k": float(self.slider_temp.value),
-                }
-            )
-        return WhatIfParameterState(
-            A_mhz=float(self.slider_A.value),
-            B_mhz=float(self.slider_B.value),
-            C_mhz=float(self.slider_C.value),
-            temperature_k=float(self.slider_temp.value),
+        return self.engine.base_state.model_copy(
+            update={
+                "A_mhz": float(self.slider_A.value),
+                "B_mhz": float(self.slider_B.value),
+                "C_mhz": float(self.slider_C.value),
+                "temperature_k": float(self.slider_temp.value),
+            }
         )
 
     def refresh_view(self) -> None:
         """Refreshes the dual-pane Plotly chart and status readout."""
         with self.plot_output:
             self.plot_output.clear_output(wait=True)
-            convolved_curve = None
-            if self.engine:
-                cur_state = self.get_current_parameter_state()
-                f_grid, spec = self.engine.compute_convolved_spectrum(cur_state)
-                if len(f_grid) > 5000:
-                    f_grid, spec = run_lttb_decimation(f_grid, spec, threshold=5000)
-                convolved_curve = (f_grid, spec)
+            cur_state = self.get_current_parameter_state()
+            f_grid, spec = self.engine.compute_convolved_spectrum(cur_state)
+            if len(f_grid) > 5000:
+                f_grid, spec = run_lttb_decimation(f_grid, spec, threshold=5000)
+            convolved_curve = (f_grid, spec)
 
             fig = render_dual_pane_dashboard(
                 exp_peaks=self.manager.exp_peaks,
@@ -1619,15 +1604,15 @@ class SpycFitInteractiveDashboard:
                 f"RMS: {rms:.4f} MHz | Huber Loss: {loss:.4f} | State SHA-256: {state_hash[:12]}..."
             )
 
-    def _on_auto_propose_clicked(self, _btn: Any) -> None:
+    def _on_auto_propose_clicked(self, _btn: Button) -> None:
         self.manager.auto_propose()
         self.refresh_view()
 
-    def _on_approve_all_clicked(self, _btn: Any) -> None:
+    def _on_approve_all_clicked(self, _btn: Button) -> None:
         self.manager.approve_all_proposed()
         self.refresh_view()
 
-    def _on_reject_outliers_clicked(self, _btn: Any) -> None:
+    def _on_reject_outliers_clicked(self, _btn: Button) -> None:
         delta = float(self.slider_huber.value)
         proposed = self.manager.get_assignments_by_status(AssignmentStatus.PROPOSED)
         for a in proposed:
@@ -1635,10 +1620,10 @@ class SpycFitInteractiveDashboard:
                 self.manager.reject_assignment(a.assignment_id, reason="Exceeds 3-sigma tolerance threshold")
         self.refresh_view()
 
-    def _on_recalc_clicked(self, _btn: Any) -> None:
+    def _on_recalc_clicked(self, _btn: Button) -> None:
         self.refresh_view()
 
-    def _on_slider_change(self, _change: Any) -> None:
+    def _on_slider_change(self, _change: dict) -> None:
         self.refresh_view()
 
 
@@ -1651,6 +1636,44 @@ def create_spycfit_dashboard_widget(
     Convenience factory to instantiate a SpycFit interactive Jupyter/Voila dashboard widget.
     """
     dashboard = SpycFitInteractiveDashboard(manager=manager, spectrum_engine=spectrum_engine, config=config)
+    return dashboard.widget
+
+
+def launch_dashboard(
+    manager: Optional[HITLAssignmentManager] = None,
+    config: Optional[DashboardConfig] = None,
+    display_in_notebook: bool = True,
+    spectrum_engine: Optional[WhatIfSpectrumEngine] = None,
+) -> VBox:
+    """
+    Initializes and launches the interactive HITL decision dashboard.
+    """
+    if manager is None:
+        exp_peaks = [
+            SpectralPeak(peak_id="EXP_CH3OH_1", frequency=12178.59, intensity=1.5, quantum_label="2_0,2 -> 1_0,1"),
+            SpectralPeak(peak_id="EXP_CH3OH_2", frequency=48372.45, intensity=2.1, quantum_label="1_0,1 -> 0_0,0"),
+        ]
+        theo_peaks = [
+            SpectralPeak(peak_id="THEO_CH3OH_1", frequency=12178.60, intensity=1.5, quantum_label="2_0,2 -> 1_0,1"),
+            SpectralPeak(peak_id="THEO_CH3OH_2", frequency=48372.50, intensity=2.0, quantum_label="1_0,1 -> 0_0,0"),
+        ]
+        manager = HITLAssignmentManager(exp_peaks=exp_peaks, theo_peaks=theo_peaks)
+        
+    cfg = config or DashboardConfig()
+    
+    if spectrum_engine is None:
+        base_state = WhatIfParameterState(A_mhz=127484.0, B_mhz=24685.0, C_mhz=23769.0, temperature_k=296.0)
+        spectrum_engine = WhatIfSpectrumEngine(base_peaks=manager.theo_peaks, base_state=base_state)
+
+    dashboard = SpycFitInteractiveDashboard(manager=manager, spectrum_engine=spectrum_engine, config=cfg)
+
+    if display_in_notebook:
+        try:
+            import IPython.display as ipydisplay
+            ipydisplay.display(dashboard.widget)
+        except ImportError as e:
+            logger.warning("Could not display widget in notebook: %s", e)
+
     return dashboard.widget
 
 
@@ -1815,6 +1838,7 @@ __all__ = [
     "compute_bipartite_cost_matrix",
     "compute_huber_loss_excluding_ghosts",
     "create_spycfit_dashboard_widget",
+    "launch_dashboard",
     "render_dual_pane_dashboard",
     "render_static_offline_html",
     "render_static_offline_pdf",

@@ -323,6 +323,15 @@ def resolve_tier3_registry_path(custom_path: Optional[Union[str, Path]] = None) 
 # 5. LANDSCAPE.H5 STATE TENSOR EVALUATION
 # =============================================================================
 
+def check_for_spoofed_data(tensor: np.ndarray, tensor_name: str) -> None:
+    """Detects mathematically perfect arrays that indicate mock/synthetic data."""
+    tensor = np.asarray(tensor).flatten()
+    if len(tensor) > 2:
+        diffs = np.diff(tensor)
+        if np.allclose(diffs, diffs[0], atol=1e-12):
+            logger.warning(f"[SPOOFING RISK DETECTED] Tensor '{tensor_name}' exhibits mathematically perfect linear spacing lacking physical noise.")
+
+
 def evaluate_landscape_tensors(
     h5_path: Union[str, Path],
     system_id: str = "default_system",
@@ -381,6 +390,11 @@ def evaluate_landscape_tensors(
                     dset = f[matched_key]
                     existing.append(key)
                     shapes_dict[key] = list(dset.shape)
+                    
+                    # Check for spoofed data
+                    tensor_data = dset[()]
+                    if isinstance(tensor_data, np.ndarray) and np.issubdtype(tensor_data.dtype, np.number):
+                        check_for_spoofed_data(tensor_data, key)
                 else:
                     missing.append(key)
     except Exception as exc:
