@@ -20,6 +20,7 @@ Directives Enforced:
 
 from __future__ import annotations
 
+import concurrent.futures
 import datetime
 import hashlib
 import json
@@ -52,8 +53,15 @@ from typing import (
 
 import filelock
 import h5py
+import jax
+import jax.numpy as jnp
 import numpy as np
 import platformdirs
+import pyarrow as pa
+import pyarrow.dataset as ds
+import pyarrow.parquet as pq
+from jax.experimental import io_callback
+from platformdirs import user_data_path
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Configure module-level logger
@@ -77,6 +85,26 @@ STANDARD_DATASET_NAMES: Tuple[str, ...] = (
     "quantum_numbers",
     "species_ids",
 )
+
+PARQUET_TRANSITION_SCHEMA = pa.schema([
+    pa.field("frequencies", pa.float64(), nullable=False),
+    pa.field("intensities", pa.float64(), nullable=False),
+    pa.field("lower_energies", pa.float64(), nullable=False),
+    pa.field("upper_energies", pa.float64(), nullable=False),
+    pa.field("uncertainties", pa.float64(), nullable=False),
+    pa.field("g_upper", pa.int32(), nullable=False),
+    pa.field("species_ids", pa.int32(), nullable=False),
+    pa.field("J_upper", pa.int32(), nullable=False),
+    pa.field("Ka_upper", pa.int32(), nullable=False),
+    pa.field("Kc_upper", pa.int32(), nullable=False),
+    pa.field("J_lower", pa.int32(), nullable=False),
+    pa.field("Ka_lower", pa.int32(), nullable=False),
+    pa.field("Kc_lower", pa.int32(), nullable=False),
+    pa.field("quantum_numbers", pa.list_(pa.int32()), nullable=False),
+    pa.field("temperature_step", pa.int32(), nullable=False),
+    pa.field("batch_id", pa.string(), nullable=False),
+    pa.field("chunk_uuid", pa.string(), nullable=False),
+])
 
 
 # =============================================================================
@@ -1452,3 +1480,525 @@ def extract_catalog_metadata(catalog_path: Union[str, Path]) -> CatalogManifestR
         if isinstance(err, FileNotFoundError):
             raise
         raise CatalogDatasetError(f"Failed extracting metadata from {cat_p}: {err}") from err
+
+
+# =============================================================================
+# 12. PHASE 4 STATE DIRECTORY RESOLUTION & PARQUET SERIALIZATION
+# =============================================================================
+
+def get_chunked_transitions_dir(base_dir: Optional[Union[str, Path]] = None) -> Path:
+    """
+    Resolves the authoritative state directory for chunked transition parquet files.
+
+    Target path: $COCHEM_STATE_DIR/SpycFit_Workspace/Catalogs/chunked_transitions/
+    Defaults to platformdirs.user_data_path(appname="CoChem-SpycFit") / "SpycFit_Workspace" / "Catalogs" / "chunked_transitions".
+
+    Args:
+        base_dir: Optional explicit override directory path.
+
+    Returns:
+        Path: Resolved, physically existing Path object.
+    """
+    if base_dir is not None:
+        target = Path(base_dir).resolve()
+    else:
+        state_dir_env = os.environ.get("COCHEM_STATE_DIR", "").strip()
+        if state_dir_env:
+            target = Path(state_dir_env).resolve() / "SpycFit_Workspace" / "Catalogs" / "chunked_transitions"
+        else:
+            target = Path(platformdirs.user_data_path(appname="CoChem-SpycFit")).resolve() / "SpycFit_Workspace" / "Catalogs" / "chunked_transitions"
+
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def serialize_chunk_to_parquet(
+    frequency_data: Union[np.ndarray, jnp.ndarray, Sequence[float], Dict[str, Any], TransitionBatch],
+    quantum_assignments: Optional[Union[np.ndarray, jnp.ndarray, Sequence[Sequence[int]], Sequence[Tuple[int, ...]]]] = None,
+    temp_step: Union[int, float] = 0,
+    batch_id: Union[int, str] = 0,
+    uuid_str: Optional[str] = None,
+    output_dir: Optional[Union[str, Path]] = None,
+    partition_by_temp: bool = True,
+    compression: str = "zstd",
+    custom_metadata: Optional[Dict[str, Any]] = None,
+) -> Path:
+    """
+    Serializes a single transition chunk directly to a .parquet file using PyArrow.
+
+    Enforces strict physical type preservation:
+    - Frequencies, intensities, energies, uncertainties remain FP64 (float64).
+    - Quantum assignments (J, Ka, Kc), degeneracies, and species IDs remain int32.
+
+    Employs a lock-free, partitioned append-only write strategy (Hive-partitioning).
+    File naming format: chunk_{temperature_step}_{batch_id}_{uuid}.parquet
+
+    Args:
+        frequency_data: 1D array of frequencies, dict, structured array, or TransitionBatch.
+        quantum_assignments: Optional 2D array of int32 quantum numbers (N, 6) or (N, 3).
+        temp_step: Temperature step index or value.
+        batch_id: Batch identifier (int or str).
+        uuid_str: Optional explicit UUID string. If None, generates a new UUID.
+        output_dir: Optional output directory (defaults to get_chunked_transitions_dir()).
+        partition_by_temp: If True, writes into temperature_step={temp_step} subdirectory.
+        compression: Parquet compression codec ('zstd', 'snappy', 'gzip', etc.).
+        custom_metadata: Optional domain metadata to embed in Parquet schema.
+
+    Returns:
+        Path: Filesystem path to the written .parquet chunk file.
+    """
+    if isinstance(frequency_data, TransitionBatch):
+        freqs = np.asarray(frequency_data.frequencies_mhz, dtype=np.float64)
+        n = len(freqs)
+        intens = np.asarray(frequency_data.intensities, dtype=np.float64)
+        e_low = np.asarray(frequency_data.lower_energies_cm1, dtype=np.float64) if frequency_data.lower_energies_cm1 is not None else np.zeros(n, dtype=np.float64)
+        e_up = np.asarray(frequency_data.upper_energies_cm1, dtype=np.float64) if frequency_data.upper_energies_cm1 is not None else np.zeros(n, dtype=np.float64)
+        unc = np.asarray(frequency_data.uncertainties_mhz, dtype=np.float64) if frequency_data.uncertainties_mhz is not None else np.zeros(n, dtype=np.float64)
+        g_u = np.asarray(frequency_data.g_upper, dtype=np.int32) if frequency_data.g_upper is not None else np.ones(n, dtype=np.int32)
+        sp_id = np.asarray(frequency_data.species_ids, dtype=np.int32) if frequency_data.species_ids is not None else np.zeros(n, dtype=np.int32)
+
+        if quantum_assignments is not None:
+            qn_raw = np.asarray(quantum_assignments, dtype=np.int32)
+        elif frequency_data.quantum_numbers is not None:
+            qn_raw = np.asarray(frequency_data.quantum_numbers, dtype=np.int32)
+        else:
+            qn_raw = np.zeros((n, 6), dtype=np.int32)
+
+    elif isinstance(frequency_data, dict):
+        if "frequencies" in frequency_data or "frequencies_mhz" in frequency_data:
+            freq_key = "frequencies" if "frequencies" in frequency_data else "frequencies_mhz"
+            freqs = np.asarray(frequency_data[freq_key], dtype=np.float64)
+            n = len(freqs)
+            intens_key = "intensities" if "intensities" in frequency_data else "intensity"
+            intens = np.asarray(frequency_data.get(intens_key, np.zeros(n)), dtype=np.float64)
+            e_low = np.asarray(frequency_data.get("lower_energies", frequency_data.get("lower_energies_cm1", np.zeros(n))), dtype=np.float64)
+            e_up = np.asarray(frequency_data.get("upper_energies", frequency_data.get("upper_energies_cm1", np.zeros(n))), dtype=np.float64)
+            unc = np.asarray(frequency_data.get("uncertainties", frequency_data.get("uncertainties_mhz", np.zeros(n))), dtype=np.float64)
+            g_u = np.asarray(frequency_data.get("g_upper", np.ones(n)), dtype=np.int32)
+            sp_id = np.asarray(frequency_data.get("species_ids", frequency_data.get("species_id", np.zeros(n))), dtype=np.int32)
+
+            if quantum_assignments is not None:
+                qn_raw = np.asarray(quantum_assignments, dtype=np.int32)
+            elif "quantum_numbers" in frequency_data:
+                qn_raw = np.asarray(frequency_data["quantum_numbers"], dtype=np.int32)
+            else:
+                qn_raw = np.zeros((n, 6), dtype=np.int32)
+        else:
+            raise CatalogSchemaError("Dictionary chunk must contain 'frequencies' or 'frequencies_mhz'")
+
+    elif isinstance(frequency_data, (np.ndarray, jnp.ndarray, list, tuple)):
+        freq_arr = np.asarray(frequency_data, dtype=np.float64)
+        if freq_arr.ndim == 1:
+            freqs = freq_arr
+            n = len(freqs)
+            intens = np.zeros(n, dtype=np.float64)
+            e_low = np.zeros(n, dtype=np.float64)
+            e_up = np.zeros(n, dtype=np.float64)
+            unc = np.zeros(n, dtype=np.float64)
+            g_u = np.ones(n, dtype=np.int32)
+            sp_id = np.zeros(n, dtype=np.int32)
+
+            if quantum_assignments is not None:
+                qn_raw = np.asarray(quantum_assignments, dtype=np.int32)
+            else:
+                qn_raw = np.zeros((n, 6), dtype=np.int32)
+        elif freq_arr.ndim == 2 and freq_arr.shape[1] >= 2:
+            n = freq_arr.shape[0]
+            freqs = freq_arr[:, 0].astype(np.float64)
+            intens = freq_arr[:, 1].astype(np.float64)
+            e_low = freq_arr[:, 2].astype(np.float64) if freq_arr.shape[1] > 2 else np.zeros(n, dtype=np.float64)
+            e_up = freq_arr[:, 3].astype(np.float64) if freq_arr.shape[1] > 3 else np.zeros(n, dtype=np.float64)
+            unc = freq_arr[:, 4].astype(np.float64) if freq_arr.shape[1] > 4 else np.zeros(n, dtype=np.float64)
+            g_u = freq_arr[:, 5].astype(np.int32) if freq_arr.shape[1] > 5 else np.ones(n, dtype=np.int32)
+            sp_id = np.zeros(n, dtype=np.int32)
+
+            if quantum_assignments is not None:
+                qn_raw = np.asarray(quantum_assignments, dtype=np.int32)
+            else:
+                qn_raw = np.zeros((n, 6), dtype=np.int32)
+        else:
+            raise CatalogSchemaError("Unsupported array shape for frequency_data")
+    else:
+        raise CatalogSchemaError(f"Unsupported frequency_data input type: {type(frequency_data)}")
+
+    if qn_raw.ndim == 1:
+        if n > 0 and len(qn_raw) == 6 * n:
+            qn_matrix = qn_raw.reshape(n, 6)
+        elif n > 0 and len(qn_raw) == 3 * n:
+            qn_3 = qn_raw.reshape(n, 3)
+            qn_matrix = np.hstack([qn_3, np.zeros((n, 3), dtype=np.int32)])
+        elif n == 1 and len(qn_raw) in (3, 6):
+            if len(qn_raw) == 3:
+                qn_matrix = np.hstack([qn_raw.reshape(1, 3), np.zeros((1, 3), dtype=np.int32)])
+            else:
+                qn_matrix = qn_raw.reshape(1, 6)
+        elif n == 0:
+            qn_matrix = np.zeros((0, 6), dtype=np.int32)
+        else:
+            qn_matrix = np.zeros((n, 6), dtype=np.int32)
+    elif qn_raw.ndim == 2:
+        if qn_raw.shape[1] == 3:
+            qn_matrix = np.hstack([qn_raw, np.zeros((n, 3), dtype=np.int32)])
+        elif qn_raw.shape[1] >= 6:
+            qn_matrix = qn_raw[:, :6]
+        else:
+            pad_width = 6 - qn_raw.shape[1]
+            qn_matrix = np.hstack([qn_raw, np.zeros((n, pad_width), dtype=np.int32)])
+    else:
+        qn_matrix = np.zeros((n, 6), dtype=np.int32)
+
+    u_val = uuid_str if uuid_str is not None else uuid.uuid4().hex
+    t_step_val = int(temp_step) if isinstance(temp_step, (int, np.integer)) else float(temp_step)
+    b_id_str = str(batch_id)
+
+    qn_py_list = [list(int(x) for x in row) for row in qn_matrix]
+
+    arrays = [
+        pa.array(freqs, type=pa.float64()),
+        pa.array(intens, type=pa.float64()),
+        pa.array(e_low, type=pa.float64()),
+        pa.array(e_up, type=pa.float64()),
+        pa.array(unc, type=pa.float64()),
+        pa.array(g_u, type=pa.int32()),
+        pa.array(sp_id, type=pa.int32()),
+        pa.array(qn_matrix[:, 0] if n > 0 else np.zeros(0, dtype=np.int32), type=pa.int32()),
+        pa.array(qn_matrix[:, 1] if n > 0 else np.zeros(0, dtype=np.int32), type=pa.int32()),
+        pa.array(qn_matrix[:, 2] if n > 0 else np.zeros(0, dtype=np.int32), type=pa.int32()),
+        pa.array(qn_matrix[:, 3] if n > 0 else np.zeros(0, dtype=np.int32), type=pa.int32()),
+        pa.array(qn_matrix[:, 4] if n > 0 else np.zeros(0, dtype=np.int32), type=pa.int32()),
+        pa.array(qn_matrix[:, 5] if n > 0 else np.zeros(0, dtype=np.int32), type=pa.int32()),
+        pa.array(qn_py_list, type=pa.list_(pa.int32())),
+    ]
+    names = [
+        "frequencies",
+        "intensities",
+        "lower_energies",
+        "upper_energies",
+        "uncertainties",
+        "g_upper",
+        "species_ids",
+        "J_upper",
+        "Ka_upper",
+        "Kc_upper",
+        "J_lower",
+        "Ka_lower",
+        "Kc_lower",
+        "quantum_numbers",
+    ]
+
+    if not partition_by_temp:
+        arrays.append(pa.array([t_step_val] * n, type=pa.int32() if isinstance(t_step_val, int) else pa.float64()))
+        names.append("temperature_step")
+
+    arrays.extend([
+        pa.array([b_id_str] * n, type=pa.string()),
+        pa.array([u_val] * n, type=pa.string()),
+    ])
+    names.extend([
+        "batch_id",
+        "chunk_uuid",
+    ])
+
+    table = pa.Table.from_arrays(arrays, names=names)
+
+    base_p = Path(output_dir) if output_dir is not None else get_chunked_transitions_dir()
+    if partition_by_temp:
+        target_dir = base_p / f"temperature_step={temp_step}"
+    else:
+        target_dir = base_p
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"chunk_{temp_step}_{batch_id}_{u_val}.parquet"
+    file_path = target_dir / filename
+
+    pq.write_table(table, file_path, compression=compression)
+    return file_path
+
+
+# =============================================================================
+# 13. JAX ASYNCHRONOUS ARRAY INTERCEPTION (io_callback)
+# =============================================================================
+
+def _host_serialize_worker(
+    freqs: np.ndarray,
+    qn: np.ndarray,
+    intens: np.ndarray,
+    temp_step: int,
+    batch_id: int,
+    uuid_str: str,
+    output_dir: str,
+) -> np.ndarray:
+    """Internal host worker invoked by JAX io_callback."""
+    dict_data = {
+        "frequencies": np.asarray(freqs, dtype=np.float64),
+        "intensities": np.asarray(intens, dtype=np.float64) if intens is not None and len(intens) > 0 else np.zeros(len(freqs), dtype=np.float64),
+    }
+    serialize_chunk_to_parquet(
+        frequency_data=dict_data,
+        quantum_assignments=np.asarray(qn, dtype=np.int32),
+        temp_step=int(temp_step),
+        batch_id=int(batch_id),
+        uuid_str=str(uuid_str) if uuid_str else uuid.uuid4().hex,
+        output_dir=str(output_dir) if output_dir else None,
+        partition_by_temp=True,
+    )
+    return np.int32(1)
+
+
+def jax_serialize_chunk_callback(
+    frequency_data: jnp.ndarray,
+    quantum_assignments: jnp.ndarray,
+    temp_step: Union[int, jnp.ndarray] = 0,
+    batch_id: Union[int, jnp.ndarray] = 0,
+    uuid_str: Optional[str] = None,
+    output_dir: Optional[str] = None,
+    intensities: Optional[jnp.ndarray] = None,
+) -> jnp.ndarray:
+    """
+    Asynchronously intercepts JAX arrays during computation graph execution and serializes
+    them directly to Parquet chunk files using jax.experimental.io_callback.
+
+    Args:
+        frequency_data: JAX array of float64 frequencies.
+        quantum_assignments: JAX array of int32 quantum numbers.
+        temp_step: Temperature step identifier.
+        batch_id: Batch index or identifier.
+        uuid_str: Optional UUID string identifier.
+        output_dir: Optional target directory path string.
+        intensities: Optional JAX array of float64 intensities.
+
+    Returns:
+        jnp.ndarray: Integer status array (1 on successful dispatch).
+    """
+    intens_arr = intensities if intensities is not None else jnp.zeros_like(frequency_data)
+    u_str = str(uuid_str) if uuid_str is not None else uuid.uuid4().hex
+    out_dir_str = str(output_dir) if output_dir is not None else str(get_chunked_transitions_dir())
+
+    t_val = int(temp_step) if isinstance(temp_step, (int, float)) else int(np.asarray(temp_step))
+    b_val = int(batch_id) if isinstance(batch_id, (int, float)) else int(np.asarray(batch_id))
+
+    def _cb_host(f_arr, q_arr, i_arr):
+        return _host_serialize_worker(
+            freqs=f_arr,
+            qn=q_arr,
+            intens=i_arr,
+            temp_step=t_val,
+            batch_id=b_val,
+            uuid_str=u_str,
+            output_dir=out_dir_str,
+        )
+
+    status = io_callback(_cb_host, jnp.int32(0), frequency_data, quantum_assignments, intens_arr)
+    return status
+
+
+# =============================================================================
+# 14. MAP-REDUCE MASTER MANIFEST COMPILATION & PARQUET READER
+# =============================================================================
+
+def compile_master_manifest(
+    chunk_directory: Union[str, Path],
+    output_manifest_path: Optional[Union[str, Path]] = None,
+    max_workers: Optional[int] = None,
+    custom_metadata: Optional[Dict[str, Any]] = None,
+) -> CatalogManifestRecord:
+    """
+    Compiles a master catalog manifest across all Hive-partitioned parquet chunks in a Map-Reduce fashion.
+
+    Map phase: Scans all .parquet files in parallel, extracting row counts, frequency extrema,
+               intensity bounds, and cryptographic checksums.
+    Reduce phase: Aggregates statistics, computes catalog-wide SHA-256 digest, and writes
+                  manifest record to disk (JSON).
+
+    Args:
+        chunk_directory: Root directory containing partitioned parquet chunk files.
+        output_manifest_path: Optional path to save master_manifest.json.
+        max_workers: Number of parallel worker threads for Map inspection.
+        custom_metadata: Optional metadata attributes to include in manifest.
+
+    Returns:
+        CatalogManifestRecord: Validated Pydantic manifest model.
+
+    Raises:
+        CatalogCompilerError: If directory does not exist or contains no parquet files.
+    """
+    chunk_dir = Path(chunk_directory).resolve()
+    if not chunk_dir.exists():
+        raise CatalogCompilerError(f"Chunk directory does not exist: {chunk_dir}")
+
+    parquet_files = sorted(list(chunk_dir.rglob("*.parquet")))
+    if len(parquet_files) == 0:
+        raise CatalogCompilerError(f"No parquet chunk files found in directory: {chunk_dir}")
+
+    def _inspect_parquet_shard(p_path: Path) -> Dict[str, Any]:
+        pq_f = pq.ParquetFile(str(p_path))
+        meta = pq_f.metadata
+        n_rows = meta.num_rows
+
+        tbl = pq_f.read(["frequencies", "intensities"])
+        freq_col = tbl["frequencies"].to_numpy()
+        intens_col = tbl["intensities"].to_numpy()
+
+        f_min = float(np.min(freq_col)) if len(freq_col) > 0 else 0.0
+        f_max = float(np.max(freq_col)) if len(freq_col) > 0 else 0.0
+        i_min = float(np.min(intens_col)) if len(intens_col) > 0 else 0.0
+        i_max = float(np.max(intens_col)) if len(intens_col) > 0 else 0.0
+
+        sha = compute_sha256(p_path)
+        return {
+            "path": str(p_path),
+            "num_rows": n_rows,
+            "f_min": f_min,
+            "f_max": f_max,
+            "i_min": i_min,
+            "i_max": i_max,
+            "sha256": sha,
+        }
+
+    workers = max_workers if max_workers is not None else min(32, (os.cpu_count() or 1) + 4)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        shard_results = list(executor.map(_inspect_parquet_shard, parquet_files))
+
+    total_transitions = sum(r["num_rows"] for r in shard_results)
+    global_f_min = min(r["f_min"] for r in shard_results) if shard_results else 0.0
+    global_f_max = max(r["f_max"] for r in shard_results) if shard_results else 0.0
+    global_i_min = min(r["i_min"] for r in shard_results) if shard_results else 0.0
+    global_i_max = max(r["i_max"] for r in shard_results) if shard_results else 0.0
+
+    shard_paths = [r["path"] for r in shard_results]
+
+    hasher = hashlib.sha256()
+    for r in shard_results:
+        hasher.update(r["sha256"].encode("utf-8"))
+    catalog_sha = hasher.hexdigest()
+
+    manifest = CatalogManifestRecord(
+        catalog_path=str(chunk_dir),
+        total_transitions=total_transitions,
+        frequency_min_mhz=global_f_min,
+        frequency_max_mhz=global_f_max,
+        intensity_min=global_i_min,
+        intensity_max=global_i_max,
+        is_virtual=True,
+        num_shards=len(shard_results),
+        shard_paths=shard_paths,
+        sha256_checksum=catalog_sha,
+        metadata=custom_metadata or {},
+    )
+
+    if output_manifest_path is not None:
+        out_m_p = Path(output_manifest_path).resolve()
+        out_m_p.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_m_p, "w", encoding="utf-8") as f:
+            json.dump(manifest.model_dump(), f, indent=2)
+
+    return manifest
+
+
+def read_parquet_catalog(
+    chunk_directory: Union[str, Path],
+    batch_size: int = DEFAULT_CHUNK_SIZE,
+    columns: Optional[Sequence[str]] = None,
+    frequency_range: Optional[Tuple[float, float]] = None,
+    partition_filter: Optional[Any] = None,
+) -> Generator[Dict[str, np.ndarray], None, None]:
+    """
+    Out-of-core streaming reader for Hive-partitioned Parquet chunk transition catalogs.
+
+    Uses pyarrow.dataset with predicate pushdown and batch streaming to yield dictionaries
+    of NumPy arrays without loading the cumulative catalog into memory.
+
+    Args:
+        chunk_directory: Root directory containing partitioned parquet chunk files.
+        batch_size: Transition row count per yielded batch.
+        columns: Optional list of columnar datasets to retrieve.
+        frequency_range: Optional tuple (min_freq_mhz, max_freq_mhz) for predicate pushdown.
+        partition_filter: Optional PyArrow dataset expression for partition filtering.
+
+    Yields:
+        Dict[str, np.ndarray]: Dictionary mapping columnar names to NumPy array slices.
+
+    Raises:
+        FileNotFoundError: If chunk directory does not exist.
+    """
+    chunk_dir = Path(chunk_directory).resolve()
+    if not chunk_dir.exists():
+        raise FileNotFoundError(f"Parquet catalog directory not found: {chunk_dir}")
+
+    dataset = ds.dataset(str(chunk_dir), format="parquet", partitioning="hive")
+
+    filter_expr = None
+    if frequency_range is not None:
+        f_min, f_max = frequency_range
+        filter_expr = (ds.field("frequencies") >= f_min) & (ds.field("frequencies") <= f_max)
+
+    if partition_filter is not None:
+        if filter_expr is not None:
+            filter_expr = filter_expr & partition_filter
+        else:
+            filter_expr = partition_filter
+
+    target_cols = list(columns) if columns is not None else [
+        "frequencies",
+        "intensities",
+        "lower_energies",
+        "upper_energies",
+        "uncertainties",
+        "g_upper",
+        "species_ids",
+        "quantum_numbers",
+    ]
+
+    scanner = dataset.scanner(columns=target_cols, filter=filter_expr, batch_size=batch_size)
+    for record_batch in scanner.to_batches():
+        if record_batch.num_rows == 0:
+            continue
+        batch_dict: Dict[str, np.ndarray] = {}
+        for col_name in target_cols:
+            if col_name in record_batch.schema.names:
+                arr = record_batch.column(col_name)
+                if col_name == "quantum_numbers":
+                    qn_lists = arr.to_pylist()
+                    batch_dict[col_name] = np.asarray(qn_lists, dtype=np.int32)
+                else:
+                    batch_dict[col_name] = arr.to_numpy()
+        yield batch_dict
+
+
+__all__ = [
+    "DEFAULT_CHUNK_SIZE",
+    "DEFAULT_LOCAL_LOCK_TIMEOUT",
+    "DEFAULT_LUSTRE_LOCK_TIMEOUT",
+    "DEFAULT_STALE_LOCK_TIMEOUT",
+    "STANDARD_DATASET_NAMES",
+    "PARQUET_TRANSITION_SCHEMA",
+    "CatalogCompilerError",
+    "CatalogLockError",
+    "CatalogLockTimeoutError",
+    "LustreCatalogLockError",
+    "CatalogDatasetError",
+    "CatalogStreamingError",
+    "VirtualLayoutError",
+    "CatalogCorruptionError",
+    "CatalogSchemaError",
+    "TransitionRecord",
+    "TransitionBatch",
+    "CatalogCompilerConfig",
+    "CatalogManifestRecord",
+    "is_lustre_filesystem",
+    "compute_sha256",
+    "LustreDirectoryLock",
+    "Tier3RegistryLock",
+    "get_chunked_transitions_dir",
+    "serialize_chunk_to_parquet",
+    "jax_serialize_chunk_callback",
+    "compile_master_manifest",
+    "read_parquet_catalog",
+    "stream_chunked_catalog",
+    "compile_virtual_catalog",
+    "read_chunked_catalog",
+    "verify_catalog_integrity",
+    "extract_catalog_metadata",
+    "_normalize_chunk_data",
+]
+
