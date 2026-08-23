@@ -578,6 +578,13 @@ def flag_unresolved_residuals(
         is_triggered = True
 
         # Extract flagged subset from states PyTree
+        def _is_leaf_state(x: Any) -> bool:
+            if isinstance(x, (jnp.ndarray, np.ndarray)):
+                return True
+            if isinstance(x, (list, tuple)) and len(x) == n_states:
+                return True
+            return False
+
         def _slice_state_leaf(leaf: Any) -> Any:
             if isinstance(leaf, (jnp.ndarray, np.ndarray)) and len(leaf) == n_states:
                 return leaf[valid_indices]
@@ -585,7 +592,7 @@ def flag_unresolved_residuals(
                 return type(leaf)(leaf[int(idx)] for idx in valid_indices)
             return leaf
 
-        flagged_states_pytree = jax.tree_util.tree_map(_slice_state_leaf, states)
+        flagged_states_pytree = jax.tree_util.tree_map(_slice_state_leaf, states, is_leaf=_is_leaf_state)
     else:
         valid_indices = jnp.empty((0,), dtype=jnp.int64)
         flagged_res = jnp.empty((0,), dtype=jnp.float64)
@@ -595,6 +602,13 @@ def flag_unresolved_residuals(
         rmse_val = 0.0
         is_triggered = False
 
+        def _is_leaf_state(x: Any) -> bool:
+            if isinstance(x, (jnp.ndarray, np.ndarray)):
+                return True
+            if isinstance(x, (list, tuple)) and len(x) == n_states:
+                return True
+            return False
+
         def _empty_state_leaf(leaf: Any) -> Any:
             if isinstance(leaf, (jnp.ndarray, np.ndarray)) and len(leaf) == n_states:
                 return leaf[:0]
@@ -602,7 +616,7 @@ def flag_unresolved_residuals(
                 return type(leaf)()
             return leaf
 
-        flagged_states_pytree = jax.tree_util.tree_map(_empty_state_leaf, states)
+        flagged_states_pytree = jax.tree_util.tree_map(_empty_state_leaf, states, is_leaf=_is_leaf_state)
 
     return {
         "is_triggered": is_triggered,

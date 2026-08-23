@@ -367,6 +367,58 @@ def test_generate_pes_healing_payload_dlpno_forbidden() -> None:
         ActivePESHealingConfig(target_method="DLPNO-CCSD(T)")
 
 
+def test_e_optimal_directional_variance() -> None:
+    """Verifies E-optimal criterion returns directional normalized variance."""
+    cov = jnp.array([[3.0, 0.5], [0.5, 1.5]], dtype=jnp.float64)
+    jac = jnp.array([2.0, -1.0], dtype=jnp.float64)
+    meas_var = 2.0
+
+    # j^T Sigma j = 11.5
+    # E-optimality = 11.5 / (2.0 + 11.5) = 11.5 / 13.5
+    gain_e = calculate_information_gain(
+        covariance_matrix=cov,
+        jacobian=jac,
+        measurement_variance=meas_var,
+        criterion=InformationCriterion.E_OPTIMAL,
+    )
+    expected_e = 11.5 / 13.5
+    assert abs(float(gain_e) - expected_e) < 1e-12
+
+
+def test_flag_unresolved_residuals_nested_pytree_support() -> None:
+    """Verifies flag_unresolved_residuals correctly slices arbitrary nested PyTree state collections."""
+    residuals = jnp.array([0.01, 12.5, 0.02, -8.4], dtype=jnp.float64)
+    confidences = jnp.array([0.99, 0.95, 0.90, 0.88], dtype=jnp.float64)
+
+    # Complex nested PyTree: dict containing tuples, lists, and JAX arrays
+    complex_states = {
+        "labels": ["v0_101", "v1_413", "v0_202", "v1_524"],
+        "quanta": (
+            {"v": jnp.array([0, 1, 0, 1], dtype=jnp.int32)},
+            [101, 413, 202, 524],
+        ),
+        "energies_cm": jnp.array([12.3, 456.7, 24.1, 589.2], dtype=jnp.float64),
+    }
+
+    report = flag_unresolved_residuals(
+        residuals=residuals,
+        states=complex_states,
+        threshold=5.0,
+        confidence_scores=confidences,
+        min_confidence=0.70,
+    )
+
+    assert report["is_triggered"] is True
+    assert report["flagged_count"] == 2
+    assert [int(i) for i in report["flagged_indices"]] == [1, 3]
+
+    flagged_states = report["flagged_states"]
+    assert flagged_states["labels"] == ["v1_413", "v1_524"]
+    assert list(np.array(flagged_states["quanta"][0]["v"])) == [1, 1]
+    assert flagged_states["quanta"][1] == [413, 524]
+    assert list(np.array(flagged_states["energies_cm"])) == [456.7, 589.2]
+
+
 # =============================================================================
 # 6. PURE-JAX FUNCTIONAL PURITY & ERROR HANDLING
 # =============================================================================
