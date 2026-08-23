@@ -34,11 +34,15 @@ cochem-spycfit --type IR --broaden Voigt --fwhm 4.0
 For programmatic execution within the 11-Arrow Canonical Pipeline, the module must be invoked through the Parsl-based DAG executor (`CoChem-NODE`) to prevent thread-thrashing on the HPC hardware.
 
 ```python
-import cochem
+import os
+from pathlib import Path
 from cochem.orchestrator import CanonicalPipeline
 
-# Standard pipeline execution
-pipeline = CanonicalPipeline(config="cochem_system_config.json")
+# Standard pipeline execution with dynamic pathing and configurable artifact output
+config_path = Path.home() / ".cochem" / "cochem_system_config.json"
+artifact_dir = Path(os.environ.get("COCHEM_ARTIFACT_DIR", Path.home() / "cochem_artifacts"))
+
+pipeline = CanonicalPipeline(config=config_path, artifact_dir=artifact_dir)
 pipeline.run(target_module="CoChem-SpycFit")
 ```
 

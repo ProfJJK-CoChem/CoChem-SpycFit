@@ -15,11 +15,11 @@ import h5py
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any
 
-from cochem_quantum_extractor import QuantumExtractor, apply_mass_weighting, MASS_DICT
+from cochem_spycfit.quantum_extractor import QuantumExtractor, apply_mass_weighting, MASS_DICT
 
-artifact_dir = Path(os.environ.get("COCHEM_ARTIFACT_DIR", str(Path.home() / "cochem_artifacts")))
+artifact_dir = Path(os.environ.get("COCHEM_ARTIFACT_DIR", str(Path.home() / ".cochem" / "artifacts"))).resolve()
 artifact_dir.mkdir(parents=True, exist_ok=True)
-logging.basicConfig(filename=str(artifact_dir / 'cochem_spycfit_master.log'), level=logging.INFO)
+logging.basicConfig(filename=str(artifact_dir / 'master.log'), level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 CONVERSION_FACTOR_MHZ = 505379.008  # MHz * amu * Å^2
@@ -36,7 +36,7 @@ def calculate_artifact_sha256(filepath: str | Path) -> str:
     return hasher.hexdigest()
 
 def safe_delete(filepath: Path) -> None:
-    trash_dir = Path("D:/__CoChem/.trash/")
+    trash_dir = Path(os.getenv('COCHEM_TRASH_DIR', str(artifact_dir / '.trash')))
     trash_dir.mkdir(parents=True, exist_ok=True)
     if filepath.exists():
         shutil.move(str(filepath), str(trash_dir / filepath.name))
@@ -59,7 +59,10 @@ def check_spin_contamination(stdout: str) -> None:
                 s2_val = float(parts[1].strip())
                 ideal = round((np.sqrt(1 + 4 * s2_val) - 1) / 2 * 2) / 2
                 ideal_s2 = ideal * (ideal + 1)
-                if ideal_s2 > 0:
+                if ideal_s2 == 0:
+                    if s2_val > 0.10:
+                        raise ValueError(f"[HARD_ABORT: PHYSICS WALL] Spin contamination exceeds 0.10 for singlet. <S**2> = {s2_val}")
+                else:
                     contamination = abs(s2_val - ideal_s2) / ideal_s2
                     if contamination > 0.10:
                         raise ValueError(f"[HARD_ABORT: PHYSICS WALL] Spin contamination exceeds 10%. <S**2> = {s2_val}, Ideal = {ideal_s2}")
@@ -95,10 +98,7 @@ def find_monomers_and_weak_bond(coords: list) -> tuple[list[int], list[int], tup
             monomers.append(comp)
             
     if len(monomers) != 2:
-        if len(monomers) == 1:
-            monomers = [list(range(n//2)), list(range(n//2, n))]
-        else:
-            monomers = [monomers[0], [idx for m in monomers[1:] for idx in m]]
+        raise ValueError(f"[HARD_ABORT: PHYSICS WALL] Expected exactly 2 monomers for LAM scan, found {len(monomers)}.")
 
     min_dist = float('inf')
     weak_bond = (monomers[0][-1], monomers[1][0])
@@ -147,17 +147,22 @@ class OrcaPesInputConfig(BaseModel):
     tier: str = Field("wB97M-V def2-QZVPP", description="Method Matrix v4 Tier selection")
     nprocs: int = Field(7, description="Number of processors (Method Matrix v4 P-core cap)")
     maxcore: int = Field(3400, description="Max core per proc in MB")
+    charge: int = Field(0, description="Molecular charge")
+    mult: int = Field(1, description="Spin multiplicity")
     
     @model_validator(mode='after')
-    def check_distance_range(self):
+    def check_config(self):
         if self.r_min >= self.r_max:
             raise ValueError("r_min must be strictly less than r_max")
+        dispersion_keys = ['D3', 'D4', '-V', '-D']
+        if not any(k in self.tier.upper() for k in dispersion_keys):
+            raise ValueError("[HARD_ABORT: PHYSICS WALL] Dispersion correction (D3/D4 or -V/-D functional) is mandatory for weak complexes.")
         return self
 
 def compute_vibrationally_averaged_constants(inertia_tensors_q: np.ndarray, weights_q: np.ndarray) -> np.ndarray:
     weights = np.asarray(weights_q, dtype=float)
     if np.sum(weights) == 0:
-        weights = np.ones_like(weights)
+        raise ValueError("[HARD_ABORT: PHYSICS WALL] Sum of vibrational weights is zero. Invalid probability distribution.")
     weights = weights / np.sum(weights)
 
     tensors = np.asarray(inertia_tensors_q, dtype=float)
@@ -313,14 +318,9 @@ class SpycFitMaster:
         return coords
 
     def generate_orca_1d_pes_input(self, coords: list, config: OrcaPesInputConfig) -> str:
-        method_header = f"! {config.tier} def2/J RIJCOSX TightOPT TightSCF"
+        method_header = f"! {config.tier} def2/J RIJCOSX TightOPT TightSCF DEFGRID3"
         
-        try:
-            monomer1, monomer2, weak_bond = find_monomers_and_weak_bond(coords)
-        except Exception:
-            monomer1 = list(range(len(coords)//2))
-            monomer2 = list(range(len(coords)//2, len(coords)))
-            weak_bond = (monomer1[-1], monomer2[0])
+        monomer1, monomer2, weak_bond = find_monomers_and_weak_bond(coords)
             
         inp = [
             method_header,
@@ -351,7 +351,7 @@ class SpycFitMaster:
             "  end",
             "end",
             "",
-            "* xyz 0 1"
+            f"* xyz {config.charge} {config.mult}"
         ])
         for sym, x, y, z in coords:
             inp.append(f"  {sym:2s}  {x:12.6f}  {y:12.6f}  {z:12.6f}")
@@ -399,7 +399,9 @@ class SpycFitMaster:
         lam_needed = self.check_lam_trigger()
         if lam_needed:
             coords = self.get_system_coords()
-            config = OrcaPesInputConfig(r_min=1.5, r_max=3.0, n_steps=15)
+            charge = int(os.environ.get("COCHEM_CHARGE", 0))
+            mult = int(os.environ.get("COCHEM_MULT", 1))
+            config = OrcaPesInputConfig(r_min=1.5, r_max=3.0, n_steps=15, charge=charge, mult=mult)
             return self.execute_lam_correction(coords, config)
         else:
             logger.info("ℹ️ [SpycFitMaster] Standard rigid-rotor pathway (LAM not required).")

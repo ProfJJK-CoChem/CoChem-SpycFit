@@ -1,0 +1,39 @@
+# ==========================================
+# CoChem Tripartite Air-Gap Enforcements
+# ==========================================
+
+# Block Tier 2: Master Artifacts Data Tier
+CoChem_Artifacts/
+*/CoChem_Artifacts/*
+*.h5
+*.hdf5
+*.zarr
+*.parquet
+*.arrow
+*.csv
+*.xyz
+*.mol
+*.lin
+*.par
+*.var
+*.int
+*.cat
+*.fit
+*.tmp
+*.tex
+
+# Block Tier 3: State, Config, & IPC Tier
+cochem_system_config.json
+fit_provenance.json
+spycfit_telemetry.json
+*.ipc
+*.lock
+*.socket
+.jax_xla_cache/
+
+# Standard Python Exclusions
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+.env

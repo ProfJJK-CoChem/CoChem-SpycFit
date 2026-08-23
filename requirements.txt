@@ -1,0 +1,12 @@
+jax==0.4.13
+jaxlib==0.4.13
+cupy-cuda12x==12.2.0
+h5py==3.9.0
+zarr==2.16.1
+pyarrow==13.0.0
+plotly==5.17.0
+ipywidgets==8.1.1
+mendeleev==0.14.0
+platformdirs==3.10.0
+filelock==3.12.2
+pyzmq==25.1.1

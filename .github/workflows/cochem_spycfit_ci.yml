@@ -1,0 +1,18 @@
+name: CoChem-SpycFit CI
+on: [push, pull_request]
+
+jobs:
+  air_gap_enforcement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tripartite Air-Gap Enforcement Scan
+        run: |
+          echo "Scanning for Tier 2/Tier 3 artifacts outside tests/ directory..."
+          matches=$(find . -type d -name "test_fixtures" -prune -o \( -name "*.h5" -o -name "*.parquet" -o -name "*.fit" -o -name "*.lin" -o -name "*.lock" \) -print)
+          if [ ! -z "$matches" ]; then
+            echo "CRITICAL: Tripartite Air-Gap Breach. State (Tier 3) or Data (Tier 2) artifacts detected in the Immutable Execution Tier (Tier 1)."
+            echo "$matches"
+            exit 1
+          fi
+          echo "Air-Gap intact."

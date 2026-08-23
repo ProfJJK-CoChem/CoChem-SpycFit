@@ -1,11 +1,16 @@
-from typing import Any, Dict, List, Optional, Tuple
-import json
 #!/usr/bin/env python3
 """
 CoChem-SpycFit GUI Component
 Provides interactive Qt interface for Bayesian fitting, active learning transition table,
 and LOIO cross-validation visualization.
 """
+
+from typing import Any, Dict, List, Optional, Tuple, Union
+import json
+import os
+import logging
+from pathlib import Path
+from pydantic import BaseModel, Field, ValidationError
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
@@ -18,6 +23,20 @@ try:
     HAS_WEBENGINE = True
 except ImportError:
     HAS_WEBENGINE = False
+
+
+class PlotlyTrace(BaseModel):
+    """Pydantic model for Plotly trace validation."""
+    y: List[float]
+    type: str = "box"
+    name: str
+
+class TransitionData(BaseModel):
+    """Pydantic model for Active Learning table row."""
+    transition: str
+    theoretical_intensity: float
+    prediction_error: float
+
 
 class SpycFitTab(QWidget):
     """SpycFit: Interactive Bayesian Fitting & Active Learning UI"""
@@ -38,7 +57,7 @@ class SpycFitTab(QWidget):
         self.btn_load_lin.clicked.connect(self.load_lin_file)
         self.btn_optimize.clicked.connect(self.run_optimization)
         
-        self.lbl_status = QLabel("Status: Idle. Awaiting priors.")
+        self.lbl_status = QLabel("Status: Idle.")
         
         ingestion_layout.addWidget(self.btn_load_lin)
         ingestion_layout.addWidget(self.btn_optimize)
@@ -78,7 +97,8 @@ class SpycFitTab(QWidget):
 
     def load_lin_file(self) -> None:
         """Resolves SPYCFIT-14: Handler for loading Pickett .lin file."""
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Pickett .lin File", "", "Pickett Files (*.lin);;All Files (*)")
+        default_dir = os.environ.get("COCHEM_ARTIFACTS", str(Path.home()))
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open Pickett .lin File", default_dir, "Pickett Files (*.lin);;All Files (*)")
         if file_path:
             self.lbl_status.setText(f"Loaded: {file_path}")
 
@@ -87,17 +107,47 @@ class SpycFitTab(QWidget):
         self.lbl_status.setText("Status: Optimization running (Levenberg-Marquardt)...")
         self.optimization_requested.emit()
 
-    def update_active_learning_table(self, transitions_data: List[Tuple[str, str, str]]) -> None:
+    def update_active_learning_table(self, transitions_data: List[Union[dict, Tuple[str, Any, Any], List[Any]]]) -> None:
         """Resolves SPYCFIT-15: Dynamically populates QTableWidget from active fit data arrays."""
         self.table.setRowCount(len(transitions_data))
-        for row, (trans, intensity, err) in enumerate(transitions_data):
-            self.table.setItem(row, 0, QTableWidgetItem(str(trans)))
-            self.table.setItem(row, 1, QTableWidgetItem(str(intensity)))
-            self.table.setItem(row, 2, QTableWidgetItem(str(err)))
+        for row, item in enumerate(transitions_data):
+            if isinstance(item, (tuple, list)):
+                if len(item) >= 3:
+                    try:
+                        trans_str = str(item[0])
+                        int_float = float(item[1])
+                        err_float = float(item[2])
+                    except (ValueError, TypeError):
+                        continue
+                else:
+                    continue
+            else:
+                try:
+                    parsed = TransitionData(**item)
+                    trans_str = parsed.transition
+                    int_float = parsed.theoretical_intensity
+                    err_float = parsed.prediction_error
+                except ValidationError as e:
+                    logging.error(f"Validation error: {e}")
+                    continue
+                    
+            self.table.setItem(row, 0, QTableWidgetItem(trans_str))
+            self.table.setItem(row, 1, QTableWidgetItem(f"{int_float:.4f}"))
+            self.table.setItem(row, 2, QTableWidgetItem(f"{err_float:.4f}"))
 
     def _generate_plotly_box_plot_html(self, data_traces: List[Dict[str, Any]]) -> str:
         """Resolves SPYCFIT-16: HTML rendering Plotly Box & Whisker residual distribution."""
-        data_json = json.dumps(data_traces)
+        validated_traces = []
+        for trace in data_traces:
+            try:
+                if "type" not in trace:
+                    trace["type"] = "box"
+                valid_trace = PlotlyTrace(**trace)
+                validated_traces.append(valid_trace.model_dump())
+            except ValidationError as e:
+                logging.warning(f"Trace validation failed, ignoring: {e}")
+                
+        data_json = json.dumps(validated_traces)
         return f"""
         <!DOCTYPE html>
         <html>

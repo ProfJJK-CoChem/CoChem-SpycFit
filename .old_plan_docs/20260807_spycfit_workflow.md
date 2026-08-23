@@ -3,7 +3,7 @@
 This document maps the complete, step-by-step execution workflow for the `CoChem-SpycFit` module. This workflow transforms SpycFit into an interactive, JAX-accelerated Bayesian Active Learning platform designed specifically for resolving dense CP-FTMW rotational spectra.
 
 ## Stage 1: Environment Lock & Tensor Initialization
-1. **JAX Pre-Flight:** `cochem_spycfit_init.py` locks the XLA compiler to strict `float64` precision. This is a mandatory guardrail; operating in standard ML `float32` precision leads to catastrophic numerical degradation when diagonalizing large rotational partition functions.
+1. **JAX Pre-Flight:** `cochem_spycfit_init.py` locks the XLA compiler to strict `float64` precision via `JAX_ENABLE_X64=True`. This is a mandatory guardrail; operating in standard ML `float32` precision leads to catastrophic numerical degradation when diagonalizing large rotational partition functions.
 2. **Memory-Mapped Assimilation:** The quantum extractor hooks into the massive `cochem_state.h5` shared tensor. To prevent GPU memory exhaustion when calculating states up to $J=80$, SpycFit enforces strict memory-mapped (`mmap`) batch streaming to the VRAM.
 3. **SCRIBE Sync:** SpycFit pings the `CoChem-SCRIBE` background daemon to prepare for incremental data streaming.
 
@@ -17,13 +17,12 @@ This document maps the complete, step-by-step execution workflow for the `CoChem
 2. **Levenberg-Marquardt Optimization:** The Bayesian optimizer attempts to fit the theoretical *ab initio* priors against the experimental dataset. 
 3. **Physical Constraints Gate:**
    - **Decision Gate:** Does the optimizer attempt to step into unphysical parameter space (e.g., negative centrifugal distortion) to achieve a lower RMS error?
-   - *Yes:* SpycFit instantly applies a strict mathematical penalty function, rejects the step, recalculates, and logs the penalty event to the HDF5 tensor for SCRIBE documentation.
+   - *Yes:* SpycFit instantly applies a strict mathematical penalty function, rejects the step, recalculates, and logs the penalty event to the HDF5 tensor for SCRIBE documentation with an `[E]` provenance tag.
 4. **Information-Gain Transition Mapping (Active Learning):**
    - Once the initial fit converges, the JAX `vmap` convolver broadcasts the theoretical spectral grid.
    - Using the statistical variance matrix, SpycFit actively calculates the "Next Best Microwave Transitions."
    - The UI pauses and presents the user with a dynamic table of unassigned frequencies that have the highest theoretical intensity combined with the lowest prediction error.
 5. **Iterative Assignment:** The user searches the experimental spectrum for the ML-suggested frequencies, assigns them, and reruns the optimizer. This loop repeats until the RMS error is minimized across all assignments.
-6. **UV-Vis Spectral Broadcasting:** For photochemistry regimes, JAX `vmap` broadcasts Voigt or log-normal profiles over the excited-state transition frequencies to rapidly generate theoretical UV-Vis absorption spectra for the entire reaction mixture.
 
 ## Stage 4: LOIO Cross-Validation
 1. **Leave-One-Isotopologue-Out Routine:** Once the primary fit is finalized, SpycFit executes the LOIO statistical cross-validation.
@@ -31,7 +30,7 @@ This document maps the complete, step-by-step execution workflow for the `CoChem
 3. **Leverage Reporting:** A box-and-whisker plot (via Plotly) is generated in the UI, proving to the user (and reviewers) that no single misassigned isotopologue is falsely skewing the global molecular structure.
 
 ## Stage 5: Final Serialization & SCRIBE Publication Handoff
-1. **Legacy Pickett Assembly:** The `quantum_extractor` parses the final, highly accurate Bayesian posteriors and generates standard Pickett-formatted `.lin`, `.cat`, and `.fit` files.
+1. **Legacy Pickett Assembly:** The `quantum_extractor` parses the final Bayesian posteriors and generates standard Pickett-formatted `.lin`, `.cat`, and `.fit` files, strictly embedding `[M]` and `[D]` provenance tags into the output metadata.
 2. **HDF5 Commit & Zipping:** 
    - SpycFit flushes the final rotational constants, statistical variances, LOIO plots, and Kraitchman coordinates to `cochem_state.h5`.
    - The generated Pickett files are specifically bundled into `Legacy_Verification.zip` to allow classical spectroscopists to independently cross-validate the results.

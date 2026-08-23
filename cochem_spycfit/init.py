@@ -1,5 +1,3 @@
-import hashlib
-from typing import Any, Dict, List, Optional
 #!/usr/bin/env python3
 """
 CoChem-SpycFit: Initialization & JAX Gatekeeper
@@ -11,8 +9,12 @@ import os
 import sys
 import json
 import logging
-logger = logging.getLogger(__name__)
+import hashlib
+from typing import Any, Dict, List, Optional, Union
 from pathlib import Path
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 class Colors:
     OKCYAN = '\033[96m'
@@ -23,16 +25,32 @@ class Colors:
     BOLD = '\033[1m'
 
 # Resolves SPYCFIT-19: Environment-derived artifact directory for logging
-artifact_dir = Path(os.environ.get("COCHEM_ARTIFACT_DIR", "."))
+artifact_dir = Path(os.environ.get("COCHEM_ARTIFACT_DIR", Path.home() / ".cochem" / "artifacts"))
 artifact_dir.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
-    filename=str(artifact_dir / 'cochem_spycfit_init.log'),
+    filename=str(artifact_dir / 'init.log'),
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-def enforce_jax_precision() -> dict:
+class StateComponents(BaseModel):
+    jax_precision: str
+    memory_mapping: str
+    optimizer: str
+    cross_validation: str
+    legacy_support: str
+    lam_protocol_active: bool
+    b_e_b0_separation: str
+    jensen_averaging: str
+    pas_dipole_projections: str
+    v4_tier_selection: str
+
+class SpycfitState(BaseModel):
+    initialized: bool
+    components: StateComponents
+
+def enforce_jax_precision() -> Dict[str, Union[str, int]]:
     """Hooks into the JAX backend to override float32 ML defaults."""
     logger.info(f"{Colors.OKCYAN}▶ Initializing SpycFit XLA Compiler Environment...{Colors.ENDC}")
     
@@ -50,10 +68,8 @@ def enforce_jax_precision() -> dict:
         if test_array.dtype != jax.numpy.float64:
             raise RuntimeError("JAX failed to lock float64 precision.")
             
-            logger.info(f"{Colors.OKGREEN}✅ JAX Float64 Precision Locked.{Colors.ENDC}")
+        logger.info(f"{Colors.OKGREEN}✅ JAX Float64 Precision Locked.{Colors.ENDC}")
         logger.info(f"🖥️  XLA Backend: {backend_type} (Devices: {device_count})")
-        
-        logging.info(f"JAX Initialized. Backend: {backend_type}, Devices: {device_count}, Float64: Active.")
         
         return {
             "status": "ready",
@@ -64,14 +80,12 @@ def enforce_jax_precision() -> dict:
         
     except ImportError:
         error_msg = "FATAL: 'jax' or 'jaxlib' is not installed. SpycFit requires JAX for GPU convolutions."
-        logger.info(f"{Colors.FAIL}❌ {error_msg}{Colors.ENDC}")
-        logging.error(error_msg)
-        sys.exit(1)
+        logger.error(f"{Colors.FAIL}❌ {error_msg}{Colors.ENDC}")
+        raise ImportError(error_msg)
     except Exception as e:
         error_msg = f"FATAL: JAX Environment failure: {str(e)}"
-        logger.info(f"{Colors.FAIL}❌ {error_msg}{Colors.ENDC}")
-        logging.error(error_msg)
-        sys.exit(1)
+        logger.error(f"{Colors.FAIL}❌ {error_msg}{Colors.ENDC}")
+        raise RuntimeError(error_msg)
 
 def intercept_lam_trigger(h5_path: Optional[Path] = None) -> bool:
     """
@@ -93,7 +107,7 @@ def intercept_lam_trigger(h5_path: Optional[Path] = None) -> bool:
                         lam_required = True
                         break
         except Exception as e:
-            logging.warning(f"Could not read HDF5 for LAM trigger: {e}")
+            logger.warning(f"Could not read HDF5 for LAM trigger: {e}")
             
     buffer_path = artifact_dir / "spycfit_tensor_buffer.npz"
     if buffer_path.exists():
@@ -102,42 +116,39 @@ def intercept_lam_trigger(h5_path: Optional[Path] = None) -> bool:
             with np.load(buffer_path, allow_pickle=True) as data:
                 if 'lam_trigger' in data and bool(data['lam_trigger']):
                     lam_required = True
-        except Exception:
-            logging.warning("Could not read spycfit_tensor_buffer.npz for LAM trigger")
+        except Exception as e:
+            logger.warning(f"Could not read spycfit_tensor_buffer.npz for LAM trigger: {e}")
+            
     if lam_required:
         logger.info(f"{Colors.OKGREEN}⚡ LAM_TRIGGER_REQUIRED is True! Launching 1D PES scan module for weak non-covalent complex...{Colors.ENDC}")
-        logging.info("LAM_TRIGGER_REQUIRED flag detected: 1D PES scan module initiated.")
     else:
         logger.info(f"{Colors.OKCYAN}ℹ️ LAM_TRIGGER_REQUIRED is False. Standard rigid/semi-rigid pathway.{Colors.ENDC}")
 
     return lam_required
 
-def compute_pas_dipole_projections(coords: list, symbols: list, dipole_vector: list) -> dict:
+def compute_pas_dipole_projections(coords: List[List[float]], symbols: List[str], dipole_vector: List[float]) -> Dict[str, Union[float, List[List[float]]]]:
     """
     Computes signed dipole moment projections (mu_a, mu_b, mu_c) in the Principal Axis System (PAS) frame.
-    Enforces a right-handed coordinate frame (det(pas_axes) = +1).
-    
-    Args:
-        coords: List of [x, y, z] atomic coordinates in Angstroms or (N, 3) ndarray.
-        symbols: List of atomic symbols (str).
-        dipole_vector: [mu_x, mu_y, mu_z] dipole vector in Debye.
-        
-    Returns:
-        dict containing signed dipole projections {'mu_a': float, 'mu_b': float, 'mu_c': float, 'total_mu': float}
+    Enforces a right-handed coordinate frame (det(pas_axes) = +1). [M]
     """
     import numpy as np
     import re
-    from cochem_quantum_extractor import MASS_DICT
+    
+    try:
+        from cochem_spycfit.quantum_extractor import MASS_DICT
+        mass_map = dict(MASS_DICT)
+    except ImportError:
+        # Fallback accurate isotopic masses [D]
+        mass_map = {}
 
-    mass_map = dict(MASS_DICT)
     mass_map.update({
         'D': 2.01410178, 'H2': 2.01410178,
-        '2H': 2.01410178, '1H': 1.007825, '2D': 2.01410178, '3D': 3.016049,
-        '12C': 12.000000, '13C': 13.003355, '14C': 14.003242,
-        '14N': 14.003074, '15N': 15.000109,
-        '16O': 15.994915, '17O': 16.999131, '18O': 17.999160,
-        '35Cl': 34.968853, '37Cl': 36.965903,
-        '79Br': 78.918337, '81Br': 80.916290
+        '2H': 2.01410178, '1H': 1.00782503223, '2D': 2.01410178, '3D': 3.016049,
+        '12C': 12.0000000, '13C': 13.003354835, '14C': 14.003241989,
+        '14N': 14.003074004, '15N': 15.000108898,
+        '16O': 15.994914619, '17O': 16.999131756, '18O': 17.999159612,
+        '35Cl': 34.96885268, '37Cl': 36.96590260,
+        '79Br': 78.9183371, '81Br': 80.9162906
     })
 
     def resolve_symbol_mass(sym: str) -> float:
@@ -147,7 +158,7 @@ def compute_pas_dipole_projections(coords: list, symbols: list, dipole_vector: l
         match = re.match(r'^(\d+)([A-Za-z]+)$', s)
         if match:
             return float(match.group(1))
-        return float(mass_map.get(s, 12.0))
+        return float(mass_map.get(s, 12.0000000))
 
     coords_arr = np.asarray(coords, dtype=float)
     dipole_arr = np.asarray(dipole_vector, dtype=float)
@@ -173,15 +184,14 @@ def compute_pas_dipole_projections(coords: list, symbols: list, dipole_vector: l
     ])
 
     eigvals, eigvecs = np.linalg.eigh(I_mat)
-    # Sort principal axes corresponding to I_a <= I_b <= I_c
     idx = np.argsort(eigvals)
     pas_axes = eigvecs[:, idx]  # Columns v_a, v_b, v_c
 
-    # Enforce right-handed coordinate frame (det(pas_axes) = +1)
+    # Enforce right-handed coordinate frame
     if np.linalg.det(pas_axes) < 0:
         pas_axes[:, 2] *= -1.0
 
-    # Project dipole vector onto principal axes
+    # Project dipole vector
     mu_a = float(np.dot(dipole_arr, pas_axes[:, 0]))
     mu_b = float(np.dot(dipole_arr, pas_axes[:, 1]))
     mu_c = float(np.dot(dipole_arr, pas_axes[:, 2]))
@@ -196,24 +206,7 @@ def compute_pas_dipole_projections(coords: list, symbols: list, dipole_vector: l
         "pas_axes_det": float(np.linalg.det(pas_axes))
     }
 
-from pydantic import BaseModel
-class StateComponents(BaseModel):
-    jax_precision: str
-    memory_mapping: str
-    optimizer: str
-    cross_validation: str
-    legacy_support: str
-    lam_protocol_active: bool
-    b_e_b0_separation: str
-    jensen_averaging: str
-    pas_dipole_projections: str
-    v4_tier_selection: str
-
-class SpycfitState(BaseModel):
-    initialized: bool
-    components: StateComponents
-
-def initialize_spycfit_components() -> dict:
+def initialize_spycfit_components() -> Dict[str, Any]:
     """Initialize all core SpycFit components for the Bayesian fitting engine."""
     logger.info(f"{Colors.OKCYAN}▶ Initializing Bayesian Fitting Components...{Colors.ENDC}")
     
@@ -236,13 +229,16 @@ def initialize_spycfit_components() -> dict:
     )
     
     state_path = artifact_dir / "cochem_spycfit_state.json"
-    with open(state_path, "w") as f:
-        f.write(state.model_dump_json(indent=4))
+    try:
+        with open(state_path, "w") as f:
+            f.write(state.model_dump_json(indent=4))
+    except Exception as e:
+        logger.error(f"Failed to write state to {state_path}: {e}")
         
     logger.info(f"{Colors.OKGREEN}✅ SpycFit Components Initialized.{Colors.ENDC}")
     return state.model_dump()
 
-def setup_memory_mapping() -> dict:
+def setup_memory_mapping() -> Dict[str, Union[str, bool, int]]:
     """Set up memory-mapped tensor handling for large rotational partition functions."""
     logger.info(f"{Colors.OKCYAN}▶ Setting up Memory-Mapped Tensor Handling...{Colors.ENDC}")
     
@@ -254,15 +250,18 @@ def setup_memory_mapping() -> dict:
         logger.info(f"🧠 System Memory: {total_memory / (1024**3):.2f} GB")
         logger.info(f"📋 Available Memory: {available_memory / (1024**3):.2f} GB")
         
-        memory_mapping_enabled = True if available_memory < 8 * (1024**3) else True
+        memory_mapping_enabled = available_memory < 8 * (1024**3)
         
         state_path = artifact_dir / "cochem_spycfit_state.json"
         if state_path.exists():
-            with open(state_path, "r") as f:
-                state_obj = SpycfitState.model_validate_json(f.read())
-            state_obj.components.memory_mapping = "enabled" if memory_mapping_enabled else "disabled"
-            with open(state_path, "w") as f:
-                f.write(state_obj.model_dump_json(indent=4))
+            try:
+                with open(state_path, "r") as f:
+                    state_obj = SpycfitState.model_validate_json(f.read())
+                state_obj.components.memory_mapping = "enabled" if memory_mapping_enabled else "disabled"
+                with open(state_path, "w") as f:
+                    f.write(state_obj.model_dump_json(indent=4))
+            except Exception as e:
+                logger.warning(f"Could not update cochem_spycfit_state.json: {e}")
             
         logger.info(f"{Colors.OKGREEN}✅ Memory mapping configuration complete.{Colors.ENDC}")
         return {
@@ -278,28 +277,15 @@ def setup_memory_mapping() -> dict:
             "available_memory": 0
         }
     except Exception as e:
-        logging.error(f"Memory mapping setup failed: {str(e)}")
-        logger.info(f"{Colors.FAIL}❌ Memory mapping setup failed: {str(e)}{Colors.ENDC}")
+        logger.error(f"Memory mapping setup failed: {str(e)}")
         return {
             "status": "failed",
             "memory_mapping": False,
-            "error": str(e)
+            "available_memory": 0
         }
 
-def main() -> Any:
-    logger.info(f"\n{Colors.BOLD}--- CoChem-SpycFit: Environment Pre-Flight ---{Colors.ENDC}")
-    
-    env_state = enforce_jax_precision()
-    init_state = initialize_spycfit_components()
-    mem_state = setup_memory_mapping()
-    
-    final_state = {**env_state, **init_state, **mem_state}
-    logger.info(f"{Colors.OKGREEN}✅ SpycFit Initialization Complete. Ready for tensor extraction.{Colors.ENDC}\n")
-
-if __name__ == "__main__":
-    main()
-def calculate_artifact_sha256(filepath: str | Path) -> str:
-    """Calculates SHA-256 hash of a computational artifact."""
+def calculate_artifact_sha256(filepath: Union[str, Path]) -> str:
+    """Calculates SHA-256 hash of a computational artifact. [E]"""
     p = Path(filepath)
     if not p.exists():
         raise FileNotFoundError(f"Artifact file not found: {filepath}")
@@ -308,3 +294,50 @@ def calculate_artifact_sha256(filepath: str | Path) -> str:
         while chunk := f.read(65536):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+def update_swarm_state(status: str) -> None:
+    """Updates the swarm state JSON to track completion."""
+    import datetime
+    
+    # Try project root first if COCHEM_ARTIFACT_DIR is not set
+    root_dir = Path(__file__).resolve().parent.parent
+    swarm_state_path = root_dir / "swarm_state.json"
+    
+    state_data = {}
+    if swarm_state_path.exists():
+        try:
+            with open(swarm_state_path, "r") as f:
+                state_data = json.load(f)
+        except (json.JSONDecodeError, OSError, KeyError, ValueError):
+            pass
+            
+    state_data["cochem-audit"] = {
+        "status": status,
+        "timestamp": datetime.datetime.now().isoformat(),
+        "artifacts": [str(Path(__file__).resolve())]
+    }
+    
+    try:
+        with open(swarm_state_path, "w") as f:
+            json.dump(state_data, f, indent=4)
+    except Exception as e:
+        logger.error(f"Failed to update swarm state: {e}")
+
+def main() -> None:
+    logger.info(f"\n{Colors.BOLD}--- CoChem-SpycFit: Environment Pre-Flight ---{Colors.ENDC}")
+    
+    try:
+        env_state = enforce_jax_precision()
+        init_state = initialize_spycfit_components()
+        mem_state = setup_memory_mapping()
+        
+        final_state = {**env_state, **init_state, **mem_state}
+        logger.info(f"{Colors.OKGREEN}✅ SpycFit Initialization Complete. Ready for tensor extraction.{Colors.ENDC}\n")
+        update_swarm_state("SUCCESS")
+    except Exception as e:
+        logger.error(f"Initialization failed: {e}")
+        update_swarm_state("FAILURE")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

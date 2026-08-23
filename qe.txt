@@ -1,0 +1,190 @@
+import os
+import re
+import logging
+from pathlib import Path
+from typing import Optional, Dict, Any, Union
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+
+class RotationalConstants(BaseModel):
+    A: float
+    B: float
+    C: float
+
+class DipoleMoment(BaseModel):
+    X: float
+    Y: float
+    Z: float
+    total: float
+
+class QuantumExtraction(BaseModel):
+    rotational_constants: Optional[RotationalConstants] = None
+    dipole_moment: Optional[DipoleMoment] = None
+
+class QuantumExtractor:
+    """
+    Resolves SPYCFIT-12 & WP2-Remediation:
+        Extracts raw Hessians, dipole derivatives, rotational constants (A, B, C in MHz),
+    and dipole components (X, Y, Z in Debye) from real MPQC and g-xTB outputs or HDF5 store.
+    """
+    def __init__(self, output_path: Optional[Union[str, Path]] = None, artifacts_dir: Optional[Union[str, Path]] = None) -> None:
+        self.output_path = Path(output_path) if output_path else None
+        
+        env_artifacts = os.getenv("COCHEM_ARTIFACTS_DIR")
+        if artifacts_dir:
+            self.artifacts_dir = Path(artifacts_dir)
+        elif env_artifacts:
+            self.artifacts_dir = Path(env_artifacts)
+        else:
+            self.artifacts_dir = Path.home() / ".cochem" / "artifacts"
+        
+        try:
+            self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"Could not create artifacts directory: {e}")
+
+    def parse_mpqc_output(self, mpqc_output_text: Optional[str] = None) -> QuantumExtraction:
+        """
+        Parses real MPQC/ORCA output files/strings for rotational constants (A, B, C in MHz)
+        and dipole components (X, Y, Z in Debye).
+        """
+        if mpqc_output_text is None and self.output_path and self.output_path.exists():
+            try:
+                mpqc_output_text = self.output_path.read_text(encoding='utf-8', errors='ignore')
+            except Exception as e:
+                logger.error(f"Failed to read output path {self.output_path}: {e}")
+                return QuantumExtraction()
+            
+        if not mpqc_output_text:
+            return QuantumExtraction()
+
+        results = QuantumExtraction()
+
+        # Match rotational constants (MHz or cm^-1)
+        rot_match = re.search(
+            r'Rotational constants\s*\((MHz|cm\^-1|cm-1)\)\s*:\s*([\d\.-]+)\s+([\d\.-]+)\s+([\d\.-]+)',
+            mpqc_output_text, re.IGNORECASE
+        )
+        if rot_match:
+            unit = rot_match.group(1).lower()
+            a, b, c = float(rot_match.group(2)), float(rot_match.group(3)), float(rot_match.group(4))
+            if 'cm' in unit:
+                a, b, c = a * 29979.2458, b * 29979.2458, c * 29979.2458
+            results.rotational_constants = RotationalConstants(A=a, B=b, C=c)
+        else:
+            # Secondary check for individual lines e.g. A = ... MHz
+            a_m = re.search(r'A\s*[:=]\s*([\d\.-]+)\s*MHz', mpqc_output_text, re.IGNORECASE)
+            b_m = re.search(r'B\s*[:=]\s*([\d\.-]+)\s*MHz', mpqc_output_text, re.IGNORECASE)
+            c_m = re.search(r'C\s*[:=]\s*([\d\.-]+)\s*MHz', mpqc_output_text, re.IGNORECASE)
+            if a_m and b_m and c_m:
+                results.rotational_constants = RotationalConstants(
+                    A=float(a_m.group(1)),
+                    B=float(b_m.group(1)),
+                    C=float(c_m.group(1))
+                )
+
+        # Match total & component dipole moments (Debye)
+        dip_match = re.search(
+            r'Total Dipole Moment\s*:\s*([\d\.-]+)\s+([\d\.-]+)\s+([\d\.-]+)',
+            mpqc_output_text, re.IGNORECASE
+        )
+        if dip_match:
+            dx, dy, dz = float(dip_match.group(1)), float(dip_match.group(2)), float(dip_match.group(3))
+            results.dipole_moment = DipoleMoment(X=dx, Y=dy, Z=dz, total=(dx**2 + dy**2 + dz**2)**0.5)
+        else:
+            dip_comp = re.search(r'Dipole moment\s*\([^)]*\)\s*:\s*X\s*=\s*([\d\.-]+)\s+Y\s*=\s*([\d\.-]+)\s+Z\s*=\s*([\d\.-]+)', mpqc_output_text, re.IGNORECASE)
+            if dip_comp:
+                dx, dy, dz = float(dip_comp.group(1)), float(dip_comp.group(2)), float(dip_comp.group(3))
+                results.dipole_moment = DipoleMoment(X=dx, Y=dy, Z=dz, total=(dx**2 + dy**2 + dz**2)**0.5)
+
+        # Spin contamination check for open-shell systems
+        s2_match = re.search(r'Expectation value of <S\*\*2>\s*:\s*([\d\.]+)', mpqc_output_text)
+        ideal_s2_match = re.search(r'Ideal value S\*\S+\s+for S=[\d\.]+\s*:\s*([\d\.]+)', mpqc_output_text)
+        if s2_match and ideal_s2_match:
+            s2_val = float(s2_match.group(1))
+            ideal_s2_val = float(ideal_s2_match.group(1))
+            if ideal_s2_val >= 0:
+                contamination = abs(s2_val - ideal_s2_val) / ideal_s2_val if ideal_s2_val > 0 else abs(s2_val)
+                if contamination > 0.10:
+                    raise ValueError(f"Spin contamination exceeded 10%: <S**2> = {s2_val}, ideal = {ideal_s2_val}")
+
+        return results
+
+    parse_orca_output = parse_mpqc_output
+
+    def parse_gxtb_output(self, gxtb_output_text: Optional[str] = None) -> QuantumExtraction:
+        """
+        Parses real g-xTB (GFN2-xTB) output files/strings for rotational constants (A, B, C in MHz)
+        and dipole components (X, Y, Z in Debye).
+        """
+        if gxtb_output_text is None and self.output_path and self.output_path.exists():
+            try:
+                gxtb_output_text = self.output_path.read_text(encoding='utf-8', errors='ignore')
+            except Exception as e:
+                logger.error(f"Failed to read output path {self.output_path}: {e}")
+                return QuantumExtraction()
+
+        if not gxtb_output_text:
+            return QuantumExtraction()
+
+        results = QuantumExtraction()
+
+        # g-xTB rotational constants match (cm-1 or MHz)
+        rot_match = re.search(
+            r'rotational constants\s*\((MHz|cm-1)\)\s*:\s*([\d\.-]+)\s+([\d\.-]+)\s+([\d\.-]+)',
+            gxtb_output_text, re.IGNORECASE
+        )
+        if rot_match:
+            unit = rot_match.group(1).lower()
+            a, b, c = float(rot_match.group(2)), float(rot_match.group(3)), float(rot_match.group(4))
+            if 'cm' in unit:
+                a, b, c = a * 29979.2458, b * 29979.2458, c * 29979.2458
+            results.rotational_constants = RotationalConstants(A=a, B=b, C=c)
+
+        # g-xTB molecular dipole match
+        dip_match = re.search(
+            r'molecular dipole\s*:\s*x\s*=\s*([\d\.-]+)\s+y\s*=\s*([\d\.-]+)\s+z\s*=\s*([\d\.-]+)',
+            gxtb_output_text, re.IGNORECASE
+        )
+        if dip_match:
+            dx, dy, dz = float(dip_match.group(1)), float(dip_match.group(2)), float(dip_match.group(3))
+            results.dipole_moment = DipoleMoment(X=dx, Y=dy, Z=dz, total=(dx**2 + dy**2 + dz**2)**0.5)
+
+        return results
+
+    def parse_output(self, text_or_path: Optional[Union[str, Path]] = None) -> QuantumExtraction:
+        """Auto-detects MPQC vs g-xTB log format and parses rotational constants & dipole moments."""
+        text = text_or_path
+        if text is None and self.output_path and self.output_path.exists():
+            try:
+                text = self.output_path.read_text(encoding='utf-8', errors='ignore')
+            except Exception as e:
+                logger.error(f"Failed to read output path {self.output_path}: {e}")
+                return QuantumExtraction()
+
+        # If it was passed as a path string or Path object
+        if text and isinstance(text, (str, Path)):
+            potential_path = Path(text)
+            if potential_path.exists() and potential_path.is_file():
+                try:
+                    text = potential_path.read_text(encoding='utf-8', errors='ignore')
+                except Exception as e:
+                    logger.error(f"Failed to read input path {potential_path}: {e}")
+                    return QuantumExtraction()
+                    
+        text_str = str(text) if text else ""
+
+        if not text_str:
+            return QuantumExtraction()
+
+        if 'MPQC' in text_str or 'Program Version' in text_str or 'Total Dipole Moment' in text_str:
+            return self.parse_mpqc_output(text_str)
+        elif 'xtb' in text_str.lower() or 'gfn' in text_str.lower() or 'molecular dipole' in text_str.lower():
+            return self.parse_gxtb_output(text_str)
+        else:
+            # Try MPQC first, then g-xTB
+            res = self.parse_mpqc_output(text_str)
+            if res.rotational_constants is None:
+                res = self.parse_gxtb_output(text_str)
+            return res

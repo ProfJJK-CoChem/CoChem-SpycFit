@@ -10,20 +10,23 @@ import sys
 import math
 import json
 import logging
-logger = logging.getLogger(__name__)
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Callable
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 try:
     import jax
+    from jax import config
+    config.update("jax_enable_x64", True)
     from jax import jit, grad, vmap
     import jax.numpy as jnp
     HAS_JAX = True
 except ImportError:
     HAS_JAX = False
     import numpy as jnp
-    def jit(fn) -> Any:
+    def jit(fn: Callable) -> Callable:
         return fn
 
 class Colors:
@@ -33,18 +36,28 @@ class Colors:
     FAIL = '\033[91m'
     ENDC = '\033[0m'
 
+def get_artifact_dir() -> Path:
+    """Resolves the artifact directory dynamically from environment or fallback."""
+    artifact_dir_env = os.environ.get("COCHEM_ARTIFACT_DIR")
+    if artifact_dir_env:
+        p = Path(artifact_dir_env).resolve()
+    else:
+        p = (Path.home() / ".cochem" / "artifacts").resolve()
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
 # Resolves SPYCFIT-19: Environment-derived artifact directory for logging
-artifact_dir = Path(os.environ.get("COCHEM_ARTIFACT_DIR", "."))
-artifact_dir.mkdir(parents=True, exist_ok=True)
+artifact_dir = get_artifact_dir()
 logging.basicConfig(filename=str(artifact_dir / 'cochem_spycfit_convolver.log'), level=logging.INFO)
 
-def load_tensor_buffer() -> dict:
+def load_tensor_buffer() -> Dict[str, Any]:
     """Loads the pre-processed tensor buffers from the quantum extractor."""
     logger.info(f"{Colors.OKCYAN}📥 Loading Bayesian Tensor Buffers...{Colors.ENDC}")
     
-    buffer_path = artifact_dir / "spycfit_tensor_buffer.npz"
+    current_art_dir = get_artifact_dir()
+    buffer_path = current_art_dir / "spycfit_tensor_buffer.npz"
     if not buffer_path.exists():
-        raise FileNotFoundError("spycfit_tensor_buffer.npz not found. Run quantum extractor first.")
+        raise FileNotFoundError(f"[MISSING DATA] spycfit_tensor_buffer.npz not found at {buffer_path}. Run quantum extractor first.")
         
     with np.load(buffer_path, allow_pickle=True) as data:
         return {
@@ -54,11 +67,12 @@ def load_tensor_buffer() -> dict:
             'lam_trigger': bool(data['lam_trigger'])
         }
 
-def load_lam_buffer() -> dict:
+def load_lam_buffer() -> Optional[Dict[str, Any]]:
     """Loads the LAM-specific buffers if LAM protocol was used."""
     logger.info(f"{Colors.OKCYAN}📥 Loading LAM Tensor Buffers...{Colors.ENDC}")
     
-    buffer_path = artifact_dir / "spycfit_lam_buffer.npz"
+    current_art_dir = get_artifact_dir()
+    buffer_path = current_art_dir / "spycfit_lam_buffer.npz"
     if not buffer_path.exists():
         return None
         
@@ -81,7 +95,7 @@ def compute_frequency_matrix(hessian: np.ndarray, mass_weighted: bool = True) ->
     frequencies = np.sqrt(np.maximum(eigvals, 0.0)) * HARTREE_BOHR2_AMU_TO_CM1
     return frequencies
 
-def loio_cross_validation(fitted_params: dict, test_data: np.ndarray) -> dict:
+def loio_cross_validation(fitted_params: Dict[str, Any], test_data: np.ndarray) -> Dict[str, Any]:
     """
     Performs Leave-One-Isotope-Out (LOIO) cross-validation for robust parameter estimation.
     Resolves SPYCFIT-04: Genuine LOIO loop holding out one isotopologue at a time.
@@ -102,12 +116,19 @@ def loio_cross_validation(fitted_params: dict, test_data: np.ndarray) -> dict:
         
         train_data = test_data[train_mask]
         held_out = test_data[i]
+        target_indices = jnp.array([j for j in range(n_isotopes) if j != i])
 
-        initial_p = jnp.array([10000.0, 5000.0, 2500.0, 0.001, 0.002, 0.003, 0.0001, 0.0002])
-        opt_res = levenberg_marquardt_optimization(jnp.array(train_data), initial_p, max_iter=20)
+        if 'final_params' in fitted_params:
+            init_list = list(fitted_params['final_params'])
+        elif 'A' in fitted_params:
+            init_list = [fitted_params['A'], fitted_params.get('B', 5000.0), fitted_params.get('C', 2500.0), 0.001, 0.002, 0.003, 0.0001, 0.0002]
+        else:
+            init_list = [10000.0, 5000.0, 2500.0, 0.001, 0.002, 0.003, 0.0001, 0.0002]
+        initial_p = jnp.array(init_list)
+        opt_res = levenberg_marquardt_optimization(jnp.array(train_data), initial_p, max_iter=20, target_indices=target_indices)
         fitted_p = opt_res['final_params']
 
-        pred = float(watson_s_reduced_model(fitted_p)[0])
+        pred = float(watson_s_reduced_model(fitted_p)[i])
         err = float(np.abs(held_out - pred))
         cv_scores.append(err)
         y_true.append(held_out)
@@ -131,7 +152,7 @@ def loio_cross_validation(fitted_params: dict, test_data: np.ndarray) -> dict:
     logger.info(f"{Colors.OKGREEN}✅ LOIO Cross-Validation Complete. RMSE: {cv_results['rmse']:.3f}, R^2: {cv_results['r_squared']:.4f}{Colors.ENDC}")
     return cv_results
 
-def penalty_function(params: np.ndarray, data: np.ndarray, model: callable = None) -> float:
+def penalty_function(params: np.ndarray, data: np.ndarray, model: Optional[Callable] = None) -> float:
     """
     Computes the penalty function for Bayesian optimization.
     Resolves SPYCFIT-05: Compatible argument signature for model(params, data) or model(params).
@@ -146,7 +167,12 @@ def penalty_function(params: np.ndarray, data: np.ndarray, model: callable = Non
     except TypeError:
         predicted = model(params)
 
-    residuals = data - predicted
+    predicted = np.asarray(predicted)
+    if len(data) <= len(predicted):
+        pred_sl = predicted[:len(data)]
+    else:
+        pred_sl = np.pad(predicted, (0, len(data) - len(predicted)))
+    residuals = data - pred_sl
     penalty = float(np.sum(residuals**2) + 0.1 * np.sum(params**2))
     
     logger.info(f"{Colors.OKGREEN}✅ Penalty Function Computed: {penalty:.6f}{Colors.ENDC}")
@@ -174,14 +200,15 @@ def watson_s_reduced_model(params: jnp.ndarray) -> jnp.ndarray:
     f_202_101 = 2.0 * B + 2.0 * C - 32.0 * DJ
     f_212_111 = A + 3.0 * B + C - 20.0 * DJ - 4.0 * DJK
     f_211_110 = A + B + 3.0 * C - 20.0 * DJ - 4.0 * DJK
-    f_221_111 = 3.0 * A + B + C - 20.0 * DJ - 16.0 * DJK - 16.0 * DK
-    f_220_110 = 3.0 * A + C + B - 20.0 * DJ - 16.0 * DJK - 16.0 * DK
+    f_221_111 = 3.0 * A + B + C - 20.0 * DJ - 16.0 * DJK - 16.0 * DK - 2.0 * dJ - 2.0 * dK
+    f_220_110 = 3.0 * A + C + B - 20.0 * DJ - 16.0 * DJK - 16.0 * DK + 2.0 * dJ + 2.0 * dK
 
     return jnp.array([f_101_000, f_111_000, f_110_000, f_202_101, f_212_111, f_211_110, f_221_111, f_220_110])
 
-def levenberg_marquardt_optimization(target_frequencies : jnp.ndarray, 
-                                   initial_params: jnp.ndarray,
-                                   max_iter: int = 100) -> dict:
+def levenberg_marquardt_optimization(target_frequencies: jnp.ndarray, 
+                                     initial_params: jnp.ndarray,
+                                     max_iter: int = 100,
+                                     target_indices: Optional[jnp.ndarray] = None) -> Dict[str, Any]:
     """
     Implements Levenberg-Marquardt optimization for spectral fitting.
     Resolves SPYCFIT-01 and SPYCFIT-02: True physical Watson model & vector residuals.
@@ -190,15 +217,18 @@ def levenberg_marquardt_optimization(target_frequencies : jnp.ndarray,
 
     target_len = target_frequencies.shape[0]
 
-    def residual(params) -> Any:
+    def residual(params: jnp.ndarray) -> Any:
         preds = watson_s_reduced_model(params)
-        sl = preds[:target_len] if target_len <= preds.shape[0] else jnp.pad(preds, (0, target_len - preds.shape[0]))
+        if target_indices is not None:
+            sl = preds[target_indices]
+        else:
+            sl = preds[:target_len] if target_len <= preds.shape[0] else jnp.pad(preds, (0, target_len - preds.shape[0]))
         return sl - target_frequencies
 
     if HAS_JAX:
         jac_fn = jit(jax.jacfwd(residual))
     else:
-        def jac_fn(p, eps=1e-5) -> Any:
+        def jac_fn(p: np.ndarray, eps: float = 1e-5) -> np.ndarray:
             r0 = residual(p)
             J = np.zeros((len(r0), len(p)))
             for k in range(len(p)):
@@ -246,14 +276,15 @@ def levenberg_marquardt_optimization(target_frequencies : jnp.ndarray,
     logger.info(f"{Colors.OKGREEN}✅ Levenberg-Marquardt Optimization Complete. Final RMSE: {result['final_rmse']:.3f}{Colors.ENDC}")
     return result
 
-def generate_spectral_output(fitted_results: dict, output_dir: str = "spectral_output") -> None:
+def generate_spectral_output(fitted_results: Dict[str, Any], output_dir: str = "spectral_output") -> None:
     """
     Generates final spectral output files for analysis.
     Resolves SPYCFIT-03: Outputs actual Watson model transition frequencies instead of random numbers.
     """
     logger.info(f"{Colors.OKCYAN}💾 Generating Spectral Output Files...{Colors.ENDC}")
     
-    out_path_dir = artifact_dir / output_dir
+    current_art_dir = get_artifact_dir()
+    out_path_dir = current_art_dir / output_dir
     out_path_dir.mkdir(exist_ok=True, parents=True)
     
     if 'predicted_frequencies' in fitted_results:
@@ -266,17 +297,18 @@ def generate_spectral_output(fitted_results: dict, output_dir: str = "spectral_o
 
     output_path = out_path_dir / "fitted_frequencies.txt"
     with open(output_path, 'w') as f:
-        f.write("Fitted Rotational Frequencies (MHz)\n")
+        f.write("[M] Fitted Rotational Frequencies (MHz)\n")
         f.write("=====================================\n")
         for i, freq in enumerate(frequencies):
             f.write(f"{i+1:3d}: {freq:12.4f}\n")
     
-            logger.info(f"{Colors.OKGREEN}✅ Spectral output generated: {output_path}{Colors.ENDC}")
+    logger.info(f"{Colors.OKGREEN}✅ Spectral output generated: {output_path}{Colors.ENDC}")
 
-def apply_rm2_mass_scaling(rotational_constants : Any, 
-                           symbols: list, 
-                           isotopologue_masses: Optional[list] = None, 
-                           rm2_params: Optional[dict] = None) -> dict:
+def apply_rm2_mass_scaling(rotational_constants: Any, 
+                           symbols: List[str], 
+                           isotopologue_masses: Optional[List[float]] = None, 
+                           parent_masses: Optional[List[float]] = None,
+                           rm2_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Computes Watson r_m^(2) mass-scaled rotational constants across isotopologues.
     r_m^(2) model corrects equilibrium parameters for Born-Oppenheimer breakdown:
@@ -293,12 +325,17 @@ def apply_rm2_mass_scaling(rotational_constants : Any,
         else:
             raise ValueError("rotational_constants must provide explicit A, B, C parameters.")
 
-    if isotopologue_masses is None:
-        from cochem_quantum_extractor import MASS_DICT
-        isotopologue_masses = [MASS_DICT.get(sym, 12.0) for sym in symbols]
+    if parent_masses is None:
+        from cochem_spycfit.quantum_extractor import MASS_DICT
+        parent_masses = [MASS_DICT.get(sym, 12.0) for sym in symbols]
 
-    ref_masses = np.array(isotopologue_masses, dtype=float)
+    if isotopologue_masses is None:
+        isotopologue_masses = parent_masses
+
+    ref_masses = np.array(parent_masses, dtype=float)
+    iso_masses = np.array(isotopologue_masses, dtype=float)
     M0 = np.sum(ref_masses)
+    M = np.sum(iso_masses)
     
     c_params = rm2_params.get('c_params', np.zeros(len(symbols))) if rm2_params else np.zeros(len(symbols))
     d_params = rm2_params.get('d_params', np.zeros(3)) if rm2_params else np.zeros(3)
@@ -310,8 +347,8 @@ def apply_rm2_mass_scaling(rotational_constants : Any,
     I_B0 = PLANCK_MHZ_AMU_ANG2 / max(B0, 1e-6)
     I_C0 = PLANCK_MHZ_AMU_ANG2 / max(C0, 1e-6)
 
-    mass_ratio_term = np.sum(c_params * (ref_masses - ref_masses) / np.maximum(ref_masses, 1e-6))
-    scale_M = np.sqrt(M0 / max(M0, 1e-6))
+    mass_ratio_term = np.sum(c_params * (iso_masses - ref_masses) / np.maximum(ref_masses, 1e-6))
+    scale_M = np.sqrt(M0 / max(M, 1e-6))
 
     I_A_scaled = I_A0 * (1.0 + mass_ratio_term) + d_params[0] * scale_M
     I_B_scaled = I_B0 * (1.0 + mass_ratio_term) + d_params[1] * scale_M
@@ -328,10 +365,10 @@ def apply_rm2_mass_scaling(rotational_constants : Any,
         'moments_of_inertia': [float(I_A_scaled), float(I_B_scaled), float(I_C_scaled)]
     }
 
-def compute_sobol_sensitivity(model_fn : callable = watson_s_reduced_model, 
-                             param_bounds: Optional[np.ndarray] = None, 
-                             n_samples: int = 500,
-                             random_seed: int = 42) -> dict:
+def compute_sobol_sensitivity(model_fn: Callable = watson_s_reduced_model, 
+                              param_bounds: Optional[np.ndarray] = None, 
+                              n_samples: int = 500,
+                              random_seed: int = 42) -> Dict[str, Any]:
     """
     Performs Saltelli variance-based global Sobol sensitivity analysis for spectroscopic parameters.
     Returns First-order (S_i) and Total-order (S_Ti) sensitivity indices.
@@ -372,8 +409,8 @@ def compute_sobol_sensitivity(model_fn : callable = watson_s_reduced_model,
         C_i[:, i] = A_sample[:, i]
         y_Ci = np.array([np.sum(model_fn(jnp.array(p))) for p in C_i])
 
-        # Saltelli estimators
-        first_order_S[i] = np.mean(y_B * (y_Ci - y_A)) / var_y
+        # Saltelli estimators (corrected according to Saltelli 2010 formula for S_i)
+        first_order_S[i] = np.mean(y_A * (y_Ci - y_B)) / var_y
         total_order_ST[i] = np.mean((y_A - y_Ci)**2) / (2.0 * var_y)
 
     first_order_S = np.clip(first_order_S, 0.0, 1.0)
@@ -386,14 +423,14 @@ def compute_sobol_sensitivity(model_fn : callable = watson_s_reduced_model,
     }
     return sobol_results
 
-def nelder_mead_optimization(target_frequencies: np.ndarray, initial_params: np.ndarray, max_iter: int = 200) -> dict:
+def nelder_mead_optimization(target_frequencies: np.ndarray, initial_params: np.ndarray, max_iter: int = 200) -> Dict[str, Any]:
     """
     Performs Nelder-Mead simplex optimization for non-derivative global basin search.
     """
     from scipy.optimize import minimize
     init_p = np.asarray(initial_params, dtype=float)
 
-    def cost_fn(p) -> Any:
+    def cost_fn(p: np.ndarray) -> float:
         preds = np.array(watson_s_reduced_model(jnp.array(p)))[:len(target_frequencies)]
         return float(np.sum((preds - target_frequencies)**2))
 
@@ -405,8 +442,8 @@ def nelder_mead_optimization(target_frequencies: np.ndarray, initial_params: np.
         'n_iter': int(res.nit)
     }
 
-def hybrid_spectral_fitting(target_frequencies: np.ndarray, initial_params : np.ndarray, 
-                           max_iter_nm: int = 100, max_iter_lm: int = 100) -> dict:
+def hybrid_spectral_fitting(target_frequencies: np.ndarray, initial_params: np.ndarray, 
+                            max_iter_nm: int = 100, max_iter_lm: int = 100) -> Dict[str, Any]:
     """
     Hybrid dual-stage optimizer: Nelder-Mead simplex search for global basin identification
     followed by Levenberg-Marquardt gradient refinement.
@@ -417,7 +454,7 @@ def hybrid_spectral_fitting(target_frequencies: np.ndarray, initial_params : np.
     lm_res['hybrid_nelder_mead_cost'] = nm_res['cost']
     return lm_res
 
-def voigt_profile(frequencies: np.ndarray, line_centers: np.ndarray, intensities : np.ndarray,
+def voigt_profile(frequencies: np.ndarray, line_centers: np.ndarray, intensities: np.ndarray,
                   sigma_doppler: float = 0.05, gamma_lorentzian: float = 0.05) -> np.ndarray:
     """
     Convolves line spectrum with Voigt profile (Doppler Gaussian + Lorentzian pressure broadening)
@@ -436,12 +473,16 @@ def voigt_profile(frequencies: np.ndarray, line_centers: np.ndarray, intensities
 
     return spectrum
 
-def apply_polar_solvation_dispersion(rotational_constants: dict, dipole_moments : dict, 
-                                     dielectric_constant: float = 78.39, cavity_radius_a: float = 3.5) -> dict:
+def apply_polar_solvation_dispersion(rotational_constants_or_dipole: Any, 
+                                     dipole_moments: Optional[Dict[str, float]] = None,
+                                     dielectric_constant: float = 78.39, 
+                                     cavity_radius_a: float = 3.5) -> Dict[str, Any]:
     """
     Calculates Onsager reaction field factor f(eps) and Kirkwood solvation energy E_K
     to evaluate dielectric dispersion shifts on rotational parameters and dipole moments.
     """
+    if dipole_moments is None:
+        dipole_moments = rotational_constants_or_dipole if isinstance(rotational_constants_or_dipole, dict) else {}
     eps = max(1.0, float(dielectric_constant))
     a3 = max(1e-3, float(cavity_radius_a) ** 3)
     
@@ -472,7 +513,7 @@ def apply_polar_solvation_dispersion(rotational_constants: dict, dipole_moments 
         "effective_dipoles": effective_dipoles
     }
 
-def main() -> Any:
+def main() -> None:
     logger.info(f"\n{Colors.OKCYAN}--- SpycFit: Bayesian Fitting Engine ---{Colors.ENDC}")
     
     try:
@@ -480,14 +521,39 @@ def main() -> Any:
         if tensors['lam_trigger']:
             logger.info(f"{Colors.OKCYAN}🔍 LAM Protocol Detected - Using Pre-Diagonalized Data{Colors.ENDC}")
             lam_data = load_lam_buffer()
-            
-        frequencies = compute_frequency_matrix(tensors['mw_hessian'])
-        test_data = np.array([12500.0, 11000.0, 9500.0, 15000.0, 14000.0])
+            if lam_data is None:
+                raise FileNotFoundError("[MISSING DATA] LAM trigger is true, but spycfit_lam_buffer.npz is missing.")
+            coords = lam_data['kraitchman_coords']
+            from cochem_spycfit.quantum_extractor import MASS_DICT
+            masses = np.array([MASS_DICT.get(str(sym).strip("b'\""), 12.0) for sym in tensors['symbols']])
+            com = np.sum(masses[:, np.newaxis] * coords, axis=0) / np.sum(masses)
+            shifted_coords = coords - com
+            inertia_tensor = np.zeros((3, 3))
+            inertia_tensor[0, 0] = np.sum(masses * (shifted_coords[:,1]**2 + shifted_coords[:,2]**2))
+            inertia_tensor[1, 1] = np.sum(masses * (shifted_coords[:,0]**2 + shifted_coords[:,2]**2))
+            inertia_tensor[2, 2] = np.sum(masses * (shifted_coords[:,0]**2 + shifted_coords[:,1]**2))
+            inertia_tensor[0, 1] = inertia_tensor[1, 0] = -np.sum(masses * shifted_coords[:,0] * shifted_coords[:,1])
+            inertia_tensor[0, 2] = inertia_tensor[2, 0] = -np.sum(masses * shifted_coords[:,0] * shifted_coords[:,2])
+            inertia_tensor[1, 2] = inertia_tensor[2, 1] = -np.sum(masses * shifted_coords[:,1] * shifted_coords[:,2])
+            eigvals, _ = np.linalg.eigh(inertia_tensor)
+            I_A, I_B, I_C = sorted(eigvals)
+            A = 505379.008 / max(I_A, 1e-6)
+            B = 505379.008 / max(I_B, 1e-6)
+            C = 505379.008 / max(I_C, 1e-6)
+            initial_params = jnp.array([A, B, C, 0.001, 0.002, 0.003, 0.0001, 0.0002])
+        else:
+            initial_params = jnp.array([10000.0, 5000.0, 2500.0, 0.001, 0.002, 0.003, 0.0001, 0.0002])
+
+        current_art_dir = get_artifact_dir()
+        exp_data_path = current_art_dir / "experimental_frequencies.txt"
+        if not exp_data_path.exists():
+            raise FileNotFoundError(f"[MISSING DATA] experimental_frequencies.txt is required for fitting.")
         
-        cv_results = loio_cross_validation({}, test_data)
-        initial_params = jnp.array([10000.0, 5000.0, 2500.0, 0.001, 0.002, 0.003, 0.0001, 0.0002])
-        
-        optimization_result = levenberg_marquardt_optimization(jnp.array(test_data), initial_params)
+        target_frequencies = np.loadtxt(exp_data_path)
+        if target_frequencies.size == 0:
+            raise ValueError("[MISSING DATA] Experimental frequencies file is empty.")
+
+        optimization_result = levenberg_marquardt_optimization(jnp.array(target_frequencies), initial_params)
         generate_spectral_output(optimization_result)
         
         # Sobol sensitivity check
