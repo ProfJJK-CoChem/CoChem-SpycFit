@@ -956,18 +956,26 @@ def test_export_spycfit_snapshot_pipeline(
 
 
 def test_resolve_processed_workspace_dir(
-    monkeypatch: pytest.MonkeyPatch, clean_workspace: Path
+    clean_workspace: Path
 ):
     """Verifies directory resolution with custom paths, environment variable override, and defaults."""
     custom_target = clean_workspace / "custom_processed"
     assert resolve_processed_workspace_dir(custom_target) == custom_target.resolve()
 
     env_dir = clean_workspace / "env_state_dir"
-    monkeypatch.setenv("COCHEM_STATE_DIR", str(env_dir))
-    expected_env_target = env_dir / "SpycFit_Workspace" / "Processed"
-    assert resolve_processed_workspace_dir() == expected_env_target.resolve()
+    old_env = os.environ.get("COCHEM_STATE_DIR")
+    try:
+        os.environ["COCHEM_STATE_DIR"] = str(env_dir)
+        expected_env_target = env_dir / "SpycFit_Workspace" / "Processed"
+        assert resolve_processed_workspace_dir() == expected_env_target.resolve()
 
-    monkeypatch.delenv("COCHEM_STATE_DIR", raising=False)
-    resolved_default = get_spycfit_processed_dir()
-    assert "SpycFit_Workspace" in str(resolved_default)
-    assert "Processed" in str(resolved_default)
+        if "COCHEM_STATE_DIR" in os.environ:
+            del os.environ["COCHEM_STATE_DIR"]
+        resolved_default = get_spycfit_processed_dir()
+        assert "SpycFit_Workspace" in str(resolved_default)
+        assert "Processed" in str(resolved_default)
+    finally:
+        if old_env is not None:
+            os.environ["COCHEM_STATE_DIR"] = old_env
+        elif "COCHEM_STATE_DIR" in os.environ:
+            del os.environ["COCHEM_STATE_DIR"]

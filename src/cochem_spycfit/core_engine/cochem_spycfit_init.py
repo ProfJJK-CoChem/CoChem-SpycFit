@@ -359,9 +359,9 @@ def query_physical_gpu_vram() -> Tuple[bool, str, float, int]:
             capture_output=True,
             text=True,
             timeout=5,
-            check=False,
+            check=True,
         )
-        if nvidia_smi_res.returncode == 0 and nvidia_smi_res.stdout.strip():
+        if nvidia_smi_res.stdout.strip():
             lines = [line.strip() for line in nvidia_smi_res.stdout.strip().splitlines() if line.strip()]
             if lines:
                 device_count = len(lines)
@@ -377,7 +377,7 @@ def query_physical_gpu_vram() -> Tuple[bool, str, float, int]:
                     gpu_detected = True
                 except (IndexError, ValueError):
                     pass
-    except (FileNotFoundError, subprocess.TimeoutExpired, PermissionError, OSError):
+    except (FileNotFoundError, subprocess.TimeoutExpired, PermissionError, OSError, subprocess.CalledProcessError):
         pass
 
     # 2. Query via JAX devices
@@ -720,7 +720,7 @@ def main() -> None:
     """CLI / daemon entry point for SpycFit Gatekeeper initialization."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     state = initialize_spycfit_gatekeeper()
-    print(state.model_dump_json(indent=2))
+    logger.info(state.model_dump_json(indent=2))
 
 
 if __name__ == "__main__":

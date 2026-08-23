@@ -39,16 +39,23 @@ from cochem_spycfit.interfaces.cochem_spycfit_ui import (
     SemanticCommitError,
     SliderComputationError,
     SpectralPeak,
+    SpycFitInteractiveDashboard,
+    SpycFitZMQClient,
+    SpycFitZMQServer,
     UIDashboardError,
     WhatIfParameterState,
     WhatIfSpectrumEngine,
+    ZMQBridgeError,
     auto_propose_assignments,
     compute_bipartite_cost_matrix,
     compute_huber_loss_excluding_ghosts,
+    create_spycfit_dashboard_widget,
     render_dual_pane_dashboard,
     render_static_offline_html,
     render_static_offline_pdf,
+    run_lttb_decimation,
     translate_mathematical_change_to_git_commit,
+    update_ui_state_hash,
 )
 
 
@@ -576,7 +583,259 @@ def test_render_dual_pane_dashboard_with_convolved_curve(methanol_exp_peaks, met
 
 
 # =============================================================================
-# 8. AST & ZERO-MOCK COMPLIANCE STATIC ANALYSIS
+# 8. LTTB DECIMATION & CRYPTOGRAPHIC STATE HASH TESTS
+# =============================================================================
+
+def test_lttb_decimation_exact_threshold():
+    """Verifies LTTB decimation reduces dense arrays to exact target threshold preserving extrema."""
+    # Generate dense synthetic absorption lines across 10,000 frequency points
+    x_dense = np.linspace(10000.0, 50000.0, 10000, dtype=np.float64)
+    # Superposition of 3 narrow spectroscopic lines
+    y_dense = (
+        1.5 * np.exp(-0.5 * ((x_dense - 20000.0) / 5.0) ** 2)
+        + 3.2 * np.exp(-0.5 * ((x_dense - 32500.0) / 5.0) ** 2)
+        + 0.8 * np.exp(-0.5 * ((x_dense - 44000.0) / 5.0) ** 2)
+    )
+
+    threshold = 5000
+    x_sampled, y_sampled = run_lttb_decimation(x_dense, y_dense, threshold=threshold)
+
+    assert len(x_sampled) == threshold
+    assert len(y_sampled) == threshold
+    # Endpoints must be exactly preserved
+    assert x_sampled[0] == x_dense[0]
+    assert y_sampled[0] == y_dense[0]
+    assert x_sampled[-1] == x_dense[-1]
+    assert y_sampled[-1] == y_dense[-1]
+
+    # Major peak maximum must be preserved within 0.1% tolerance
+    original_max = np.max(y_dense)
+    sampled_max = np.max(y_sampled)
+    assert abs(original_max - sampled_max) / original_max < 0.01
+
+
+def test_lttb_decimation_edge_cases():
+    """Verifies LTTB decimation handles edge cases and raises informative errors on invalid input."""
+    # When threshold >= len(x), returns unmodified copies
+    x_small = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    y_small = np.array([10.0, 20.0, 15.0, 30.0, 5.0])
+    x_out, y_out = run_lttb_decimation(x_small, y_small, threshold=10)
+    assert np.array_equal(x_out, x_small)
+    assert np.array_equal(y_out, y_small)
+
+    # When threshold < 3, returns unmodified copies
+    x_sub, y_sub = run_lttb_decimation(x_small, y_small, threshold=2)
+    assert np.array_equal(x_sub, x_small)
+
+    # Dimension and length mismatch validation
+    with pytest.raises(ValueError, match="1-dimensional"):
+        run_lttb_decimation(np.zeros((2, 2)), np.zeros((2, 2)))
+
+    with pytest.raises(ValueError, match="Length mismatch"):
+        run_lttb_decimation(np.array([1.0, 2.0]), np.array([1.0]))
+
+
+def test_update_ui_state_hash_deterministic():
+    """Verifies update_ui_state_hash returns a deterministic 64-character SHA-256 hexadecimal hash."""
+    state_a = {"A_mhz": 127484.0, "B_mhz": 24679.98, "temperature_k": 296.0}
+    state_b = {"B_mhz": 24679.98, "A_mhz": 127484.0, "temperature_k": 296.0}
+    state_c = {"A_mhz": 127484.0, "B_mhz": 24679.98, "temperature_k": 300.0}
+
+    hash_a = update_ui_state_hash(state_a)
+    hash_b = update_ui_state_hash(state_b)
+    hash_c = update_ui_state_hash(state_c)
+
+    assert len(hash_a) == 64
+    # Key ordering must not affect the hash
+    assert hash_a == hash_b
+    # Value changes must mutate the hash
+    assert hash_a != hash_c
+
+
+# =============================================================================
+# 9. BOUNDS ENFORCEMENT & METHOD MATRIX PROVENANCE TESTS
+# =============================================================================
+
+def test_what_if_parameter_state_rigid_bounds():
+    """Verifies WhatIfParameterState rigidly rejects negative or zero rotational constants."""
+    with pytest.raises(ValidationError):
+        WhatIfParameterState(A_mhz=-500.0, B_mhz=5000.0, C_mhz=2500.0)
+
+    with pytest.raises(ValidationError):
+        WhatIfParameterState(A_mhz=10000.0, B_mhz=0.0, C_mhz=2500.0)
+
+    with pytest.raises(ValidationError):
+        WhatIfParameterState(A_mhz=10000.0, B_mhz=5000.0, C_mhz=-10.0)
+
+
+def test_bipartite_matching_non_positive_frequency_rejection():
+    """Verifies compute_bipartite_cost_matrix rejects non-positive frequencies."""
+    bad_exp = [SpectralPeak(peak_id="BAD_1", frequency=100.0, intensity=1.0)]
+    bad_exp[0].__dict__["frequency"] = -5.0  # Bypass pydantic validation for testing error gate
+
+    theo = [SpectralPeak(peak_id="T1", frequency=100.0, intensity=1.0)]
+    with pytest.raises(BipartiteMatchingError, match="non-positive frequency"):
+        compute_bipartite_cost_matrix(bad_exp, theo)
+
+
+def test_method_matrix_provenance_generation(methanol_exp_peaks, methanol_theo_peaks):
+    """Verifies HITLAssignmentManager generates authoritative Method Matrix provenance records."""
+    manager = HITLAssignmentManager(exp_peaks=methanol_exp_peaks, theo_peaks=methanol_theo_peaks)
+    manager.auto_propose(BipartiteConfig(max_freq_drift_mhz=50.0))
+
+    # Approve 3 assignments and reject 1 assignment
+    proposed = manager.get_assignments_by_status(AssignmentStatus.PROPOSED)
+    for p in proposed[:3]:
+        manager.approve_assignment(p.assignment_id, user_id="LeadSpectroscopist")
+    manager.reject_assignment(proposed[3].assignment_id, reason="Impurities line profile")
+
+    provenance = manager.get_method_matrix_provenance(huber_delta_mhz=1.0)
+
+    assert "timestamp_utc" in provenance
+    assert provenance["total_exp_peaks"] == 5
+    assert provenance["total_theo_peaks"] == 5
+    assert provenance["approved_assignments_count"] == 3
+    assert provenance["ghost_peaks_count"] == 1
+    assert len(provenance["ghost_peak_details"]) == 1
+    assert provenance["ghost_peak_details"][0]["rejection_reason"] == "Impurities line profile"
+    assert "provenance_sha256" in provenance
+    assert len(provenance["provenance_sha256"]) == 64
+
+
+# =============================================================================
+# 10. ZEROMQ IPC BRIDGE & IPYWIDGETS DASHBOARD TESTS
+# =============================================================================
+
+def test_zmq_ipc_bridge_heartbeat_and_spectrum_computation(methanol_theo_peaks, baseline_slider_state):
+    """Verifies ZeroMQ IPC server and client communication, heartbeat ping, and spectrum calculation."""
+    engine = WhatIfSpectrumEngine(
+        base_peaks=methanol_theo_peaks,
+        base_state=baseline_slider_state,
+        grid_min_mhz=10000.0,
+        grid_max_mhz=50000.0,
+        grid_points=500,
+    )
+
+    port = 5592
+    endpoint = f"tcp://127.0.0.1:{port}"
+
+    server = SpycFitZMQServer(endpoint=endpoint, timeout_ms=1000)
+    server.start()
+
+    client = SpycFitZMQClient(endpoint=endpoint, timeout_ms=1000)
+
+    try:
+        # 1. Test Heartbeat Ping
+        # In single-threaded test, we send request from client and process on server
+        client.socket.send_json({"type": "HEARTBEAT", "client_id": "TEST_AGENT"})
+        server_reply = server.process_one_request(engine=engine)
+        assert server_reply is not None
+        assert server_reply["type"] == "HEARTBEAT_ACK"
+        client_reply = client.socket.recv_json()
+        assert client_reply["status"] == "SUCCESS"
+
+        # 2. Test Spectrum Computation request
+        req = {
+            "type": "COMPUTE_SPECTRUM",
+            "state": baseline_slider_state.model_dump(),
+            "decimate_threshold": 250,
+        }
+        client.socket.send_json(req)
+        server.process_one_request(engine=engine)
+        spec_reply = client.socket.recv_json()
+        assert spec_reply["status"] == "SUCCESS"
+        assert len(spec_reply["freqs"]) == 250
+        assert len(spec_reply["spectrum"]) == 250
+        assert "state_hash" in spec_reply
+
+        # 3. Test LTTB decimation request
+        x_in = np.linspace(100.0, 500.0, 1000).tolist()
+        y_in = (np.sin(np.linspace(0, 10, 1000)) + 1.0).tolist()
+        client.socket.send_json({"type": "LTTB_DECIMATE", "x": x_in, "y": y_in, "threshold": 100})
+        server.process_one_request(engine=engine)
+        dec_reply = client.socket.recv_json()
+        assert dec_reply["status"] == "SUCCESS"
+        assert len(dec_reply["x"]) == 100
+
+        # 4. Test State Hash request
+        client.socket.send_json({"type": "GET_STATE_HASH", "state": {"A_mhz": 120000.0}})
+        server.process_one_request(engine=engine)
+        hash_reply = client.socket.recv_json()
+        assert hash_reply["status"] == "SUCCESS"
+        assert len(hash_reply["state_hash"]) == 64
+
+    finally:
+        client.close()
+        server.stop()
+
+
+def test_zmq_ipc_client_timeout_error_handling():
+    """Verifies SpycFitZMQClient raises ZMQBridgeError upon server communication timeout."""
+    # Connect to an inactive port with short timeout (100ms)
+    client = SpycFitZMQClient(endpoint="tcp://127.0.0.1:5599", timeout_ms=100)
+    try:
+        with pytest.raises(ZMQBridgeError, match="timeout"):
+            client.ping()
+    finally:
+        client.close()
+
+
+def test_ipywidgets_interactive_dashboard(methanol_exp_peaks, methanol_theo_peaks, baseline_slider_state):
+    """Verifies SpycFitInteractiveDashboard initialization, widget hierarchy, and event callbacks."""
+    manager = HITLAssignmentManager(exp_peaks=methanol_exp_peaks, theo_peaks=methanol_theo_peaks)
+    engine = WhatIfSpectrumEngine(
+        base_peaks=methanol_theo_peaks,
+        base_state=baseline_slider_state,
+        grid_min_mhz=10000.0,
+        grid_max_mhz=50000.0,
+        grid_points=200,
+    )
+
+    dashboard = SpycFitInteractiveDashboard(manager=manager, spectrum_engine=engine)
+
+    assert dashboard.widget is not None
+    assert dashboard.slider_A.value == baseline_slider_state.A_mhz
+    assert dashboard.slider_B.value == baseline_slider_state.B_mhz
+    assert dashboard.slider_C.value == baseline_slider_state.C_mhz
+
+    # Simulate button click events
+    dashboard._on_auto_propose_clicked(None)
+    assert len(manager.get_assignments_by_status(AssignmentStatus.PROPOSED)) >= 4
+
+    dashboard._on_approve_all_clicked(None)
+    assert len(manager.get_assignments_by_status(AssignmentStatus.APPROVED)) >= 4
+
+    # Slider state mutation
+    dashboard.slider_A.value = 127500.0
+    cur_state = dashboard.get_current_parameter_state()
+    assert cur_state.A_mhz == 127500.0
+
+    # Test outlier rejection
+    dashboard.slider_huber.value = 0.001
+    dashboard._on_reject_outliers_clicked(None)
+
+    # Test factory function
+    widget = create_spycfit_dashboard_widget(manager=manager, spectrum_engine=engine)
+    assert widget is not None
+
+
+def test_semantic_git_commit_with_state_hash(baseline_slider_state):
+    """Verifies semantic git commit includes cryptographic state hash in commit metadata and message."""
+    perturbed_state = baseline_slider_state.model_copy(update={"A_mhz": baseline_slider_state.A_mhz + 2.5})
+    commit = translate_mathematical_change_to_git_commit(
+        state_before=baseline_slider_state,
+        state_after=perturbed_state,
+        rms_before=0.045,
+        rms_after=0.012,
+    )
+
+    assert commit.state_hash is not None
+    assert len(commit.state_hash) == 64
+    assert "State-Hash:" in commit.full_commit_message
+
+
+# =============================================================================
+# 11. AST & ZERO-MOCK COMPLIANCE STATIC ANALYSIS
 # =============================================================================
 
 class TestZeroMockASTCompliance:

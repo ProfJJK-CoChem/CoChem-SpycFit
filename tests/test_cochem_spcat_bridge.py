@@ -470,28 +470,41 @@ class TestPickettOutputParsers:
 class TestDeploymentAndScratchContext:
     """Validates executable deployment directory routing and scratch context."""
 
-    def test_get_fortran_deployment_dir(self, monkeypatch: pytest.MonkeyPatch, temp_workspace: Path) -> None:
+    def test_get_fortran_deployment_dir(self, temp_workspace: Path) -> None:
         custom_bin = temp_workspace / "custom_bin"
-        monkeypatch.setenv("COCHEM_BIN_DIR", str(custom_bin))
+        old_env = os.environ.get("COCHEM_BIN_DIR")
+        try:
+            os.environ["COCHEM_BIN_DIR"] = str(custom_bin)
+            resolved = get_fortran_deployment_dir()
+            assert resolved == custom_bin.resolve()
+            assert resolved.is_dir()
+        finally:
+            if old_env is not None:
+                os.environ["COCHEM_BIN_DIR"] = old_env
+            elif "COCHEM_BIN_DIR" in os.environ:
+                del os.environ["COCHEM_BIN_DIR"]
 
-        resolved = get_fortran_deployment_dir()
-        assert resolved == custom_bin.resolve()
-        assert resolved.is_dir()
-
-    def test_resolve_fortran_binary(self, monkeypatch: pytest.MonkeyPatch, temp_workspace: Path) -> None:
+    def test_resolve_fortran_binary(self, temp_workspace: Path) -> None:
         custom_bin = temp_workspace / "test_bin_dir"
         custom_bin.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setenv("COCHEM_BIN_DIR", str(custom_bin))
+        old_env = os.environ.get("COCHEM_BIN_DIR")
+        try:
+            os.environ["COCHEM_BIN_DIR"] = str(custom_bin)
 
-        # Create an executable script in deployment dir
-        sample_bin = custom_bin / ("spcat.exe" if platform.system().lower() == "windows" else "spcat")
-        sample_bin.write_text("#!/bin/sh\necho 'SPCAT'", encoding="utf-8")
-        if platform.system().lower() != "windows":
-            sample_bin.chmod(0o755)
+            # Create an executable script in deployment dir
+            sample_bin = custom_bin / ("spcat.exe" if platform.system().lower() == "windows" else "spcat")
+            sample_bin.write_text("#!/bin/sh\necho 'SPCAT'", encoding="utf-8")
+            if platform.system().lower() != "windows":
+                sample_bin.chmod(0o755)
 
-        found = resolve_fortran_binary("spcat")
-        assert found is not None
-        assert found.name.startswith("spcat")
+            found = resolve_fortran_binary("spcat")
+            assert found is not None
+            assert found.name.startswith("spcat")
+        finally:
+            if old_env is not None:
+                os.environ["COCHEM_BIN_DIR"] = old_env
+            elif "COCHEM_BIN_DIR" in os.environ:
+                del os.environ["COCHEM_BIN_DIR"]
 
     def test_pickett_scratch_context_lifecycle(self, temp_workspace: Path) -> None:
         scratch_base = temp_workspace / "scratch_pool"

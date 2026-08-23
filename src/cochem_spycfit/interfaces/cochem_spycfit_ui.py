@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import datetime
 import enum
+import hashlib
 import io
 import json
 import logging
@@ -42,26 +43,29 @@ import os
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 
+# Enforce double precision at environment level before JAX initializes
+os.environ["JAX_ENABLE_X64"] = "True"
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from scipy.optimize import linear_sum_assignment
-
-# ReportLab imports for publication-grade static PDF export
 import reportlab
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Image as RLImage
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from scipy.optimize import linear_sum_assignment
+import zmq
 
-# Matplotlib for generating high-resolution vector/raster static charts in headless mode
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+# ipywidgets for Jupyter and Voila interactive controls
+from ipywidgets import Button, FloatSlider, HBox, Label, Output, VBox
 
 # JAX Convolver integration
 try:
@@ -106,6 +110,10 @@ class SliderComputationError(UIDashboardError):
 
 class SemanticCommitError(UIDashboardError):
     """Raised when semantic git-commit translation fails."""
+
+
+class ZMQBridgeError(UIDashboardError):
+    """Raised when ZeroMQ IPC communication, handshake, or background computation fails."""
 
 
 # =============================================================================
@@ -193,9 +201,9 @@ class WhatIfParameterState(BaseModel):
     """State parameters for real-time What-If slider spectrum recalculation."""
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
-    A_mhz: float = Field(..., gt=0.0, description="Rotational constant A in MHz")
-    B_mhz: float = Field(..., gt=0.0, description="Rotational constant B in MHz")
-    C_mhz: float = Field(..., gt=0.0, description="Rotational constant C in MHz")
+    A_mhz: float = Field(..., gt=0.0, description="Rotational constant A in MHz (> 0)")
+    B_mhz: float = Field(..., gt=0.0, description="Rotational constant B in MHz (> 0)")
+    C_mhz: float = Field(..., gt=0.0, description="Rotational constant C in MHz (> 0)")
     D_J_khz: float = Field(default=0.0, description="Centrifugal distortion D_J in kHz")
     D_JK_khz: float = Field(default=0.0, description="Centrifugal distortion D_JK in kHz")
     D_K_khz: float = Field(default=0.0, description="Centrifugal distortion D_K in kHz")
@@ -205,9 +213,26 @@ class WhatIfParameterState(BaseModel):
     global_frequency_shift_mhz: float = Field(default=0.0, description="Global systematic frequency offset in MHz")
     intensity_scale: float = Field(default=1.0, gt=0.0, description="Global intensity scaling multiplier (> 0)")
 
+    @field_validator("A_mhz", "B_mhz", "C_mhz")
+    @classmethod
+    def validate_positive_rotational_constants(cls, value: float) -> float:
+        """Rigidly enforce positive rotational constants."""
+        if value <= 0.0:
+            raise ValueError(f"Rotational constant must be strictly positive (> 0), got {value}")
+        return value
+
+    @model_validator(mode="after")
+    def validate_rotational_ordering(self) -> WhatIfParameterState:
+        """Warn if rotational constants deviate from asymmetric top convention A >= B >= C."""
+        if not (self.A_mhz >= self.B_mhz >= self.C_mhz):
+            logger.debug(
+                f"Rotational constants order notice: A={self.A_mhz:.2f}, B={self.B_mhz:.2f}, C={self.C_mhz:.2f}"
+            )
+        return self
+
 
 class SemanticCommit(BaseModel):
-    """Pydantic model representing a semantic conventional git commit message."""
+    """Pydantic model representing a semantic conventional git commit message with SHA-256 state tracking."""
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     commit_type: str = Field(..., description="Commit type prefix (feat, fix, refactor, chore)")
@@ -218,11 +243,120 @@ class SemanticCommit(BaseModel):
     parameters_after: Dict[str, Any] = Field(default_factory=dict, description="Parameter state after mutation")
     rms_before: Optional[float] = Field(default=None, description="RMS residual error before change")
     rms_after: Optional[float] = Field(default=None, description="RMS residual error after change")
+    state_hash: Optional[str] = Field(default=None, description="Cryptographic SHA-256 hash of UI state")
     full_commit_message: str = Field(..., description="Formatted full git commit message")
 
 
 # =============================================================================
-# 3. BIPARTITE HUNGARIAN AUTO-PROPOSE ALGORITHM
+# 3. LTTB (LARGEST-TRIANGLE-THREE-BUCKETS) DECIMATION & CRYPTOGRAPHIC STATE HASHING
+# =============================================================================
+
+def run_lttb_decimation(
+    x: Union[Sequence[float], np.ndarray],
+    y: Union[Sequence[float], np.ndarray],
+    threshold: int = 5000,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Downsamples a 2D spectral curve (x, y) using the Largest-Triangle-Three-Buckets (LTTB) algorithm.
+    Reduces dense arrays to target threshold points (~5000) while strictly preserving
+    peak maxima, minima, and line shapes.
+
+    Parameters:
+        x: Sequence or array of x-coordinates (frequencies in MHz).
+        y: Sequence or array of y-coordinates (intensities or amplitudes).
+        threshold: Target number of sampled points (default 5000).
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Decimated (x_sampled, y_sampled) arrays.
+    """
+    x_arr = np.asarray(x, dtype=np.float64)
+    y_arr = np.asarray(y, dtype=np.float64)
+
+    if x_arr.ndim != 1 or y_arr.ndim != 1:
+        raise ValueError("Input arrays x and y must be 1-dimensional.")
+    if len(x_arr) != len(y_arr):
+        raise ValueError(f"Length mismatch: len(x)={len(x_arr)} vs len(y)={len(y_arr)}")
+
+    n_points = len(x_arr)
+    if threshold < 3 or n_points <= threshold:
+        return x_arr.copy(), y_arr.copy()
+
+    sampled_x = np.empty(threshold, dtype=np.float64)
+    sampled_y = np.empty(threshold, dtype=np.float64)
+
+    # First point is always selected
+    sampled_x[0] = x_arr[0]
+    sampled_y[0] = y_arr[0]
+
+    bucket_size = (n_points - 2) / (threshold - 2)
+
+    a_x = x_arr[0]
+    a_y = y_arr[0]
+
+    for i in range(threshold - 2):
+        b_start = int(math.floor(i * bucket_size)) + 1
+        b_end = int(math.floor((i + 1) * bucket_size)) + 1
+        b_end = min(b_end, n_points - 1)
+
+        c_start = int(math.floor((i + 1) * bucket_size)) + 1
+        c_end = int(math.floor((i + 2) * bucket_size)) + 1
+        c_end = min(c_end, n_points)
+
+        if c_end > c_start:
+            c_x = float(np.mean(x_arr[c_start:c_end]))
+            c_y = float(np.mean(y_arr[c_start:c_end]))
+        else:
+            c_x = x_arr[-1]
+            c_y = y_arr[-1]
+
+        bucket_x = x_arr[b_start:b_end]
+        bucket_y = y_arr[b_start:b_end]
+
+        if len(bucket_x) == 0:
+            selected_idx = b_start
+        else:
+            # Triangle area = 0.5 * |(x - a_x)*(c_y - a_y) - (y - a_y)*(c_x - a_x)|
+            areas = 0.5 * np.abs(
+                (bucket_x - a_x) * (c_y - a_y) - (bucket_y - a_y) * (c_x - a_x)
+            )
+            max_idx = int(np.argmax(areas))
+            selected_idx = b_start + max_idx
+
+        a_x = x_arr[selected_idx]
+        a_y = y_arr[selected_idx]
+
+        sampled_x[i + 1] = a_x
+        sampled_y[i + 1] = a_y
+
+    # Last point is always selected
+    sampled_x[-1] = x_arr[-1]
+    sampled_y[-1] = y_arr[-1]
+
+    return sampled_x, sampled_y
+
+
+def update_ui_state_hash(state_dict: Dict[str, Any]) -> str:
+    """
+    Computes a deterministic SHA-256 cryptographic hash representing the current UI state,
+    parameter configuration, or transition assignment dataset.
+
+    Parameters:
+        state_dict: Dictionary containing state key-values.
+
+    Returns:
+        str: 64-character hexadecimal SHA-256 hash.
+    """
+    canonical_json = json.dumps(
+        state_dict,
+        sort_keys=True,
+        ensure_ascii=True,
+        default=lambda o: o.isoformat() if isinstance(o, (datetime.datetime, datetime.date)) else str(o),
+    )
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+# =============================================================================
+# 4. BIPARTITE HUNGARIAN AUTO-PROPOSE ALGORITHM
 # =============================================================================
 
 def compute_bipartite_cost_matrix(
@@ -248,6 +382,14 @@ def compute_bipartite_cost_matrix(
 
     if n_exp == 0 or n_theo == 0:
         return np.zeros((n_exp, n_theo), dtype=np.float64)
+
+    # Rigid validation of peak frequencies and bounds
+    for p in exp_peaks:
+        if p.frequency <= 0.0:
+            raise BipartiteMatchingError(f"Experimental peak '{p.peak_id}' has non-positive frequency: {p.frequency}")
+    for p in theo_peaks:
+        if p.frequency <= 0.0:
+            raise BipartiteMatchingError(f"Theoretical peak '{p.peak_id}' has non-positive frequency: {p.frequency}")
 
     exp_freqs = np.array([p.frequency for p in exp_peaks], dtype=np.float64)
     theo_freqs = np.array([p.frequency for p in theo_peaks], dtype=np.float64)
@@ -517,6 +659,38 @@ class HITLAssignmentManager:
         rms = float(np.sqrt(np.mean(np.square(residuals))))
         return loss, rms
 
+    def get_method_matrix_provenance(self, huber_delta_mhz: float = 1.0) -> Dict[str, Any]:
+        """
+        Compiles full Method Matrix provenance record of peak assignments, ghost peaks,
+        robust Huber loss calculations, and cryptographic state hashing.
+        """
+        loss, rms = self.compute_robust_metrics(huber_delta_mhz=huber_delta_mhz)
+        approved = [a for a in self.assignments if a.status in (AssignmentStatus.APPROVED, AssignmentStatus.MANUAL)]
+        ghosts = self.get_ghost_peaks()
+
+        provenance: Dict[str, Any] = {
+            "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "total_exp_peaks": len(self.exp_peaks),
+            "total_theo_peaks": len(self.theo_peaks),
+            "approved_assignments_count": len(approved),
+            "ghost_peaks_count": len(ghosts),
+            "huber_delta_mhz": huber_delta_mhz,
+            "huber_loss": loss,
+            "rms_residual_mhz": rms,
+            "ghost_peak_details": [
+                {
+                    "peak_id": p.peak_id,
+                    "frequency_mhz": p.frequency,
+                    "intensity": p.intensity,
+                    "rejection_reason": p.rejection_reason or "Unspecified rejection",
+                }
+                for p in ghosts
+            ],
+            "approved_assignment_ids": [a.assignment_id for a in approved],
+        }
+        provenance["provenance_sha256"] = update_ui_state_hash(provenance)
+        return provenance
+
 
 # =============================================================================
 # 5. PLOTLY DUAL-PANE O-C RESIDUAL DASHBOARD
@@ -527,7 +701,7 @@ def render_dual_pane_dashboard(
     theo_peaks: Sequence[SpectralPeak],
     assignments: Optional[Sequence[PeakAssignment]] = None,
     config: Optional[DashboardConfig] = None,
-    convolved_curve: Optional[Tuple[Sequence[float], Sequence[float]]] = None,
+    convolved_curve: Optional[Tuple[Union[Sequence[float], np.ndarray], Union[Sequence[float], np.ndarray]]] = None,
 ) -> go.Figure:
     """
     Renders an interactive Plotly Dual-Pane O-C Residual dashboard.
@@ -1082,7 +1256,406 @@ class WhatIfSpectrumEngine:
 
 
 # =============================================================================
-# 8. SEMANTIC GIT-COMMIT TRANSLATION FOR MATHEMATICAL CHANGES
+# 9. ZEROMQ IPC BRIDGE (STRICT HEARTBEAT & TIMEOUT PROTOCOLS)
+# =============================================================================
+
+class SpycFitZMQServer:
+    """
+    ZeroMQ IPC server for background What-If spectrum recalculation, LTTB decimation,
+    and state hash generation. Enforces strict heartbeat and timeout protocols.
+    """
+
+    def __init__(
+        self,
+        endpoint: str = "tcp://127.0.0.1:5555",
+        timeout_ms: int = 2000,
+    ) -> None:
+        self.endpoint = endpoint
+        self.timeout_ms = timeout_ms
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.REP)
+        self.socket.setsockopt(zmq.RCVTIMEO, timeout_ms)
+        self.socket.setsockopt(zmq.SNDTIMEO, timeout_ms)
+        self.socket.setsockopt(zmq.LINGER, 0)
+        self.is_running = False
+        self._bound = False
+
+    def start(self) -> None:
+        """Binds the REP socket to the endpoint."""
+        if not self._bound:
+            self.socket.bind(self.endpoint)
+            self._bound = True
+            self.is_running = True
+
+    def process_one_request(self, engine: Optional[WhatIfSpectrumEngine] = None) -> Optional[Dict[str, Any]]:
+        """
+        Polls and processes a single incoming request.
+        Handles HEARTBEAT, COMPUTE_SPECTRUM, LTTB_DECIMATE, GET_STATE_HASH.
+        """
+        try:
+            raw_msg: Any = self.socket.recv_json()
+        except zmq.Again:
+            return None
+
+        if not isinstance(raw_msg, dict):
+            err_response: Dict[str, Any] = {"status": "ERROR", "error": "Malformed request; expected dictionary payload."}
+            self.socket.send_json(err_response)
+            return err_response
+
+        msg_dict: Dict[str, Any] = cast(Dict[str, Any], raw_msg)
+        msg_type = str(msg_dict.get("type", "UNKNOWN"))
+        response: Dict[str, Any] = {"status": "SUCCESS", "type": f"{msg_type}_ACK"}
+
+        if msg_type == "HEARTBEAT":
+            response["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        elif msg_type == "COMPUTE_SPECTRUM":
+            state_data = msg_dict.get("state", {})
+            if isinstance(state_data, dict):
+                param_state = WhatIfParameterState(**state_data)
+                if engine is not None:
+                    freq_grid, spec = engine.compute_convolved_spectrum(param_state)
+                    decimate_thresh = msg_dict.get("decimate_threshold", None)
+                    if decimate_thresh is not None and isinstance(decimate_thresh, int) and len(freq_grid) > decimate_thresh:
+                        freq_grid, spec = run_lttb_decimation(freq_grid, spec, decimate_thresh)
+                    response["freqs"] = freq_grid.tolist()
+                    response["spectrum"] = spec.tolist()
+                    response["state_hash"] = update_ui_state_hash(param_state.model_dump())
+                else:
+                    response["status"] = "ERROR"
+                    response["error"] = "No WhatIfSpectrumEngine attached to server."
+            else:
+                response["status"] = "ERROR"
+                response["error"] = "Invalid state object in COMPUTE_SPECTRUM request."
+        elif msg_type == "LTTB_DECIMATE":
+            x_in = msg_dict.get("x", [])
+            y_in = msg_dict.get("y", [])
+            threshold = int(msg_dict.get("threshold", 5000))
+            if isinstance(x_in, (list, tuple, np.ndarray)) and isinstance(y_in, (list, tuple, np.ndarray)):
+                x_out, y_out = run_lttb_decimation(x_in, y_in, threshold)
+                response["x"] = x_out.tolist()
+                response["y"] = y_out.tolist()
+            else:
+                response["status"] = "ERROR"
+                response["error"] = "Invalid array inputs for LTTB decimation."
+        elif msg_type == "GET_STATE_HASH":
+            state_dict = msg_dict.get("state", {})
+            if isinstance(state_dict, dict):
+                response["state_hash"] = update_ui_state_hash(state_dict)
+            else:
+                response["status"] = "ERROR"
+                response["error"] = "Invalid state dictionary for hash computation."
+        else:
+            response["status"] = "ERROR"
+            response["error"] = f"Unrecognized request type '{msg_type}'"
+
+        self.socket.send_json(response)
+        return response
+
+    def stop(self) -> None:
+        """Closes sockets and terminates context."""
+        self.is_running = False
+        if not self.socket.closed:
+            self.socket.close()
+        if not self.context.closed:
+            self.context.term()
+
+
+class SpycFitZMQClient:
+    """
+    ZeroMQ IPC client connecting to SpycFitZMQServer with strict timeout and heartbeat verification.
+    """
+
+    def __init__(
+        self,
+        endpoint: str = "tcp://127.0.0.1:5555",
+        timeout_ms: int = 2000,
+    ) -> None:
+        self.endpoint = endpoint
+        self.timeout_ms = timeout_ms
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.REQ)
+        self.socket.setsockopt(zmq.RCVTIMEO, timeout_ms)
+        self.socket.setsockopt(zmq.SNDTIMEO, timeout_ms)
+        self.socket.setsockopt(zmq.LINGER, 0)
+        self.socket.connect(self.endpoint)
+
+    def ping(self) -> bool:
+        """Sends a heartbeat ping and checks for heartbeat ack within timeout."""
+        try:
+            self.socket.send_json({"type": "HEARTBEAT", "client_id": uuid.uuid4().hex[:8]})
+            reply: Any = self.socket.recv_json()
+            if isinstance(reply, dict):
+                return bool(reply.get("type") == "HEARTBEAT_ACK" and reply.get("status") == "SUCCESS")
+            return False
+        except zmq.Again as exc:
+            raise ZMQBridgeError("ZeroMQ heartbeat timeout: server unresponsive.") from exc
+
+    def request_spectrum_computation(
+        self,
+        state: WhatIfParameterState,
+        decimate_threshold: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Requests real-time spectrum computation from the ZMQ bridge server."""
+        try:
+            req = {
+                "type": "COMPUTE_SPECTRUM",
+                "state": state.model_dump(),
+                "decimate_threshold": decimate_threshold,
+            }
+            self.socket.send_json(req)
+            reply: Any = self.socket.recv_json()
+            if not isinstance(reply, dict) or reply.get("status") != "SUCCESS":
+                err_msg = reply.get("error", "Unknown error") if isinstance(reply, dict) else "Malformed reply"
+                raise ZMQBridgeError(f"Server returned error: {err_msg}")
+            return cast(Dict[str, Any], reply)
+        except zmq.Again as exc:
+            raise ZMQBridgeError("ZeroMQ spectrum computation request timed out.") from exc
+
+    def request_lttb_decimation(
+        self,
+        x: Sequence[float],
+        y: Sequence[float],
+        threshold: int = 5000,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Requests remote LTTB decimation over ZeroMQ IPC."""
+        try:
+            req = {
+                "type": "LTTB_DECIMATE",
+                "x": list(x),
+                "y": list(y),
+                "threshold": threshold,
+            }
+            self.socket.send_json(req)
+            reply: Any = self.socket.recv_json()
+            if not isinstance(reply, dict) or reply.get("status") != "SUCCESS":
+                err_msg = reply.get("error", "Unknown error") if isinstance(reply, dict) else "Malformed reply"
+                raise ZMQBridgeError(f"Server returned error: {err_msg}")
+            return np.array(reply["x"], dtype=np.float64), np.array(reply["y"], dtype=np.float64)
+        except zmq.Again as exc:
+            raise ZMQBridgeError("ZeroMQ LTTB decimation request timed out.") from exc
+
+    def request_state_hash(self, state_dict: Dict[str, Any]) -> str:
+        """Requests remote SHA-256 state hash calculation."""
+        try:
+            req = {"type": "GET_STATE_HASH", "state": state_dict}
+            self.socket.send_json(req)
+            reply: Any = self.socket.recv_json()
+            if not isinstance(reply, dict) or reply.get("status") != "SUCCESS":
+                err_msg = reply.get("error", "Unknown error") if isinstance(reply, dict) else "Malformed reply"
+                raise ZMQBridgeError(f"Server returned error: {err_msg}")
+            return str(reply["state_hash"])
+        except zmq.Again as exc:
+            raise ZMQBridgeError("ZeroMQ state hash request timed out.") from exc
+
+    def close(self) -> None:
+        """Closes socket and terminates context."""
+        if not self.socket.closed:
+            self.socket.close()
+        if not self.context.closed:
+            self.context.term()
+
+
+# =============================================================================
+# 10. IPYWIDGETS INTERACTIVE DASHBOARD & VOILA INTERFACE
+# =============================================================================
+
+class SpycFitInteractiveDashboard:
+    """
+    Jupyter and Voila interactive HITL spectroscopic dashboard.
+    Combines ipywidgets controls (FloatSlider, Button, VBox, HBox, Output) with
+    Plotly WebGL Dual-Pane spectrum visualization, LTTB decimation, and cryptographic state hashing.
+    """
+
+    def __init__(
+        self,
+        manager: HITLAssignmentManager,
+        spectrum_engine: Optional[WhatIfSpectrumEngine] = None,
+        config: Optional[DashboardConfig] = None,
+    ) -> None:
+        self.manager = manager
+        self.engine = spectrum_engine
+        self.config = config or DashboardConfig()
+
+        # UI Widgets
+        self.slider_A = FloatSlider(
+            value=self.engine.base_state.A_mhz if self.engine else 10000.0,
+            min=100.0,
+            max=500000.0,
+            step=1.0,
+            description="A (MHz):",
+            continuous_update=False,
+            layout={"width": "300px"},
+        )
+        self.slider_B = FloatSlider(
+            value=self.engine.base_state.B_mhz if self.engine else 5000.0,
+            min=50.0,
+            max=200000.0,
+            step=0.5,
+            description="B (MHz):",
+            continuous_update=False,
+            layout={"width": "300px"},
+        )
+        self.slider_C = FloatSlider(
+            value=self.engine.base_state.C_mhz if self.engine else 2500.0,
+            min=25.0,
+            max=100000.0,
+            step=0.5,
+            description="C (MHz):",
+            continuous_update=False,
+            layout={"width": "300px"},
+        )
+        self.slider_temp = FloatSlider(
+            value=self.engine.base_state.temperature_k if self.engine else 296.0,
+            min=1.0,
+            max=1000.0,
+            step=1.0,
+            description="Temp (K):",
+            continuous_update=False,
+            layout={"width": "300px"},
+        )
+        self.slider_huber = FloatSlider(
+            value=self.config.huber_delta_mhz or 1.0,
+            min=0.01,
+            max=50.0,
+            step=0.05,
+            description="Huber Delta:",
+            continuous_update=False,
+            layout={"width": "300px"},
+        )
+
+        # Buttons
+        self.btn_auto_propose = Button(description="Auto-Propose", button_style="info", icon="wand-magic-sparkles")
+        self.btn_approve_all = Button(description="Approve All", button_style="success", icon="check")
+        self.btn_reject_outliers = Button(description="Reject Outliers (>3σ)", button_style="warning", icon="filter")
+        self.btn_recalc = Button(description="Recalculate Spectrum", button_style="primary", icon="sync")
+
+        # Output Containers
+        self.plot_output = Output()
+        self.status_output = Output()
+
+        # Connect button callbacks
+        self.btn_auto_propose.on_click(self._on_auto_propose_clicked)
+        self.btn_approve_all.on_click(self._on_approve_all_clicked)
+        self.btn_reject_outliers.on_click(self._on_reject_outliers_clicked)
+        self.btn_recalc.on_click(self._on_recalc_clicked)
+
+        # Connect slider observe handlers
+        self.slider_A.observe(self._on_slider_change, names="value")
+        self.slider_B.observe(self._on_slider_change, names="value")
+        self.slider_C.observe(self._on_slider_change, names="value")
+        self.slider_temp.observe(self._on_slider_change, names="value")
+        self.slider_huber.observe(self._on_slider_change, names="value")
+
+        # Build composite layout
+        self.controls_box = VBox([
+            HBox([self.slider_A, self.slider_B, self.slider_C]),
+            HBox([self.slider_temp, self.slider_huber]),
+            HBox([self.btn_auto_propose, self.btn_approve_all, self.btn_reject_outliers, self.btn_recalc]),
+        ])
+        self.widget = VBox([
+            self.controls_box,
+            self.status_output,
+            self.plot_output,
+        ])
+
+        self.refresh_view()
+
+    def get_current_parameter_state(self) -> WhatIfParameterState:
+        """Returns the current WhatIfParameterState based on slider values."""
+        if self.engine:
+            return self.engine.base_state.model_copy(
+                update={
+                    "A_mhz": float(self.slider_A.value),
+                    "B_mhz": float(self.slider_B.value),
+                    "C_mhz": float(self.slider_C.value),
+                    "temperature_k": float(self.slider_temp.value),
+                }
+            )
+        return WhatIfParameterState(
+            A_mhz=float(self.slider_A.value),
+            B_mhz=float(self.slider_B.value),
+            C_mhz=float(self.slider_C.value),
+            temperature_k=float(self.slider_temp.value),
+        )
+
+    def refresh_view(self) -> None:
+        """Refreshes the dual-pane Plotly chart and status readout."""
+        with self.plot_output:
+            self.plot_output.clear_output(wait=True)
+            convolved_curve = None
+            if self.engine:
+                cur_state = self.get_current_parameter_state()
+                f_grid, spec = self.engine.compute_convolved_spectrum(cur_state)
+                if len(f_grid) > 5000:
+                    f_grid, spec = run_lttb_decimation(f_grid, spec, threshold=5000)
+                convolved_curve = (f_grid, spec)
+
+            fig = render_dual_pane_dashboard(
+                exp_peaks=self.manager.exp_peaks,
+                theo_peaks=self.manager.theo_peaks,
+                assignments=self.manager.assignments,
+                config=self.config,
+                convolved_curve=convolved_curve,
+            )
+            fig.show()
+
+        with self.status_output:
+            self.status_output.clear_output(wait=True)
+            loss, rms = self.manager.compute_robust_metrics(huber_delta_mhz=float(self.slider_huber.value))
+            app_count = len(self.manager.get_assignments_by_status(AssignmentStatus.APPROVED))
+            ghost_count = len(self.manager.get_ghost_peaks())
+            state_dict = {
+                "A_mhz": float(self.slider_A.value),
+                "B_mhz": float(self.slider_B.value),
+                "C_mhz": float(self.slider_C.value),
+                "temperature_k": float(self.slider_temp.value),
+                "huber_delta_mhz": float(self.slider_huber.value),
+                "approved_count": app_count,
+                "ghost_count": ghost_count,
+            }
+            state_hash = update_ui_state_hash(state_dict)
+            logger.info(
+                f"[HITL Status] Approved: {app_count} | Ghosts: {ghost_count} | "
+                f"RMS: {rms:.4f} MHz | Huber Loss: {loss:.4f} | State SHA-256: {state_hash[:12]}..."
+            )
+
+    def _on_auto_propose_clicked(self, _btn: Any) -> None:
+        self.manager.auto_propose()
+        self.refresh_view()
+
+    def _on_approve_all_clicked(self, _btn: Any) -> None:
+        self.manager.approve_all_proposed()
+        self.refresh_view()
+
+    def _on_reject_outliers_clicked(self, _btn: Any) -> None:
+        delta = float(self.slider_huber.value)
+        proposed = self.manager.get_assignments_by_status(AssignmentStatus.PROPOSED)
+        for a in proposed:
+            if abs(a.frequency_drift_mhz) > 3.0 * delta:
+                self.manager.reject_assignment(a.assignment_id, reason="Exceeds 3-sigma tolerance threshold")
+        self.refresh_view()
+
+    def _on_recalc_clicked(self, _btn: Any) -> None:
+        self.refresh_view()
+
+    def _on_slider_change(self, _change: Any) -> None:
+        self.refresh_view()
+
+
+def create_spycfit_dashboard_widget(
+    manager: HITLAssignmentManager,
+    spectrum_engine: Optional[WhatIfSpectrumEngine] = None,
+    config: Optional[DashboardConfig] = None,
+) -> VBox:
+    """
+    Convenience factory to instantiate a SpycFit interactive Jupyter/Voila dashboard widget.
+    """
+    dashboard = SpycFitInteractiveDashboard(manager=manager, spectrum_engine=spectrum_engine, config=config)
+    return dashboard.widget
+
+
+# =============================================================================
+# 11. SEMANTIC GIT-COMMIT TRANSLATION FOR MATHEMATICAL CHANGES
 # =============================================================================
 
 def translate_mathematical_change_to_git_commit(
@@ -1097,7 +1670,7 @@ def translate_mathematical_change_to_git_commit(
 ) -> SemanticCommit:
     """
     Translates mathematical parameter mutations, assignment approvals, and loss adjustments
-    into standardized, conventional semantic Git commit messages.
+    into standardized, conventional semantic Git commit messages with cryptographic SHA-256 state tracking.
 
     Parameters:
         state_before: Parameter state prior to update.
@@ -1126,6 +1699,15 @@ def translate_mathematical_change_to_git_commit(
             summary += f" [{rms_str}]"
             body_lines.append(f"Residual quality update: {rms_str}")
 
+        state_meta = {
+            "approved_count": app,
+            "rejected_count": rej,
+            "rms_before": rms_before,
+            "rms_after": rms_after,
+        }
+        state_hash = update_ui_state_hash(state_meta)
+        body_lines.append(f"State-Hash: {state_hash}")
+
         full_msg = f"fix(assignment): {summary}\n\n" + "\n".join(body_lines)
         return SemanticCommit(
             commit_type="fix",
@@ -1134,6 +1716,7 @@ def translate_mathematical_change_to_git_commit(
             body="\n".join(body_lines),
             rms_before=rms_before,
             rms_after=rms_after,
+            state_hash=state_hash,
             full_commit_message=full_msg,
         )
 
@@ -1144,6 +1727,13 @@ def translate_mathematical_change_to_git_commit(
             f"Adjusted Huber robust loss delta threshold from {huber_delta_before:.4f} MHz to {huber_delta_after:.4f} MHz.",
             "Optimizes outlier suppression boundary for Levenberg-Marquardt fitting.",
         ]
+        state_meta = {
+            "huber_delta_before": huber_delta_before,
+            "huber_delta_after": huber_delta_after,
+        }
+        state_hash = update_ui_state_hash(state_meta)
+        body_lines.append(f"State-Hash: {state_hash}")
+
         full_msg = f"refactor(loss): {summary}\n\n" + "\n".join(body_lines)
         return SemanticCommit(
             commit_type="refactor",
@@ -1152,6 +1742,7 @@ def translate_mathematical_change_to_git_commit(
             body="\n".join(body_lines),
             parameters_before={"huber_delta_mhz": huber_delta_before},
             parameters_after={"huber_delta_mhz": huber_delta_after},
+            state_hash=state_hash,
             full_commit_message=full_msg,
         )
 
@@ -1177,6 +1768,9 @@ def translate_mathematical_change_to_git_commit(
             rms_str = f"RMS: {rms_before:.4f} MHz -> {rms_after:.4f} MHz"
             summary += f" [{rms_str}]"
 
+        state_hash = update_ui_state_hash(state_after.model_dump())
+        body_diffs.append(f"\nState-Hash: {state_hash}")
+
         body = "Spectroscopic parameter adjustment details:\n" + "\n".join(body_diffs)
         full_msg = f"feat(hamiltonian): {summary}\n\n{body}"
 
@@ -1189,6 +1783,7 @@ def translate_mathematical_change_to_git_commit(
             parameters_after=state_after.model_dump(),
             rms_before=rms_before,
             rms_after=rms_after,
+            state_hash=state_hash,
             full_commit_message=full_msg,
         )
 
@@ -1209,14 +1804,21 @@ __all__ = [
     "SemanticCommitError",
     "SliderComputationError",
     "SpectralPeak",
+    "SpycFitInteractiveDashboard",
+    "SpycFitZMQClient",
+    "SpycFitZMQServer",
     "UIDashboardError",
     "WhatIfParameterState",
     "WhatIfSpectrumEngine",
+    "ZMQBridgeError",
     "auto_propose_assignments",
     "compute_bipartite_cost_matrix",
     "compute_huber_loss_excluding_ghosts",
+    "create_spycfit_dashboard_widget",
     "render_dual_pane_dashboard",
     "render_static_offline_html",
     "render_static_offline_pdf",
+    "run_lttb_decimation",
     "translate_mathematical_change_to_git_commit",
+    "update_ui_state_hash",
 ]

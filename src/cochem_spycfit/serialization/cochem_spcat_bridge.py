@@ -1310,11 +1310,16 @@ class FortranBridgeDispatcher:
                     env=exec_env,
                     capture_output=True,
                     timeout=task.timeout_sec,
+                    check=True,
                     **proc_kwargs,
                 )
                 return_code = proc.returncode
                 stdout_bytes = proc.stdout
                 stderr_bytes = proc.stderr
+            except subprocess.CalledProcessError as exc:
+                return_code = exc.returncode
+                stdout_bytes = exc.stdout or b""
+                stderr_bytes = exc.stderr or b""
             except subprocess.TimeoutExpired as exc:
                 duration = time.time() - start_time
                 stdout_bytes = exc.stdout or b""
