@@ -16,16 +16,16 @@ Enforces:
 from __future__ import annotations
 
 import datetime
-from enum import Enum
 import hashlib
 import json
 import logging
 import os
-from pathlib import Path
 import platform
 import subprocess
-from typing import Any, Dict, List, Optional, Tuple, Union
 import warnings
+from enum import Enum
+from pathlib import Path
+from typing import Dict, Optional, Tuple, Union
 
 import platformdirs
 from pydantic import BaseModel, ConfigDict, Field
@@ -368,7 +368,11 @@ def query_physical_gpu_vram() -> Tuple[bool, str, float, int]:
                 first_gpu = lines[0].split(",")
                 gpu_profile = first_gpu[0].strip()
                 try:
-                    total_mb = sum(float(l.split(",")[1].strip()) for l in lines if len(l.split(",")) > 1)
+                    total_mb = sum(
+                        float(dev_line.split(",")[1].strip())
+                        for dev_line in lines
+                        if len(dev_line.split(",")) > 1
+                    )
                     vram_gb = round(total_mb / 1024.0, 2)
                     gpu_detected = True
                 except (IndexError, ValueError):
