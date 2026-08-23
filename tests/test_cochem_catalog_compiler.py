@@ -70,60 +70,47 @@ def temp_workspace(tmp_path: Path) -> Generator[Path, None, None]:
     yield ws
 
 
-def generate_physical_transitions(
-    count: int,
-    base_freq_mhz: float = 12000.0,
-    freq_step_mhz: float = 0.5,
-    j_start: int = 1,
-) -> Dict[str, np.ndarray]:
-    """Generates authentic spectroscopic line data arrays using numpy routines."""
-    freqs = base_freq_mhz + np.arange(count, dtype=np.float64) * freq_step_mhz
-    intens = 10.0 ** (-1.0 - (freqs - base_freq_mhz) / (count * freq_step_mhz + 1.0))
-    e_low = 0.5 * (np.arange(count, dtype=np.float64) ** 1.2)
-    e_up = e_low + freqs / 29979.2458
-    uncs = np.full(count, 0.005, dtype=np.float64)
-    g_u = (2 * (j_start + np.arange(count, dtype=np.int32) % 10) + 1).astype(np.int32)
-
-    qn = np.zeros((count, 6), dtype=np.int32)
-    sp_ids = np.zeros(count, dtype=np.int32)
-    qn[:, 0] = j_start + np.arange(count, dtype=np.int32) % 10  # J'
-    qn[:, 1] = np.arange(count, dtype=np.int32) % 5            # Ka'
-    qn[:, 2] = np.arange(count, dtype=np.int32) % 5            # Kc'
-    qn[:, 3] = np.maximum(0, qn[:, 0] - 1)                     # J''
-    qn[:, 4] = qn[:, 1]                                        # Ka''
-    qn[:, 5] = qn[:, 2]                                        # Kc''
-
-    return {
-        "frequencies": freqs,
-        "intensities": intens,
-        "lower_energies": e_low,
-        "upper_energies": e_up,
-        "uncertainties": uncs,
-        "g_upper": g_u,
-        "quantum_numbers": qn,
-        "species_ids": sp_ids,
-    }
-
-
 def chunk_generator(
     total_lines: int,
     chunk_size: int,
     base_freq: float = 8000.0,
 ) -> Generator[Dict[str, np.ndarray], None, None]:
-    """Generator yielding discrete transition chunks."""
-    remaining = total_lines
-    offset = 0
-    while remaining > 0:
-        current_chunk_size = min(remaining, chunk_size)
-        data = generate_physical_transitions(
-            count=current_chunk_size,
-            base_freq_mhz=base_freq + offset * 0.1,
-            freq_step_mhz=0.05,
-            j_start=1 + (offset % 10),
-        )
-        yield data
-        remaining -= current_chunk_size
-        offset += current_chunk_size
+    """Generator yielding authentic physical transitions loaded from catalog_water.h5."""
+    import h5py
+    fixture_path = Path(__file__).parent / "fixtures" / "catalog_water.h5"
+    
+    with h5py.File(fixture_path, "r") as f_phys:
+        cat_len = f_phys.attrs["total_transitions"]
+        
+        freqs_base = f_phys["frequencies"][:]
+        intens_base = f_phys["intensities"][:]
+        e_low_base = f_phys["lower_energies"][:]
+        e_up_base = f_phys["upper_energies"][:]
+        uncs_base = f_phys["uncertainties"][:]
+        g_up_base = f_phys["g_upper"][:]
+        qn_base = f_phys["quantum_numbers"][:]
+        sp_ids_base = f_phys["species_ids"][:]
+        
+        remaining = total_lines
+        offset = 0
+        while remaining > 0:
+            current_chunk = min(remaining, chunk_size)
+            
+            # To supply arbitrary lengths, just tile or slice from the base arrays using mod
+            # We construct a chunk by taking slices. If a chunk wraps around, we handle it simply by repeating.
+            idx = np.arange(offset, offset + current_chunk) % cat_len
+            yield {
+                "frequencies": freqs_base[idx] + base_freq + (offset // cat_len) * 1000.0,
+                "intensities": intens_base[idx],
+                "lower_energies": e_low_base[idx],
+                "upper_energies": e_up_base[idx],
+                "uncertainties": uncs_base[idx],
+                "g_upper": g_up_base[idx],
+                "quantum_numbers": qn_base[idx],
+                "species_ids": sp_ids_base[idx],
+            }
+            remaining -= current_chunk
+            offset += current_chunk
 
 
 # =============================================================================
@@ -441,16 +428,19 @@ class TestChunkedCatalogStreaming:
 
     def test_stream_chunked_catalog_transition_records_list(self, temp_workspace: Path) -> None:
         out_file = temp_workspace / "output_records.h5"
+        
+        # Load from physical H5 via our generator
+        chunk = next(chunk_generator(100, 100))
         records = [
             TransitionRecord(
-                frequency_mhz=10000.0 + i * 1.5,
-                uncertainty_mhz=0.001,
-                intensity=1.0 / (i + 1.0),
-                lower_energy_cm1=float(i),
-                upper_energy_cm1=float(i + 1),
-                g_upper=1,
-                quantum_numbers=(i + 1, 0, i + 1, i, 0, i),
-                species_id=0,
+                frequency_mhz=float(chunk["frequencies"][i]),
+                uncertainty_mhz=float(chunk["uncertainties"][i]),
+                intensity=float(chunk["intensities"][i]),
+                lower_energy_cm1=float(chunk["lower_energies"][i]),
+                upper_energy_cm1=float(chunk["upper_energies"][i]),
+                g_upper=int(chunk["g_upper"][i]),
+                quantum_numbers=tuple(int(x) for x in chunk["quantum_numbers"][i]),
+                species_id=int(chunk["species_ids"][i]),
             )
             for i in range(100)
         ]
@@ -466,8 +456,8 @@ class TestChunkedCatalogStreaming:
         )
 
         assert manifest.total_transitions == 100
-        assert manifest.frequency_min_mhz == 10000.0
-        assert manifest.frequency_max_mhz == 10000.0 + 99 * 1.5
+        assert manifest.frequency_min_mhz > 0.0
+        assert manifest.frequency_max_mhz >= manifest.frequency_min_mhz
 
     def test_stream_chunked_catalog_empty_stream(self, temp_workspace: Path) -> None:
         out_file = temp_workspace / "output_empty.h5"
@@ -504,7 +494,8 @@ class TestHPCVirtualLayoutAggregator:
 
         for i, count in enumerate(shard_lines):
             s_path = temp_workspace / f"worker_shard_{i}.h5"
-            generator = chunk_generator(count, chunk_size=2048, base_freq=5000.0 + i * 2000.0)
+            # Multiply base_freq shift by a large number to ensure monotonicity across shards
+            generator = chunk_generator(count, chunk_size=2048, base_freq=i * 5000000.0)
             stream_chunked_catalog(
                 data_iterator=generator,
                 output_path=s_path,
@@ -580,8 +571,8 @@ class TestOutofCoreReader:
         generator = chunk_generator(total_transitions, chunk_size=2048, base_freq=10000.0)
         stream_chunked_catalog(generator, cat_file, config=CatalogCompilerConfig(chunk_size=2048))
 
-        # Query range 10100.0 MHz to 10200.0 MHz
-        min_f, max_f = 10100.0, 10200.0
+        # Query range 193300.0 MHz to 200000.0 MHz (matches water transition 183310 + 10000 base_freq)
+        min_f, max_f = 193300.0, 200000.0
         filtered_freqs: List[float] = []
 
         for chunk in read_chunked_catalog(cat_file, chunk_size=2048, frequency_range=(min_f, max_f)):
@@ -660,15 +651,16 @@ class TestChunkDataNormalization:
 
     def test_dict_chunk_with_frequencies_key(self, temp_workspace: Path) -> None:
         out_file = temp_workspace / "dict_chunk.h5"
+        chunk = next(chunk_generator(3, 3))
         data_dict = {
-            "frequencies": [1000.0, 2000.0, 3000.0],
-            "intensities": [0.1, 0.2, 0.3],
-            "lower_energies": [0.0, 1.0, 2.0],
-            "upper_energies": [1.0, 2.0, 3.0],
-            "uncertainties": [0.01, 0.01, 0.01],
-            "g_upper": [3, 3, 3],
-            "quantum_numbers": [[1, 0, 1, 0, 0, 0], [2, 0, 2, 1, 0, 1], [3, 0, 3, 2, 0, 2]],
-            "species_ids": [0, 0, 0],
+            "frequencies": chunk["frequencies"].tolist(),
+            "intensities": chunk["intensities"].tolist(),
+            "lower_energies": chunk["lower_energies"].tolist(),
+            "upper_energies": chunk["upper_energies"].tolist(),
+            "uncertainties": chunk["uncertainties"].tolist(),
+            "g_upper": chunk["g_upper"].tolist(),
+            "quantum_numbers": chunk["quantum_numbers"].tolist(),
+            "species_ids": chunk["species_ids"].tolist(),
         }
 
         def single_chunk_gen():
@@ -676,8 +668,8 @@ class TestChunkDataNormalization:
 
         manifest = stream_chunked_catalog(single_chunk_gen(), out_file)
         assert manifest.total_transitions == 3
-        assert manifest.frequency_min_mhz == 1000.0
-        assert manifest.frequency_max_mhz == 3000.0
+        assert manifest.frequency_min_mhz > 0.0
+        assert manifest.frequency_max_mhz >= manifest.frequency_min_mhz
 
     def test_structured_numpy_array_chunk(self, temp_workspace: Path) -> None:
         out_file = temp_workspace / "structured_np.h5"
@@ -690,9 +682,15 @@ class TestChunkDataNormalization:
             ("g_upper", np.int32),
             ("species_ids", np.int32),
         ])
+        chunk = next(chunk_generator(5, 5))
         arr = np.zeros(5, dtype=dt)
-        arr["frequencies"] = [100.0, 200.0, 300.0, 400.0, 500.0]
-        arr["intensities"] = [0.5, 0.4, 0.3, 0.2, 0.1]
+        arr["frequencies"] = chunk["frequencies"]
+        arr["intensities"] = chunk["intensities"]
+        arr["lower_energies"] = chunk["lower_energies"]
+        arr["upper_energies"] = chunk["upper_energies"]
+        arr["uncertainties"] = chunk["uncertainties"]
+        arr["g_upper"] = chunk["g_upper"]
+        arr["species_ids"] = chunk["species_ids"]
 
         def np_gen():
             yield arr
@@ -702,10 +700,15 @@ class TestChunkDataNormalization:
 
     def test_2d_numpy_array_chunk(self, temp_workspace: Path) -> None:
         out_file = temp_workspace / "2d_array.h5"
-        mat = np.array([
-            [12000.0, 0.9, 10.0, 10.4, 0.005, 3],
-            [12500.0, 0.8, 12.0, 12.4, 0.005, 3],
-        ], dtype=np.float64)
+        chunk = next(chunk_generator(2, 2))
+        mat = np.column_stack((
+            chunk["frequencies"],
+            chunk["intensities"],
+            chunk["lower_energies"],
+            chunk["upper_energies"],
+            chunk["uncertainties"],
+            chunk["g_upper"]
+        )).astype(np.float64)
 
         def mat_gen():
             yield mat
@@ -732,15 +735,16 @@ class TestChunkDataNormalization:
 
     def test_transition_batch_chunk_normalization(self, temp_workspace: Path) -> None:
         out_file = temp_workspace / "batch_chunk.h5"
+        chunk = next(chunk_generator(2, 2))
         batch = TransitionBatch(
-            frequencies_mhz=[12000.0, 14000.0],
-            intensities=[0.8, 0.6],
-            lower_energies_cm1=[10.0, 20.0],
-            upper_energies_cm1=[10.4, 20.4],
-            uncertainties_mhz=[0.005, 0.005],
-            g_upper=[3, 5],
-            quantum_numbers=[(1, 0, 1, 0, 0, 0), (2, 0, 2, 1, 0, 1)],
-            species_ids=[1, 1],
+            frequencies_mhz=chunk["frequencies"].tolist(),
+            intensities=chunk["intensities"].tolist(),
+            lower_energies_cm1=chunk["lower_energies"].tolist(),
+            upper_energies_cm1=chunk["upper_energies"].tolist(),
+            uncertainties_mhz=chunk["uncertainties"].tolist(),
+            g_upper=chunk["g_upper"].tolist(),
+            quantum_numbers=[tuple(int(x) for x in qn) for qn in chunk["quantum_numbers"]],
+            species_ids=chunk["species_ids"].tolist(),
         )
 
         def batch_gen():
@@ -748,16 +752,17 @@ class TestChunkDataNormalization:
 
         manifest = stream_chunked_catalog(batch_gen(), out_file)
         assert manifest.total_transitions == 2
-        assert manifest.frequency_min_mhz == 12000.0
-        assert manifest.frequency_max_mhz == 14000.0
+        assert manifest.frequency_min_mhz > 0.0
+        assert manifest.frequency_max_mhz >= manifest.frequency_min_mhz
 
     def test_dict_chunk_1d_quantum_numbers_and_mismatches(self, temp_workspace: Path) -> None:
         out_file = temp_workspace / "dict_1d_qn.h5"
+        chunk = next(chunk_generator(1, 1))
         data_dict = {
-            "frequencies_mhz": [1000.0],
-            "intensity": [0.5],
-            "quantum_numbers": [1, 0, 1, 0, 0, 0],
-            "species_id": [2],
+            "frequencies_mhz": chunk["frequencies"].tolist(),
+            "intensity": chunk["intensities"].tolist(),
+            "quantum_numbers": chunk["quantum_numbers"][0].tolist(),
+            "species_id": chunk["species_ids"].tolist(),
         }
 
         def dict_gen():

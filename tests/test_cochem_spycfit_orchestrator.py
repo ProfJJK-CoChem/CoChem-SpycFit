@@ -73,7 +73,7 @@ from cochem_spycfit.intake.cochem_spycfit_orchestrator import (
 
 def test_file_encoding_and_lf_line_endings():
     """Validates that cochem_spycfit_orchestrator.py exists, is UTF-8 encoded without BOM, and uses Unix LF."""
-    target_path = Path("src/cochem_spycfit/intake/cochem_spycfit_orchestrator.py").resolve()
+    target_path = (Path(__file__).parent.parent / "src/cochem_spycfit/intake/cochem_spycfit_orchestrator.py").resolve()
     assert target_path.is_file(), f"Target file missing: {target_path}"
 
     raw_bytes = target_path.read_bytes()
@@ -86,7 +86,7 @@ def test_file_encoding_and_lf_line_endings():
 
 def test_anti_spoofing_and_integrity_compliance():
     """Zero-Trust Static AST Inspection ensuring complete eradication of unauthorized tokens and empty pass blocks."""
-    target_path = Path("src/cochem_spycfit/intake/cochem_spycfit_orchestrator.py").resolve()
+    target_path = (Path(__file__).parent.parent / "src/cochem_spycfit/intake/cochem_spycfit_orchestrator.py").resolve()
     assert target_path.is_file()
 
     source = target_path.read_text(encoding="utf-8")
@@ -187,14 +187,10 @@ def test_evaluate_landscape_tensors_complete(tmp_path):
         [0.0, -0.757, 0.586],
     ], dtype=np.float64)
     import h5py
-    with h5py.File(Path(__file__).parent.parent / "artifacts_test" / "landscape.h5", "r") as f_phys:
-        hessian = np.array(f_phys["isomer_001"]["hessian"])
-    q = np.array([-0.8, 0.4, 0.4], dtype=np.float64)
-    dipole_derivs = np.array([
-        [q[0], 0.0, 0.0, q[1], 0.0, 0.0, q[2], 0.0, 0.0],
-        [0.0, q[0], 0.0, 0.0, q[1], 0.0, 0.0, q[2], 0.0],
-        [0.0, 0.0, q[0], 0.0, 0.0, q[1], 0.0, 0.0, q[2]]
-    ], dtype=np.float64)
+    fixture_path = Path(__file__).parent / "fixtures" / "landscape_water.h5"
+    with h5py.File(fixture_path, "r") as f_phys:
+        hessian = np.array(f_phys["cartesian_hessian"])
+        dipole_derivs = np.array(f_phys["dipole_derivatives"])
 
     with h5py.File(h5_file, "w") as f:
         f.create_dataset("geometry", data=geom)
@@ -268,8 +264,12 @@ def test_route_missing_energy_file_drop(tmp_path):
             if req_file.exists():
                 time.sleep(0.05)
                 import h5py
-                with h5py.File(Path(__file__).parent.parent / "artifacts_test" / "landscape.h5", "r") as f_phys:
-                    hess_phys = np.array(f_phys["isomer_001"]["hessian"]).tolist()
+                
+                # Load physically valid arrays from the generated fixtures
+                fixture_path = Path(__file__).parent / "fixtures" / "landscape_water.h5"
+                with h5py.File(fixture_path, "r") as f_phys:
+                    hess_phys = np.array(f_phys["cartesian_hessian"]).tolist()
+                    dipole_phys = np.array(f_phys["dipole_derivatives"]).tolist()
                 
                 resp_payload = {
                     "request_id": req.request_id,
@@ -277,7 +277,7 @@ def test_route_missing_energy_file_drop(tmp_path):
                     "status": "COMPLETED",
                     "tensors_data": {
                         "cartesian_hessian": hess_phys,
-                        "dipole_derivatives": [[0.1 * i + 0.05 * j for j in range(9)] for i in range(3)],
+                        "dipole_derivatives": dipole_phys,
                     },
                     "error_message": None,
                     "execution_time_seconds": 0.12,
@@ -332,11 +332,11 @@ def test_route_missing_energy_zmq():
 
     req = TORQRequestPayload(
         request_id="req_zmq_002",
-        system_id="formic_acid",
+        system_id="water_monomer",
         missing_tensors=["cartesian_hessian"],
-        geometry=[[0.0, 0.0, 0.0], [1.2, 0.0, 0.0]],
-        atomic_numbers=[6, 8],
-        masses_amu=[12.0, 15.9949146],
+        geometry=[[0.0, 0.0, 0.0], [0.0, 0.757, 0.586], [0.0, -0.757, 0.586]],
+        atomic_numbers=[8, 1, 1],
+        masses_amu=[15.9949146, 1.0078250, 1.0078250],
         method="CCSD(T)",
         basis="cc-pVTZ",
     )
@@ -347,11 +347,16 @@ def test_route_missing_energy_zmq():
         raw_msg = server_sock.recv_string()
         req_dict = json.loads(raw_msg)
 
+        import h5py
+        fixture_path = Path(__file__).parent / "fixtures" / "landscape_water.h5"
+        with h5py.File(fixture_path, "r") as f_phys:
+            hess_phys = np.array(f_phys["cartesian_hessian"]).tolist()
+
         resp_dict = {
             "request_id": req_dict["request_id"],
             "system_id": req_dict["system_id"],
             "status": "COMPLETED",
-            "tensors_data": {"cartesian_hessian": [[float(i == j) * 0.5 for j in range(6)] for i in range(6)]},
+            "tensors_data": {"cartesian_hessian": hess_phys},
             "error_message": None,
             "execution_time_seconds": 0.05,
         }
@@ -526,11 +531,10 @@ def test_eckart_frame_correction_dipole_derivatives():
     parent_masses = np.array([15.9949146, 1.0078250, 1.0078250], dtype=np.float64)
     sub_masses = np.array([15.9949146, 1.0078250, 2.0141018], dtype=np.float64)  # HDO
 
-    dipole_derivs_parent = np.array([
-        [0.1, 0.0, 0.0, -0.05, 0.0, 0.0, -0.05, 0.0, 0.0],
-        [0.0, 0.2, 0.0, 0.0, -0.1, 0.0, 0.0, -0.1, 0.0],
-        [0.0, 0.0, 0.3, 0.0, 0.0, -0.15, 0.0, 0.0, -0.15],
-    ], dtype=np.float64)
+    import h5py
+    fixture_path = Path(__file__).parent / "fixtures" / "landscape_water.h5"
+    with h5py.File(fixture_path, "r") as f_phys:
+        dipole_derivs_parent = np.array(f_phys["dipole_derivatives"])
 
     result = eckart_frame_correction(
         dipole_derivatives=dipole_derivs_parent,
@@ -581,14 +585,10 @@ def test_unified_orchestrator_pipeline(tmp_path):
         [0.0, -0.757, 0.586],
     ], dtype=np.float64)
     import h5py
-    with h5py.File(Path(__file__).parent.parent / "artifacts_test" / "landscape.h5", "r") as f_phys:
-        hessian = np.array(f_phys["isomer_001"]["hessian"])
-    q = np.array([-0.8, 0.4, 0.4], dtype=np.float64)
-    dipole_derivs = np.array([
-        [q[0], 0.0, 0.0, q[1], 0.0, 0.0, q[2], 0.0, 0.0],
-        [0.0, q[0], 0.0, 0.0, q[1], 0.0, 0.0, q[2], 0.0],
-        [0.0, 0.0, q[0], 0.0, 0.0, q[1], 0.0, 0.0, q[2]]
-    ], dtype=np.float64)
+    fixture_path = Path(__file__).parent / "fixtures" / "landscape_water.h5"
+    with h5py.File(fixture_path, "r") as f_phys:
+        hessian = np.array(f_phys["cartesian_hessian"])
+        dipole_derivs = np.array(f_phys["dipole_derivatives"])
 
     with h5py.File(h5_file, "w") as f:
         f.create_dataset("geometry", data=geom)
@@ -637,9 +637,14 @@ def test_deterministic_sha256_provenance():
 def test_checkpoint_and_yield_node_with_numpy_payload(tmp_path):
     """Tests that checkpoint_and_yield_node cleanly serializes NumPy arrays and scalar FP64 objects."""
     checkpoint_file = tmp_path / "numpy_checkpoint.json"
+    import h5py
+    fixture_path = Path(__file__).parent / "fixtures" / "landscape_water.h5"
+    with h5py.File(fixture_path, "r") as f_phys:
+        phys_hessian = np.array(f_phys["cartesian_hessian"], dtype=np.float64)
+
     state_payload = {
         "iteration": 100,
-        "jacobian": np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64),
+        "jacobian": phys_hessian[:2, :2],
         "loss": np.float64(0.000451),
         "atom_indices": np.array([1, 2, 3], dtype=np.int32),
     }
@@ -652,7 +657,7 @@ def test_checkpoint_and_yield_node_with_numpy_payload(tmp_path):
         loaded = json.load(f)
 
     assert loaded["iteration"] == 100
-    assert loaded["jacobian"] == [[1.0, 2.0], [3.0, 4.0]]
+    assert loaded["jacobian"] == phys_hessian[:2, :2].tolist()
     assert abs(loaded["loss"] - 0.000451) < 1e-9
     assert loaded["atom_indices"] == [1, 2, 3]
 
@@ -676,13 +681,19 @@ def test_unified_orchestrator_in_memory_geometry_and_torq(tmp_path):
                 with open(rf, "r", encoding="utf-8") as f:
                     req_dict = json.load(f)
                 req_id = req_dict["request_id"]
+                import h5py
+                fixture_path = Path(__file__).parent / "fixtures" / "landscape_water.h5"
+                with h5py.File(fixture_path, "r") as f_phys:
+                    hess_phys = np.array(f_phys["cartesian_hessian"]).tolist()
+                    dipole_phys = np.array(f_phys["dipole_derivatives"]).tolist()
+                
                 resp_payload = {
                     "request_id": req_id,
                     "system_id": req_dict["system_id"],
                     "status": "COMPLETED",
                     "tensors_data": {
-                        "cartesian_hessian": np.eye(9).tolist(),
-                        "dipole_derivatives": np.ones((3, 9)).tolist(),
+                        "cartesian_hessian": hess_phys,
+                        "dipole_derivatives": dipole_phys,
                     },
                     "error_message": None,
                     "execution_time_seconds": 0.05,
