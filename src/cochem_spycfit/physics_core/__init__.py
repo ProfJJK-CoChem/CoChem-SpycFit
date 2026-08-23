@@ -1,0 +1,55 @@
+"""
+CoChem-SpycFit: Theoretical Tensor Gateway & Physics Core.
+
+Provides exact mass-weighted Cartesian Hessian transformations, Hermitian locking,
+Ray's asymmetry parameter calculations, torsional barrier Hamiltonian routing,
+QCSchema-compliant chunked HDF5 PESStore integration, and JAX FP64 normal mode analysis.
+"""
+
+from .cochem_quantum_extractor import (
+    DEFAULT_CHUNK_SIZE,
+    HARTREE_BOHR2_AMU_TO_CM1,
+    MASS_DICT,
+    MASS_TABLE,
+    DipoleMoment,
+    HamiltonianRouting,
+    IsomerNotFoundError,
+    NonHermitianHessianError,
+    PESStore,
+    PESStoreError,
+    QuantumExtraction,
+    QuantumExtractor,
+    QuantumTensors,
+    RotationalConstants,
+    apply_mass_perturbation_and_lock,
+    compute_normal_modes_jax,
+    compute_rays_asymmetry,
+    compute_rotational_constants_from_coords,
+    determine_hamiltonian_routing,
+    extract_tensors,
+    get_atomic_mass,
+)
+
+__all__ = [
+    "DEFAULT_CHUNK_SIZE",
+    "HARTREE_BOHR2_AMU_TO_CM1",
+    "MASS_DICT",
+    "MASS_TABLE",
+    "DipoleMoment",
+    "HamiltonianRouting",
+    "IsomerNotFoundError",
+    "NonHermitianHessianError",
+    "PESStore",
+    "PESStoreError",
+    "QuantumExtraction",
+    "QuantumExtractor",
+    "QuantumTensors",
+    "RotationalConstants",
+    "apply_mass_perturbation_and_lock",
+    "compute_normal_modes_jax",
+    "compute_rays_asymmetry",
+    "compute_rotational_constants_from_coords",
+    "determine_hamiltonian_routing",
+    "extract_tensors",
+    "get_atomic_mass",
+]
