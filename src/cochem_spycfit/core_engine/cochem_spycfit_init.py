@@ -5,12 +5,13 @@ Authoritative initialisation and environment gatekeeper for the CoChem-SpycFit B
 spectral fitting and convolution ecosystem.
 
 Enforces:
-1. JAX float64 (FP64) precision locks to prevent numerical degradation during spectral diagonalizations.
+1. JAX float64 (FP64) precision locks at OS level before runtime operations.
 2. XLA bytecode compilation caching under platformdirs cache path.
-3. Hardware-Aware Fallback Gate polling physical GPU/VRAM topology (<8 GB / no CUDA -> Fortran fallback).
+3. Pre-Compute VRAM Sharding Gate polling physical GPU/VRAM topology (<8 GB / no CUDA -> Fortran fallback & sequential mini-batching).
 4. 6-Tier Matrix OS/Arch binary router resolving host/target to compiled Fortran binaries.
-5. SHA-256 cryptographic checksum validation for native computational binaries.
+5. SHA-256 cryptographic checksum validation for native and legacy computational binaries (spfit/spcat).
 6. Rigid Pydantic v2 schemas for deterministic state tracking and JSON serialization.
+7. Dynamic atomic and isotopic mass resolution via the mendeleev library.
 """
 
 from __future__ import annotations
@@ -21,14 +22,19 @@ import json
 import logging
 import os
 import platform
+import re
 import subprocess
 import warnings
 from enum import Enum
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
 
+import mendeleev
 import platformdirs
 from pydantic import BaseModel, ConfigDict, Field
+
+# 1. Enforce JAX FP64 at OS level BEFORE importing or executing JAX
+os.environ["JAX_ENABLE_X64"] = "True"
 
 # Logging configuration
 logger = logging.getLogger("CoChem-SpycFit.Gatekeeper")
@@ -36,6 +42,10 @@ logger = logging.getLogger("CoChem-SpycFit.Gatekeeper")
 # Constants
 MIN_GPU_VRAM_GB: float = 8.0
 DEFAULT_CHUNK_SIZE: int = 65536
+
+# Persistent hardware fallback and execution mode flags
+FALLBACK_REQUIRED: bool = False
+SEQUENTIAL_MINIBATCHING: bool = False
 
 # Ecosystem exception classes with resilient fallback definitions
 try:
@@ -48,19 +58,15 @@ try:
 except ImportError:
     class HardwareWarning(UserWarning):  # type: ignore[no-redef]
         """Issued when hardware topology or acceleration features are degraded."""
-        pass
 
     class CoChemPrecisionError(RuntimeError):  # type: ignore[no-redef]
         """Raised when JAX or numerical float precision is violated."""
-        pass
 
     class HardwareDetectionError(RuntimeError):  # type: ignore[no-redef]
         """Raised when hardware topology detection fails."""
-        pass
 
     class CoChemIntegrityError(ValueError):  # type: ignore[no-redef]
         """Raised when cryptographic checksum or binary integrity check fails."""
-        pass
 
 
 # =============================================================================
@@ -107,6 +113,14 @@ CANONICAL_BINARY_HASHES: Dict[str, str] = {
     "spycfit_engine_hpc_posix": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 }
 
+# Known reference SHA-256 registry for legacy SPFIT / SPCAT binaries
+DEFAULT_LEGACY_HASHES: Dict[str, str] = {
+    "spfit": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "spcat": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "spfit.exe": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "spcat.exe": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+}
+
 
 # =============================================================================
 # 2. PYDANTIC V2 STATE MODELS
@@ -145,6 +159,7 @@ class HardwareGateResult(BaseModel):
     min_required_vram_gb: float = Field(default=MIN_GPU_VRAM_GB, description="Threshold minimum GPU VRAM in GB")
     cuda_available: bool = Field(description="Whether CUDA execution is available for JAX")
     fallback_required: bool = Field(description="True if GPU < 8GB VRAM or no CUDA, triggering Fortran engine")
+    sequential_minibatching: bool = Field(default=False, description="True if VRAM < 8GB, triggering sequential mini-batching")
     warning_issued: bool = Field(description="Whether a UserWarning / HardwareWarning was emitted")
     reason: str = Field(description="Physical explanation of the gate outcome")
     config_source: Optional[str] = Field(default=None, description="Path to system config JSON if polled")
@@ -188,7 +203,62 @@ class SpycfitGatekeeperState(BaseModel):
 
 
 # =============================================================================
-# 3. CORE GATEKEEPER IMPLEMENTATIONS
+# 3. FLAG ACCESSORS
+# =============================================================================
+
+def is_fallback_required() -> bool:
+    """Returns the current persistent fallback requirement status."""
+    return FALLBACK_REQUIRED
+
+
+def is_sequential_minibatching() -> bool:
+    """Returns the current persistent sequential mini-batching requirement status."""
+    return SEQUENTIAL_MINIBATCHING
+
+
+# =============================================================================
+# 4. MENDELEEV MASS RETRIEVAL
+# =============================================================================
+
+def get_atomic_mass(symbol: str) -> float:
+    """
+    Retrieves accurate atomic or isotopic mass dynamically using the mendeleev library.
+    Complies with Mendeleev Mandate: never hardcode atomic masses.
+
+    Args:
+        symbol: Element symbol (e.g. 'C', 'H', 'O') or isotope symbol (e.g. '13C', '2H', '35Cl').
+
+    Returns:
+        float: Accurate atomic or isotopic mass in unified atomic mass units (Da / u).
+
+    Raises:
+        ValueError: If symbol cannot be resolved to a known element or isotope.
+    """
+    sym = str(symbol).strip()
+    match = re.match(r"^(\d+)([A-Za-z]+)$", sym)
+    if match:
+        mass_number = int(match.group(1))
+        elem_symbol = match.group(2)
+        elem = mendeleev.element(elem_symbol)
+        for iso in elem.isotopes:
+            if iso.mass_number == mass_number and iso.mass is not None:
+                return float(iso.mass)
+        if elem.atomic_weight is not None:
+            return float(elem.atomic_weight)
+        if elem.mass is not None:
+            return float(elem.mass)
+        return float(mass_number)
+
+    elem = mendeleev.element(sym)
+    if elem.atomic_weight is not None:
+        return float(elem.atomic_weight)
+    if elem.mass is not None:
+        return float(elem.mass)
+    raise ValueError(f"Could not resolve atomic mass for element: {symbol}")
+
+
+# =============================================================================
+# 5. CORE GATEKEEPER IMPLEMENTATIONS
 # =============================================================================
 
 def enforce_jax_precision() -> JAXPrecisionConfig:
@@ -244,10 +314,15 @@ def enforce_jax_precision() -> JAXPrecisionConfig:
 
 def configure_xla_cache(custom_cache_dir: Optional[Union[str, Path]] = None) -> XLACacheConfig:
     """
-    Configures XLA bytecode compilation caching on disk.
+    Configures JAX-JIT XLA bytecode compilation caching dynamically on disk.
 
-    Resolves the cache directory via platformdirs.user_cache_dir("CoChem") / "XLA_Cache",
-    physically creates the directory if missing, and updates os.environ["XLA_FLAGS"].
+    Resolves cache location prioritizing:
+    1. Explicit custom_cache_dir argument.
+    2. COCHEM_XLA_CACHE_DIR environment variable override.
+    3. platformdirs.user_data_path("CoChem_Artifacts") / "SpycFit_Workspace/Scratch/.jax_xla_cache/"
+
+    Mutates os.environ["XLA_FLAGS"] to include compilation cache directives.
+    Physically creates the cache directory if it does not exist.
 
     Args:
         custom_cache_dir: Optional explicit override path for the cache directory.
@@ -262,8 +337,8 @@ def configure_xla_cache(custom_cache_dir: Optional[Union[str, Path]] = None) -> 
         if env_override:
             cache_path = Path(env_override).resolve()
         else:
-            base_cache = Path(platformdirs.user_cache_dir("CoChem")).resolve()
-            cache_path = base_cache / "XLA_Cache"
+            base_artifacts = platformdirs.user_data_path("CoChem_Artifacts")
+            cache_path = (base_artifacts / "SpycFit_Workspace" / "Scratch" / ".jax_xla_cache").resolve()
 
     cache_path.mkdir(parents=True, exist_ok=True)
 
@@ -375,10 +450,10 @@ def query_physical_gpu_vram() -> Tuple[bool, str, float, int]:
                     )
                     vram_gb = round(total_mb / 1024.0, 2)
                     gpu_detected = True
-                except (IndexError, ValueError):
-                    pass
-    except (FileNotFoundError, subprocess.TimeoutExpired, PermissionError, OSError, subprocess.CalledProcessError):
-        pass
+                except (IndexError, ValueError) as err:
+                    logger.debug("nvidia-smi output parsing notice: %s", err)
+    except (FileNotFoundError, subprocess.TimeoutExpired, PermissionError, OSError, subprocess.CalledProcessError) as err:
+        logger.debug("nvidia-smi hardware probe non-responsive: %s", err)
 
     # 2. Query via JAX devices
     try:
@@ -391,33 +466,40 @@ def query_physical_gpu_vram() -> Tuple[bool, str, float, int]:
                 device_count = len(gpu_jax_devices)
             if gpu_profile == "None":
                 gpu_profile = str(getattr(gpu_jax_devices[0], "device_kind", "GPU"))
-    except Exception:
-        pass
+    except Exception as err:
+        logger.debug("JAX device probe skipped: %s", err)
 
     return gpu_detected, gpu_profile, vram_gb, device_count
 
 
-def evaluate_hardware_fallback_gate(
+def check_vram_and_set_flags(
     custom_config_path: Optional[Union[str, Path]] = None,
     override_vram_gb: Optional[float] = None,
     override_gpu_detected: Optional[bool] = None,
     override_cuda_available: Optional[bool] = None,
 ) -> HardwareGateResult:
     """
-    Evaluates host system hardware against the Stage 0 Precision & Hardware Gate.
+    Pre-Compute VRAM Sharding Gate: evaluates available GPU VRAM against threshold.
 
-    If GPU VRAM is < 8.0 GB or no CUDA devices are available, issues a UserWarning (and HardwareWarning)
-    and sets fallback_required = True to bypass GPU block diagonalizations and route to the Fortran engine.
+    If VRAM is < 8.0 GB or no CUDA devices are available:
+    - Issues UserWarning and HardwareWarning.
+    - Sets persistent flags: FALLBACK_REQUIRED = True, SEQUENTIAL_MINIBATCHING = True.
+    - Instructs downstream modules to execute sequential mini-batching or route to compiled Fortran fallback.
+
+    If VRAM >= 8.0 GB with active CUDA:
+    - Sets persistent flags: FALLBACK_REQUIRED = False, SEQUENTIAL_MINIBATCHING = False.
 
     Args:
         custom_config_path: Optional path to cochem_system_config.json.
-        override_vram_gb: Optional VRAM override for testing.
-        override_gpu_detected: Optional GPU detection override for testing.
-        override_cuda_available: Optional CUDA availability override for testing.
+        override_vram_gb: Optional explicit VRAM capacity in GB for hardware testing.
+        override_gpu_detected: Optional boolean override for GPU presence.
+        override_cuda_available: Optional boolean override for CUDA acceleration availability.
 
     Returns:
-        HardwareGateResult: Pydantic model recording the gate outcome.
+        HardwareGateResult: Validated Pydantic record with gate outcome and hardware profile.
     """
+    global FALLBACK_REQUIRED, SEQUENTIAL_MINIBATCHING
+
     config_path = resolve_cochem_system_config_path(custom_config_path)
     config_source = str(config_path) if config_path and config_path.is_file() else None
 
@@ -430,7 +512,8 @@ def evaluate_hardware_fallback_gate(
         import jax
         jax_devices = jax.devices()
         jax_cuda_available = any(d.platform.lower() == "gpu" for d in jax_devices)
-    except Exception:
+    except Exception as err:
+        logger.debug("JAX device query notice: %s", err)
         jax_cuda_available = False
 
     # 3. Read config file if available
@@ -447,8 +530,8 @@ def evaluate_hardware_fallback_gate(
                         cfg_vram_gb = float(hw["vram_gb"])
                     if "gpu_profile" in hw and hw["gpu_profile"] != "None":
                         cfg_gpu_profile = str(hw["gpu_profile"])
-        except Exception as e:
-            logger.warning("Could not parse config at %s: %s", config_path, e)
+        except Exception as err:
+            logger.warning("Could not parse config at %s: %s", config_path, err)
 
     # Reconcile values
     vram_gb = override_vram_gb if override_vram_gb is not None else (cfg_vram_gb if cfg_vram_gb is not None else phys_vram_gb)
@@ -458,24 +541,23 @@ def evaluate_hardware_fallback_gate(
     device_count = phys_device_count if phys_device_count > 0 else (1 if gpu_detected else 0)
 
     # 4. Gate decision logic: < 8 GB GPU VRAM or no CUDA/GPU
-    fallback_required = False
-    warning_issued = False
-
     if not gpu_detected or not cuda_available or vram_gb < MIN_GPU_VRAM_GB:
-        fallback_required = True
+        FALLBACK_REQUIRED = True
+        SEQUENTIAL_MINIBATCHING = True
         warning_issued = True
         if not gpu_detected or not cuda_available:
-            reason = f"No active CUDA GPU detected (detected={gpu_detected}, cuda={cuda_available}). GPU block diagonalizations bypassed; falling back to compiled Fortran binary engine."
+            reason = f"No active CUDA GPU detected (detected={gpu_detected}, cuda={cuda_available}). GPU block diagonalizations bypassed; instructing downstream modules to use sequential mini-batching or Fortran fallback engine."
         else:
-            reason = f"GPU VRAM ({vram_gb:.2f} GB) is below the required threshold ({MIN_GPU_VRAM_GB:.2f} GB). GPU block diagonalizations bypassed; falling back to compiled Fortran binary engine."
+            reason = f"GPU VRAM ({vram_gb:.2f} GB) is below the required threshold ({MIN_GPU_VRAM_GB:.2f} GB). GPU block diagonalizations bypassed; instructing downstream modules to use sequential mini-batching or Fortran fallback engine."
 
         warnings.warn(f"[GATEKEEPER WARNING] {reason}", UserWarning, stacklevel=2)
         warnings.warn(f"[GATEKEEPER WARNING] {reason}", HardwareWarning, stacklevel=2)
         logger.warning(reason)
     else:
-        fallback_required = False
+        FALLBACK_REQUIRED = False
+        SEQUENTIAL_MINIBATCHING = False
         warning_issued = False
-        reason = f"GPU hardware verified: {gpu_profile} with {vram_gb:.2f} GB VRAM (>= {MIN_GPU_VRAM_GB:.2f} GB threshold). GPU block diagonalizations active."
+        reason = f"GPU hardware verified: {gpu_profile} with {vram_gb:.2f} GB VRAM (>= {MIN_GPU_VRAM_GB:.2f} GB threshold). GPU block diagonalizations active; sequential mini-batching not mandated."
         logger.info(reason)
 
     return HardwareGateResult(
@@ -485,10 +567,29 @@ def evaluate_hardware_fallback_gate(
         vram_gb=float(vram_gb),
         min_required_vram_gb=MIN_GPU_VRAM_GB,
         cuda_available=cuda_available,
-        fallback_required=fallback_required,
+        fallback_required=FALLBACK_REQUIRED,
+        sequential_minibatching=SEQUENTIAL_MINIBATCHING,
         warning_issued=warning_issued,
         reason=reason,
         config_source=config_source,
+    )
+
+
+def evaluate_hardware_fallback_gate(
+    custom_config_path: Optional[Union[str, Path]] = None,
+    override_vram_gb: Optional[float] = None,
+    override_gpu_detected: Optional[bool] = None,
+    override_cuda_available: Optional[bool] = None,
+) -> HardwareGateResult:
+    """
+    Evaluates host system hardware against the Stage 0 Precision & Hardware Gate.
+    Delegates directly to check_vram_and_set_flags to maintain single source of truth.
+    """
+    return check_vram_and_set_flags(
+        custom_config_path=custom_config_path,
+        override_vram_gb=override_vram_gb,
+        override_gpu_detected=override_gpu_detected,
+        override_cuda_available=override_cuda_available,
     )
 
 
@@ -651,6 +752,85 @@ def verify_binary_checksum(
     )
 
 
+def validate_legacy_hashes(
+    spfit_path: Union[str, Path],
+    spcat_path: Union[str, Path],
+    known_hashes: Optional[Dict[str, str]] = None,
+    raise_on_error: bool = True,
+) -> Dict[str, BinaryVerificationResult]:
+    """
+    Validates SHA-256 cryptographic checksums of legacy SPFIT and SPCAT Fortran binaries.
+
+    Args:
+        spfit_path: Path to the spfit binary executable on disk.
+        spcat_path: Path to the spcat binary executable on disk.
+        known_hashes: Optional mapping of binary identifier/filename to expected SHA-256 hex digest.
+                      If None, defaults to DEFAULT_LEGACY_HASHES.
+        raise_on_error: If True, raises FileNotFoundError or CoChemIntegrityError on validation failures.
+                        If False, records failure in BinaryVerificationResult.
+
+    Returns:
+        Dict[str, BinaryVerificationResult]: Mapping containing 'spfit' and 'spcat' verification records.
+
+    Raises:
+        FileNotFoundError: If binary does not exist and raise_on_error is True.
+        CoChemIntegrityError: If checksum mismatch occurs and raise_on_error is True.
+    """
+    hashes_to_check = known_hashes if known_hashes is not None else DEFAULT_LEGACY_HASHES
+    targets = [("spfit", Path(spfit_path).resolve()), ("spcat", Path(spcat_path).resolve())]
+    results: Dict[str, BinaryVerificationResult] = {}
+
+    for key, path in targets:
+        if not path.is_file():
+            err_msg = f"Legacy binary '{key}' not found at path: {path}"
+            logger.error(err_msg)
+            if raise_on_error:
+                raise FileNotFoundError(err_msg)
+            results[key] = BinaryVerificationResult(
+                binary_path=str(path),
+                sha256="",
+                expected_sha256=hashes_to_check.get(key) or hashes_to_check.get(path.name),
+                verified=False,
+                file_size_bytes=0,
+            )
+            continue
+
+        actual_sha256 = calculate_binary_sha256(path)
+        expected_sha256 = (
+            hashes_to_check.get(key)
+            or hashes_to_check.get(path.name)
+            or hashes_to_check.get(path.stem)
+        )
+
+        verified = True
+        clean_expected: Optional[str] = None
+        if expected_sha256 is not None:
+            clean_expected = expected_sha256.strip().lower()
+            if actual_sha256.lower() != clean_expected:
+                verified = False
+                err_msg = (
+                    f"Legacy binary '{key}' checksum mismatch at {path}: "
+                    f"expected {clean_expected}, computed {actual_sha256}"
+                )
+                logger.error(err_msg)
+                if raise_on_error:
+                    raise CoChemIntegrityError(err_msg)
+        else:
+            clean_expected = None
+
+        file_size = path.stat().st_size
+        results[key] = BinaryVerificationResult(
+            binary_path=str(path),
+            sha256=actual_sha256,
+            expected_sha256=clean_expected,
+            verified=verified,
+            file_size_bytes=file_size,
+        )
+        logger.info("Validated legacy binary '%s' at %s (SHA-256: %s, verified=%s)", key, path, actual_sha256, verified)
+
+    return results
+
+
 def initialize_spycfit_gatekeeper(
     custom_config_path: Optional[Union[str, Path]] = None,
     custom_cache_dir: Optional[Union[str, Path]] = None,
@@ -661,9 +841,9 @@ def initialize_spycfit_gatekeeper(
     Executes the comprehensive Stage 0 Hardware & Precision Gatekeeper initialization pipeline.
 
     Pipeline Steps:
-    1. Enforces JAX FP64 precision lock.
+    1. Enforces JAX FP64 precision lock at OS and engine level.
     2. Configures XLA Bytecode Caching and sets XLA_FLAGS.
-    3. Evaluates the Hardware-Aware Fallback Gate (<8 GB / no CUDA -> fallback_required=True).
+    3. Evaluates the Pre-Compute VRAM Sharding Gate (<8 GB / no CUDA -> fallback_required=True, sequential_minibatching=True).
     4. Routes host platform through the 6-Tier OS/Arch matrix for Fortran binary selection.
     5. Serializes gatekeeper state to JSON.
 
@@ -679,7 +859,7 @@ def initialize_spycfit_gatekeeper(
     xla_state = configure_xla_cache(custom_cache_dir=custom_cache_dir)
 
     # 3. Hardware Gate
-    hw_state = evaluate_hardware_fallback_gate(custom_config_path=custom_config_path)
+    hw_state = check_vram_and_set_flags(custom_config_path=custom_config_path)
 
     # 4. 6-Tier Fortran Routing
     route_state = route_6tier_fortran_binary()

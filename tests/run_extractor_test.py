@@ -34,9 +34,9 @@ def cleanup_zombies() -> None:
                     child.wait(timeout=3)
             except psutil.NoSuchProcess:
                 pass
-            except Exception as e:
+            except psutil.Error as e:
                 logging.error(f"Failed to terminate child {child.pid}: {e}")
-    except Exception as e:
+    except psutil.Error as e:
         logging.error(f"Cleanup failed: {e}")
 
 atexit.register(cleanup_zombies)
@@ -70,7 +70,7 @@ def update_swarm_state(state_file: Path, agent_name: str, status: str, artifacts
                 validated_state[k] = AgentState(**v)
             else:
                 validated_state[k] = v
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             logging.warning(f"Failed to validate state for agent {k}: {e}. Retaining raw.")
             validated_state[k] = v
             
@@ -95,7 +95,7 @@ def update_swarm_state(state_file: Path, agent_name: str, status: str, artifacts
         with open(state_file, "w") as f:
             json.dump(out_dict, f, indent=2)
         logging.info(f"Updated {state_file}")
-    except Exception as e:
+    except OSError as e:
         logging.error(f"Failed to write to {state_file}: {e}")
 
 def main() -> None:
@@ -170,8 +170,6 @@ def main() -> None:
         logging.error(f"Execution FAILED with return code {e.returncode}")
         logging.error("STDOUT:\n" + e.stdout)
         logging.error("STDERR:\n" + e.stderr)
-    except Exception as e:
-        logging.error(f"Execution encountered unexpected error: {e}")
 
     # Update swarm_state.json
     state_file: Path = repo_root.parent / "swarm_state.json"

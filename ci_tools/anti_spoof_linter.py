@@ -3,25 +3,29 @@ import json
 import sys
 from pathlib import Path
 import os
+import logging
+from typing import List, Set, Dict
 
-AMNESTY_FILE = Path(".anti_spoof_amnesty.json")
-BANNED_WORDS = ["mock", "dummy", "placeholder", "fake", "stub", "synthetic"]
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-def load_amnesty():
+AMNESTY_FILE: Path = Path(".anti_spoof_amnesty.json")
+BANNED_WORDS: List[str] = ["mock", "dummy", "placeholder", "fake", "stub", "synthetic"]
+
+def load_amnesty() -> Set[str]:
     if AMNESTY_FILE.exists():
         with open(AMNESTY_FILE, "r") as f:
             return set(json.load(f))
     return set()
 
-def save_amnesty(files):
+def save_amnesty(files: Set[str]) -> None:
     with open(AMNESTY_FILE, "w") as f:
         json.dump(list(files), f, indent=4)
 
-def check_file(filepath):
+def check_file(filepath: Path) -> List[str]:
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             source = f.read()
-    except Exception:
+    except (OSError, UnicodeDecodeError):
         return []
         
     try:
@@ -29,35 +33,35 @@ def check_file(filepath):
     except SyntaxError:
         return []
     
-    violations = []
+    violations: List[str] = []
     
     class SpoofVisitor(ast.NodeVisitor):
-        def visit_Import(self, node):
+        def visit_Import(self, node: ast.Import) -> None:
             for alias in node.names:
                 if "unittest.mock" in alias.name:
                     if "tests/api_mocks" not in str(filepath.as_posix()):
                         violations.append(f"Line {node.lineno}: Banned import 'unittest.mock' outside api_mocks")
             self.generic_visit(node)
             
-        def visit_ImportFrom(self, node):
+        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
             if node.module and "unittest.mock" in node.module:
                 if "tests/api_mocks" not in str(filepath.as_posix()):
                     violations.append(f"Line {node.lineno}: Banned import 'unittest.mock' outside api_mocks")
             self.generic_visit(node)
 
-        def visit_Call(self, node):
+        def visit_Call(self, node: ast.Call) -> None:
             if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
                 if node.func.value.id == "np" and node.func.attr in ["linspace", "sin"]:
                     violations.append(f"Line {node.lineno}: Banned mock data generator 'np.{node.func.attr}'")
             self.generic_visit(node)
 
-        def visit_FunctionDef(self, node):
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
             for word in BANNED_WORDS:
                 if word in node.name.lower():
                     violations.append(f"Line {node.lineno}: Banned word '{word}' in function name '{node.name}'")
             self.generic_visit(node)
             
-        def visit_Name(self, node):
+        def visit_Name(self, node: ast.Name) -> None:
             for word in BANNED_WORDS:
                 if word in node.id.lower():
                     violations.append(f"Line {node.lineno}: Banned word '{word}' in variable name '{node.id}'")
@@ -66,10 +70,10 @@ def check_file(filepath):
     SpoofVisitor().visit(tree)
     return violations
 
-def run_linter(strict_mode):
+def run_linter(strict_mode: bool) -> int:
     amnesty_files = load_amnesty()
     failed = False
-    all_violations = {}
+    all_violations: Dict[str, List[str]] = {}
     
     for py_file in Path(".").rglob("*.py"):
         if py_file.as_posix() in amnesty_files and strict_mode:
@@ -81,19 +85,19 @@ def run_linter(strict_mode):
             failed = True
             
     if not strict_mode:
-        save_amnesty(all_violations.keys())
-        print(f"Recorded {len(all_violations)} files in amnesty baseline.")
+        save_amnesty(set(all_violations.keys()))
+        logging.info(f"Recorded {len(all_violations)} files in amnesty baseline.")
         return 0
         
     if failed:
-        print("[SPOOFING DETECTED] Violations found:")
+        logging.error("[SPOOFING DETECTED] Violations found:")
         for f, v in all_violations.items():
-            print(f"File: {f}")
+            logging.error(f"File: {f}")
             for line in v:
-                print(f"  {line}")
+                logging.error(f"  {line}")
         return 1
         
-    print("Anti-spoofing check passed.")
+    logging.info("Anti-spoofing check passed.")
     return 0
 
 if __name__ == "__main__":

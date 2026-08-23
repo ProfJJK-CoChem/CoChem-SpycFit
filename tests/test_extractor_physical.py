@@ -13,7 +13,7 @@ from pathlib import Path
 # 1. Registry Consistency & Air-Gap Enforcement
 # Replaced __file__ static lookup with environment variables / Path.home() dynamic lookup
 MODULE_DIR: Path = Path(os.environ.get("COCHEM_SPYCFIT_DIR", Path(__file__).resolve().parent.parent if "__file__" in globals() else Path.home() / ".cochem" / "CoChem-SpycFit"))
-EXTRACTOR_SCRIPT: Path = Path(__file__).parent.parent / "src" / "cochem_spycfit" / "quantum_extractor.py"
+EXTRACTOR_SCRIPT: Path = MODULE_DIR / "src" / "cochem_spycfit" / "quantum_extractor.py"
 REAL_ARTIFACTS_DIR: Path = Path(os.environ.get("COCHEM_ARTIFACTS_DIR", MODULE_DIR / "artifacts_test"))
 
 # 3. Graceful Failure & Subprocess Safety (Zombie Process Sweeping)
