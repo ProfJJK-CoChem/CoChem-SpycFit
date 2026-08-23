@@ -395,9 +395,13 @@ def test_stale_lock_reaping(tmp_path: Path):
 
 def test_atomic_snapshot_creation(tmp_path: Path):
     """Validates metadata-safe atomic snapshot copy and SHA-256 verification."""
+    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
+    with h5py.File(h5_path, "r") as f_phys:
+        phys_data = np.array(f_phys["isomer_001"]["hessian"])
+
     source_h5 = tmp_path / "test_data.h5"
     with h5py.File(str(source_h5), "w") as f:
-        f.create_dataset("test_tensor", data=np.arange(100, dtype=np.float64))
+        f.create_dataset("test_tensor", data=phys_data)
 
     src_hash = compute_file_sha256(source_h5)
     dest_h5 = tmp_path / "snapshots" / "test_data_snap.h5"
@@ -415,7 +419,7 @@ def test_atomic_snapshot_creation(tmp_path: Path):
 
     with h5py.File(snapshot_meta.snapshot_path, "r") as f:
         loaded = np.array(f["test_tensor"])
-        np.testing.assert_array_equal(loaded, np.arange(100, dtype=np.float64))
+        np.testing.assert_array_equal(loaded, phys_data)
 
     with pytest.raises(FitRegistryMissingError):
         create_atomic_snapshot(source_path=tmp_path / "non_existent.h5")
@@ -448,6 +452,10 @@ def test_hdf5_swmr_concurrent_streaming(tmp_path: Path):
         f.swmr_mode = True
 
     num_records = 20
+    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
+    with h5py.File(h5_path, "r") as f_phys:
+        phys_data = np.array(f_phys["isomer_001"]["dvr_eigenvalues"])[:num_records]
+
     writer_done = threading.Event()
     reader_seen_counts: List[int] = []
 
@@ -457,7 +465,7 @@ def test_hdf5_swmr_concurrent_streaming(tmp_path: Path):
             for i in range(num_records):
                 curr_len = dset.shape[0]
                 dset.resize((curr_len + 1,))
-                dset[curr_len] = float(i * 1.5)
+                dset[curr_len] = phys_data[i]
                 f.flush()
                 time.sleep(0.005)
         writer_done.set()
@@ -489,7 +497,7 @@ def test_hdf5_swmr_concurrent_streaming(tmp_path: Path):
     with h5py.File(str(db_path), "r") as f:
         final_arr = np.array(f["stream_data"])
         assert len(final_arr) == num_records
-        np.testing.assert_allclose(final_arr, np.arange(num_records) * 1.5)
+        np.testing.assert_allclose(final_arr, phys_data)
 
     assert len(reader_seen_counts) > 1
     assert reader_seen_counts[-1] == num_records
@@ -738,10 +746,14 @@ def test_dataset_hashing_and_verification(tmp_path: Path):
     assert verify_dataset_hash(tmp_path / "missing.dat", file_hash) is False
 
     # 2. Directory / Zarr Store Hashing
+    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
+    with h5py.File(h5_path, "r") as f_phys:
+        phys_data = np.array(f_phys["isomer_001"]["hessian"])
+
     zarr_dir = tmp_path / "test_store.zarr"
     save_zarr_tensor(
         name="test_arr",
-        tensor=np.ones((10, 10), dtype=np.float64),
+        tensor=phys_data,
         zarr_path=zarr_dir,
     )
     dir_hash = hash_dataset(zarr_dir)
@@ -791,10 +803,10 @@ def test_zarr_persistence_initialization_and_operations(tmp_env):
     h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
     with h5py.File(h5_path, "r") as f_phys:
         phys_2d = np.array(f_phys["isomer_001"]["hessian"])
+        phys_1d = np.array(f_phys["isomer_001"]["dvr_eigenvalues"])
 
-    tensor_3d = np.random.RandomState(42).randn(8, 12, 16)
     meta_2d = {"kind": "hessian", "units": "Hartree/Bohr^2", "dim": 2}
-    meta_3d = {"kind": "convolution_tensor", "filter_order": 4}
+    meta_1d = {"kind": "dvr_eigenvalues", "filter_order": 1}
 
     saved_dset_2d = save_zarr_tensor(
         name="hessian_matrix",
@@ -802,21 +814,21 @@ def test_zarr_persistence_initialization_and_operations(tmp_env):
         zarr_path=zarr_store,
         group="/intermediates/hessians",
         metadata=meta_2d,
-        chunks=(10, 10),
+        chunks=(3, 3),
         overwrite=True,
     )
     assert isinstance(saved_dset_2d, zarr.Array)
     assert saved_dset_2d.shape == phys_2d.shape
 
-    saved_dset_3d = save_zarr_tensor(
-        name="conv_kernel",
-        tensor=tensor_3d,
+    saved_dset_1d = save_zarr_tensor(
+        name="dvr_eigen",
+        tensor=phys_1d,
         zarr_path=zarr_store,
         group="/convolutions",
-        metadata=meta_3d,
+        metadata=meta_1d,
         chunks=True,
     )
-    assert saved_dset_3d.shape == (8, 12, 16)
+    assert saved_dset_1d.shape == phys_1d.shape
 
     # 3. Load Zarr tensors and verify data and attributes
     loaded_2d, loaded_meta_2d = load_zarr_tensor(
@@ -829,14 +841,14 @@ def test_zarr_persistence_initialization_and_operations(tmp_env):
     assert loaded_meta_2d["units"] == "Hartree/Bohr^2"
     assert loaded_meta_2d["dim"] == 2
 
-    loaded_3d, loaded_meta_3d = load_zarr_tensor(
-        name="conv_kernel",
+    loaded_1d, loaded_meta_1d = load_zarr_tensor(
+        name="dvr_eigen",
         zarr_path=zarr_store,
         group="/convolutions",
     )
-    np.testing.assert_allclose(loaded_3d, tensor_3d)
-    assert loaded_meta_3d["kind"] == "convolution_tensor"
-    assert loaded_meta_3d["filter_order"] == 4
+    np.testing.assert_allclose(loaded_1d, phys_1d)
+    assert loaded_meta_1d["kind"] == "dvr_eigenvalues"
+    assert loaded_meta_1d["filter_order"] == 1
 
 
 def test_fit_registry_manager_zarr_methods(tmp_env):
@@ -857,7 +869,10 @@ def test_fit_registry_manager_zarr_methods(tmp_env):
     assert dset.shape == (100, 50)
 
     # Save and load via manager
-    test_arr = np.linspace(0.0, 100.0, 500)
+    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
+    with h5py.File(h5_path, "r") as f_phys:
+        test_arr = np.array(f_phys["isomer_001"]["dvr_eigenvalues"])
+
     mgr.save_zarr_tensor(
         name="frequency_grid",
         tensor=test_arr,
@@ -880,7 +895,11 @@ def test_zarr_tensor_error_handling(tmp_path: Path):
         load_zarr_tensor("any_dataset", zarr_path=non_existent_zarr)
 
     # Creating valid store then loading missing dataset raises ZarrTensorError
-    save_zarr_tensor("dset1", np.arange(10), zarr_path=non_existent_zarr)
+    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
+    with h5py.File(h5_path, "r") as f_phys:
+        phys_data = np.array(f_phys["isomer_001"]["dvr_eigenvalues"])[:10]
+
+    save_zarr_tensor("dset1", phys_data, zarr_path=non_existent_zarr)
     with pytest.raises(ZarrTensorError):
         load_zarr_tensor("missing_dset", zarr_path=non_existent_zarr)
 
@@ -891,10 +910,14 @@ def test_zarr_concurrent_writes(tmp_path: Path):
     num_threads = 6
     items_per_thread = 10
 
+    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
+    with h5py.File(h5_path, "r") as f_phys:
+        phys_2d = np.array(f_phys["isomer_001"]["hessian"])
+
     def worker(t_idx: int):
         for i in range(items_per_thread):
             name = f"tensor_{t_idx}_{i}"
-            data = np.full((10, 10), fill_value=float(t_idx * 100 + i))
+            data = phys_2d * float(t_idx * 100 + i)
             save_zarr_tensor(
                 name=name,
                 tensor=data,
@@ -919,7 +942,7 @@ def test_zarr_concurrent_writes(tmp_path: Path):
                 zarr_path=zarr_path,
                 group="/concurrent_group",
             )
-            expected_val = float(t_idx * 100 + i)
-            np.testing.assert_allclose(loaded, np.full((10, 10), fill_value=expected_val))
+            expected_val = phys_2d * float(t_idx * 100 + i)
+            np.testing.assert_allclose(loaded, expected_val)
             assert meta["worker"] == t_idx
             assert meta["item"] == i
