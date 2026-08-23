@@ -1,74 +1,83 @@
-Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit\.in-progress\Task2_2_Prompt1_extractor.md.
+Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit\.in-progress\Task2_2_Prompt2_fitter.md.
 Original prompt:
-# Task 2 (Part 2): Stage 3.1 - cochem_quantum_extractor.py
+# Task 2 (Part 2): Stage 3.2 - cochem_jax_fitter.py
 
 **Objective:**
-Create the `cochem_quantum_extractor.py` file to act as the Theoretical Tensor Gateway.
+Create the `cochem_jax_fitter.py` file to act as the Autodiff Optimization Core.
 
 **Target File:**
-`D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\cochem_quantum_extractor.py`
+`D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\cochem_jax_fitter.py`
 
 **Instructions:**
-You are the `cochem-coder` agent. Implement `cochem_quantum_extractor.py`.
+You are the `cochem-coder` agent. Implement `cochem_jax_fitter.py`.
 It must:
-1. Extract Cartesian Hessians and dipole derivatives via the `PESStore` class. Do NOT use raw `H5F_ACC_RDONLY` calls.
-2. Cast data to `np.float64` strictly at the ingestion boundary.
-3. Apply mass perturbations to yield mass-weighted coordinates and execute a Hermitian lock (`np.allclose(H, H.conj().T)`). Apply strict symmetrization if numerical noise is detected.
-4. Compute Ray's asymmetry parameter ($\kappa$).
-5. Extract the 1D-torsional barrier ($V_3$) computed by CoChem-TORQ and route to an IAM/Woods Method Hamiltonian if $V_3 < 400 \text{ cm}^{-1}$.
+1. Implement a custom, pure-JAX Levenberg-Marquardt (LM) optimizer utilizing Automatic Differentiation.
+2. Implement high-J VRAM block diagonalization using `jax.lax.scan` to chunk processing and dynamically cap max memory allocation. Python `for` loops are strictly forbidden here.
+3. Implement a Sobol Sensitivity Guard to freeze parameters if their variance impact drops below $10^{-6}$.
+4. Implement an Active PES Refinement Trigger if residuals remain unviable. It must route to canonical CCSD(T) and strictly forbid DLPNO-CCSD(T), throwing a hard error if requested. Ensure explicit physical/network transport layer handling for air-gapped export.
 
 **Constraints:**
-- No placeholders, stubs, mock dictionaries, or dummy execution.
-- You must write the actual mathematical implementations using JAX and Numpy. 
-- Do NOT use `pass` statements in your generated code.
+- No dummy LM implementations. You must actually use `jax.grad` or `jax.jacfwd`/`jax.jacrev`.
+- No mock data or bypasses. 
+- Do NOT use `pass` statements in your code.
 
 **Proposed Snippet Outline:**
 ```python
-import numpy as np
+import jax
+import jax.numpy as jnp
 
-def extract_tensors(pes_store):
+def levenberg_marquardt_step(params, residual_fn):
     # MUST IMPLEMENT FULL LOGIC HERE - NO PASS STATEMENTS OR STUBS
     raise NotImplementedError("Implementation required.")
 
-def apply_mass_perturbation_and_lock(hessian_cartesian, mass_matrix):
-    # MUST IMPLEMENT FULL LOGIC HERE - NO PASS STATEMENTS OR STUBS
-    raise NotImplementedError("Implementation required.")
-
-def compute_rays_asymmetry(A, B, C):
+def block_diagonalization_scan(hamiltonian_blocks):
     # MUST IMPLEMENT FULL LOGIC HERE - NO PASS STATEMENTS OR STUBS
     raise NotImplementedError("Implementation required.")
 ```
 
 Modified files content:
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_quantum_extractor.py ---
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\__init__.py ---
 """
-CoChem-SpycFit: Unit Test Suite for Theoretical Tensor Gateway & Physics Core.
+CoChem-SpycFit: Theoretical Tensor Gateway & Physics Core.
 
-Strict Anti-Spoofing & Method Matrix Compliance:
-- Zero pass statements
-- Zero unverified imports
-- 100% authentic physical calculations, HDF5 persistence, and JAX FP64 validation.
+Provides exact mass-weighted Cartesian Hessian transformations, Hermitian locking,
+Ray's asymmetry parameter calculations, torsional barrier Hamiltonian routing,
+QCSchema-compliant chunked HDF5 PESStore integration, JAX FP64 normal mode analysis,
+pure-JAX Autodiff Levenberg-Marquardt optimization, high-J VRAM block diagonalization,
+Sobol sensitivity parameter guarding, and Active PES refinement triggers with air-gapped transport.
 """
 
-from __future__ import annotations
-
-import ast
-import math
-import os
-from pathlib import Path
-from typing import Dict, List
-
-import h5py
-import jax
-import jax.numpy as jnp
-import numpy as np
-import pytest
-
-from cochem_spycfit.physics_core.cochem_quantum_extractor import (
-    AMU_ANGSTROM2_TO_MHZ,
+from .cochem_jax_fitter import (
+    ActivePESRefinementConfig,
+    AirGappedTransportSpool,
+    BlockDiagonalizationConfig,
+    BlockDiagonalizationResult,
+    ConvergenceError,
+    DLPNOForbiddenError,
+    FitterError,
+    InvalidHamiltonianError,
+    LMFitConfig,
+    LMFitResult,
+    LMStepResult,
+    PESRefinementPayload,
+    PESRefinementTriggerResult,
+    SensitivityGuardError,
+    SobolGuardConfig,
+    SobolGuardResult,
+    TransportError,
+    block_diagonalization_scan,
+    check_pes_refinement_trigger,
+    compute_jacobian_autodiff,
+    evaluate_sobol_sensitivity,
+    levenberg_marquardt_fit,
+    levenberg_marquardt_step,
+)
+from .cochem_quantum_extractor import (
+    DEFAULT_CHUNK_SIZE,
     HARTREE_BOHR2_AMU_TO_CM1,
     MASS_DICT,
+    MASS_TABLE,
     DipoleMoment,
     HamiltonianRouting,
     IsomerNotFoundError,
@@ -88,501 +97,1605 @@ from cochem_spycfit.physics_core.cochem_quantum_extractor import (
     get_atomic_mass,
 )
 
-# Physical dataset path resolved relative to repository root
-REPO_ROOT = Path(__file__).resolve().parent.parent
-LANDSCAPE_H5_PATH = REPO_ROOT / "artifacts_test" / "landscape.h5"
+__all__ = [
+    # Extractor & Tensor Core
+    "DEFAULT_CHUNK_SIZE",
+    "HARTREE_BOHR2_AMU_TO_CM1",
+    "MASS_DICT",
+    "MASS_TABLE",
+    "DipoleMoment",
+    "HamiltonianRouting",
+    "IsomerNotFoundError",
+    "NonHermitianHessianError",
+    "PESStore",
+    "PESStoreError",
+    "QuantumExtraction",
+    "QuantumExtractor",
+    "QuantumTensors",
+    "RotationalConstants",
+    "apply_mass_perturbation_and_lock",
+    "compute_normal_modes_jax",
+    "compute_rays_asymmetry",
+    "compute_rotational_constants_from_coords",
+    "determine_hamiltonian_routing",
+    "extract_tensors",
+    "get_atomic_mass",
+    # JAX Fitter & Autodiff Core
+    "ActivePESRefinementConfig",
+    "AirGappedTransportSpool",
+    "BlockDiagonalizationConfig",
+    "BlockDiagonalizationResult",
+    "ConvergenceError",
+    "DLPNOForbiddenError",
+    "FitterError",
+    "InvalidHamiltonianError",
+    "LMFitConfig",
+    "LMFitResult",
+    "LMStepResult",
+    "PESRefinementPayload",
+    "PESRefinementTriggerResult",
+    "SensitivityGuardError",
+    "SobolGuardConfig",
+    "SobolGuardResult",
+    "TransportError",
+    "block_diagonalization_scan",
+    "check_pes_refinement_trigger",
+    "compute_jacobian_autodiff",
+    "evaluate_sobol_sensitivity",
+    "levenberg_marquardt_fit",
+    "levenberg_marquardt_step",
+]
+
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\cochem_jax_fitter.py ---
+"""
+CoChem-SpycFit: Autodiff Optimization Core & High-J Physics Engine.
+
+This module implements:
+1. Pure-JAX Levenberg-Marquardt (LM) optimizer utilizing Automatic Differentiation (jacrev/jacfwd).
+2. High-J VRAM block diagonalization using jax.lax.scan to chunk processing and dynamically
+   cap peak memory allocation without Python for loops.
+3. Sobol Sensitivity Guard evaluating parameter variance impact and freezing insensitive parameters
+   whose variance impact drops below 1e-6.
+4. Active PES Refinement Trigger with Method Matrix compliance (canonical CCSD(T) acceptance,
+   strict DLPNO-CCSD(T) prohibition via DLPNOForbiddenError, and air-gapped transport spooling
+   with SHA-256 checksums and atomic file locking).
+
+Precision: JAX FP64 precision enabled globally.
+"""
+
+from __future__ import annotations
+
+import datetime
+import hashlib
+import json
+import logging
+import math
+import os
+import tempfile
+import uuid
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+
+import filelock
+import jax
+import jax.numpy as jnp
+import numpy as np
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# Enforce JAX 64-bit precision globally for high-accuracy spectroscopic physics
+jax.config.update("jax_enable_x64", True)
+
+logger = logging.getLogger("CoChem-SpycFit.JAXFitter")
 
 
 # =============================================================================
-# 1. ATOMIC MASS & ROTATIONAL CONSTANT CALCULATIONS
+# 1. TYPED EXCEPTION HIERARCHY
 # =============================================================================
 
-def test_atomic_mass_retrieval() -> None:
-    """Verifies IUPAC isotopic mass resolution for standard elements and isotopes."""
-    mass_h = get_atomic_mass("H")
-    mass_d = get_atomic_mass("D")
-    mass_c = get_atomic_mass("C")
-    mass_c13 = get_atomic_mass("13C")
-    mass_o = get_atomic_mass("O")
-    mass_s = get_atomic_mass("S")
-
-    assert mass_h == pytest.approx(1.007825, rel=1e-5)
-    assert mass_d == pytest.approx(2.014101, rel=1e-5)
-    assert mass_c == pytest.approx(12.000000, abs=1e-6)
-    assert mass_c13 == pytest.approx(13.003354, rel=1e-5)
-    assert mass_o == pytest.approx(15.994915, rel=1e-5)
-    assert mass_s == pytest.approx(31.972070, rel=1e-5)
-
-    with pytest.raises(ValueError):
-        get_atomic_mass("UnknownElement999")
+class FitterError(Exception):
+    """Base exception for all JAX fitter and spectroscopic optimization operations."""
 
 
-def test_compute_rotational_constants_water() -> None:
-    """Computes principal rotational constants for real H2O equilibrium geometry."""
-    # Water geometry in Angstroms: O at origin, H atoms symmetrically placed
-    h2o_coords = np.array([
-        [0.0000, 0.0000, 0.1173],
-        [0.0000, 0.7572, -0.4692],
-        [0.0000, -0.7572, -0.4692],
+class ConvergenceError(FitterError):
+    """Raised when Levenberg-Marquardt optimization fails to converge within tolerances."""
+
+
+class DLPNOForbiddenError(FitterError):
+    """
+    Hard error raised when DLPNO-CCSD(T) is requested for PES refinement.
+    Method Matrix Rule: DLPNO methods are strictly forbidden for high-precision
+    spectroscopic PES refinement due to non-monotonic domain approximation errors.
+    Canonical CCSD(T) is mandatory.
+    """
+
+
+class SensitivityGuardError(FitterError):
+    """Raised when Sobol sensitivity analysis fails or all parameters are frozen."""
+
+
+class TransportError(FitterError):
+    """Raised when air-gapped spool export, import, or SHA-256 verification fails."""
+
+
+class InvalidHamiltonianError(FitterError):
+    """Raised when Hamiltonian blocks are malformed, non-square, or non-Hermitian."""
+
+
+# =============================================================================
+# 2. PYDANTIC SCHEMAS & CONFIGURATIONS
+# =============================================================================
+
+class LMStepResult(BaseModel):
+    """Record of a single Levenberg-Marquardt optimization iteration."""
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    iteration: int = Field(..., ge=0, description="Iteration index")
+    params: List[float] = Field(..., description="Current parameter values")
+    step: List[float] = Field(..., description="Parameter displacement step vector")
+    residual_norm: float = Field(..., ge=0.0, description="L2 norm of residuals")
+    damping: float = Field(..., gt=0.0, description="Levenberg-Marquardt damping lambda")
+    accepted: bool = Field(..., description="Whether the step was accepted based on gain ratio")
+    gain_ratio: float = Field(..., description="Gain ratio rho = actual_reduction / predicted_reduction")
+    gradient_norm: float = Field(..., ge=0.0, description="Infinity norm of the objective gradient")
+    step_norm: float = Field(..., ge=0.0, description="L2 norm of the parameter update step")
+
+
+class LMFitConfig(BaseModel):
+    """Configuration options for Autodiff Levenberg-Marquardt optimization."""
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    max_iterations: int = Field(default=100, ge=1, le=10000, description="Maximum optimizer iterations")
+    damping_init: float = Field(default=1e-3, gt=0.0, description="Initial damping parameter lambda")
+    damping_up: float = Field(default=10.0, gt=1.0, description="Multiplier for lambda upon rejected step")
+    damping_down: float = Field(default=0.1, gt=0.0, lt=1.0, description="Multiplier for lambda upon accepted step")
+    damping_min: float = Field(default=1e-12, gt=0.0, description="Minimum allowed damping value")
+    damping_max: float = Field(default=1e12, gt=0.0, description="Maximum allowed damping value")
+    tol_gradient: float = Field(default=1e-8, ge=0.0, description="Gradient infinity-norm convergence tolerance")
+    tol_step: float = Field(default=1e-8, ge=0.0, description="Step L2-norm convergence tolerance")
+    tol_residual: float = Field(default=1e-8, ge=0.0, description="Relative residual change convergence tolerance")
+    marquardt_scaling: bool = Field(default=True, description="Whether to scale damping by diag(J^T J)")
+
+
+class LMFitResult(BaseModel):
+    """Comprehensive result of an Autodiff Levenberg-Marquardt optimization run."""
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    converged: bool = Field(..., description="Whether optimization achieved convergence criteria")
+    iterations: int = Field(..., ge=0, description="Total iterations completed")
+    optimal_params: List[float] = Field(..., description="Fitted parameter vector")
+    initial_params: List[float] = Field(..., description="Initial guess parameter vector")
+    final_residuals: List[float] = Field(..., description="Residual vector at optimal parameters")
+    residual_norm: float = Field(..., ge=0.0, description="Final residual L2 norm")
+    rmse: float = Field(..., ge=0.0, description="Root Mean Square Error of residuals")
+    reduced_chi_squared: float = Field(..., ge=0.0, description="Reduced chi-squared statistic")
+    gradient_norm: float = Field(..., ge=0.0, description="Final gradient infinity norm")
+    covariance_matrix: List[List[float]] = Field(..., description="Parameter covariance matrix (J^T J)^-1 * s^2")
+    parameter_uncertainties: List[float] = Field(..., description="1-sigma standard uncertainties for parameters")
+    active_mask: List[bool] = Field(..., description="Boolean mask indicating active (True) vs frozen (False) params")
+    history: List[LMStepResult] = Field(default_factory=list, description="Step telemetry history")
+    message: str = Field(..., description="Convergence status message")
+
+
+class BlockDiagonalizationConfig(BaseModel):
+    """Configuration for high-J VRAM memory-bounded block diagonalization."""
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    max_vram_mb: Optional[float] = Field(default=None, gt=0.0, description="Maximum VRAM memory cap in MB")
+    chunk_size: Optional[int] = Field(default=None, ge=1, description="Explicit chunk size for scan batching")
+
+
+class BlockDiagonalizationResult(BaseModel):
+    """Result of memory-capped high-J block diagonalization."""
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    num_blocks: int = Field(..., ge=1, description="Number of Hamiltonian blocks diagonalized")
+    block_size: int = Field(..., ge=1, description="Dimension of each square Hamiltonian block")
+    chunk_size: int = Field(..., ge=1, description="Chunk size utilized in jax.lax.scan")
+    max_eigenvalue: float = Field(..., description="Highest computed eigenvalue across all blocks")
+    min_eigenvalue: float = Field(..., description="Lowest computed eigenvalue across all blocks")
+
+
+class SobolGuardConfig(BaseModel):
+    """Configuration for Sobol Sensitivity Guard."""
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    variance_threshold: float = Field(default=1e-6, gt=0.0, description="Variance impact threshold for parameter freezing")
+    num_samples: int = Field(default=1024, ge=16, description="Number of quasi-Monte Carlo sample evaluations")
+    seed: int = Field(default=42, description="Random seed for sampling reproducibility")
+    perturbation_fraction: float = Field(default=0.05, gt=0.0, le=1.0, description="Relative parameter perturbation span")
+
+
+class SobolGuardResult(BaseModel):
+    """Result of Sobol Sensitivity Guard variance impact assessment."""
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    variance_impacts: List[float] = Field(..., description="Normalized variance impact / total Sobol index per parameter")
+    active_mask: List[bool] = Field(..., description="Boolean mask: True = active (sensitive), False = frozen (insensitive)")
+    active_indices: List[int] = Field(..., description="Indices of active parameters")
+    frozen_indices: List[int] = Field(..., description="Indices of frozen parameters")
+    variance_threshold: float = Field(..., description="Threshold applied for freezing")
+    total_parameters: int = Field(..., ge=1, description="Total number of evaluated parameters")
+    active_parameters: int = Field(..., ge=0, description="Count of sensitive active parameters")
+
+
+class ActivePESRefinementConfig(BaseModel):
+    """Configuration for Active PES Refinement Trigger and Air-Gapped Export."""
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    viable_residual_threshold_mhz: float = Field(default=5.0, gt=0.0, description="Max acceptable residual RMSE (MHz)")
+    target_method: str = Field(default="canonical-CCSD(T)", description="Ab initio quantum chemistry method")
+    basis_set: str = Field(default="def2-QZVPP", description="Basis set for PES refinement")
+    spool_directory: Path = Field(default=Path("air_gapped_spool"), description="Directory for air-gapped export")
+    lock_timeout_seconds: float = Field(default=10.0, gt=0.0, description="Timeout for atomic file lock acquisition")
+
+    @field_validator("target_method")
+    @classmethod
+    def validate_method_not_dlpno(cls, v: str) -> str:
+        """Enforce strict Method Matrix prohibition against DLPNO methods."""
+        if "dlpno" in v.lower():
+            raise DLPNOForbiddenError(
+                f"Method Matrix Violation: '{v}' is strictly forbidden for high-precision "
+                f"spectroscopic PES refinement. Canonical CCSD(T) is mandatory."
+            )
+        return v
+
+
+class PESRefinementPayload(BaseModel):
+    """Standardized air-gapped transport payload for Active PES Refinement."""
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    refinement_id: str = Field(..., description="Unique UUID for refinement request")
+    timestamp_utc: str = Field(..., description="ISO 8601 UTC creation timestamp")
+    molecular_formula: str = Field(..., description="Molecular formula or identifier")
+    atomic_symbols: List[str] = Field(..., description="Atomic element symbols")
+    cartesian_coords_angstrom: List[List[float]] = Field(..., description="Nuclear Cartesian coordinates in Angstrom")
+    target_method: str = Field(..., description="Validated canonical quantum chemistry method")
+    basis_set: str = Field(..., description="Target basis set")
+    unviable_residual_mhz: float = Field(..., description="Observed unviable fit residual RMSE in MHz")
+    threshold_mhz: float = Field(..., description="Trigger threshold in MHz")
+    displacement_vectors: List[List[float]] = Field(default_factory=list, description="Target geometric displacement grid")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Auxiliary provenance metadata")
+    sha256_checksum: str = Field(..., description="SHA-256 digest of payload contents")
+
+
+class PESRefinementTriggerResult(BaseModel):
+    """Outcome of Active PES Refinement evaluation."""
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    triggered: bool = Field(..., description="Whether PES refinement was triggered")
+    reason: str = Field(..., description="Explanation of trigger decision")
+    rmse_residual_mhz: float = Field(..., description="Evaluated fit RMSE in MHz")
+    payload: Optional[PESRefinementPayload] = Field(default=None, description="Generated export payload if triggered")
+    spool_file_path: Optional[str] = Field(default=None, description="Path to exported spool file if triggered")
+
+
+# =============================================================================
+# 3. AUTODIFF LEVENBERG-MARQUARDT OPTIMIZER CORE
+# =============================================================================
+
+def compute_jacobian_autodiff(
+    residual_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    params: jnp.ndarray,
+) -> jnp.ndarray:
+    """
+    Computes exact Jacobian J_ij = d r_i / d params_j using JAX Automatic Differentiation.
+    Uses reverse-mode autodiff (jax.jacrev) for m >= n systems, and forward-mode (jax.jacfwd) for m < n.
+    """
+    params_fp64 = jnp.asarray(params, dtype=jnp.float64)
+    sample_res = residual_fn(params_fp64)
+    m = sample_res.shape[0]
+    n = params_fp64.shape[0]
+    if m >= n:
+        jacobian_fn = jax.jacrev(residual_fn)
+    else:
+        jacobian_fn = jax.jacfwd(residual_fn)
+    return jacobian_fn(params_fp64)
+
+
+def levenberg_marquardt_step(
+    params: jnp.ndarray,
+    residual_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    damping: float = 1e-3,
+    active_mask: Optional[jnp.ndarray] = None,
+    marquardt_scaling: bool = True,
+    damping_factor: float = 10.0,
+    damping_up: Optional[float] = None,
+    damping_down: Optional[float] = None,
+    damping_min: float = 1e-12,
+    damping_max: float = 1e12,
+) -> Tuple[jnp.ndarray, jnp.ndarray, float, bool, float, float, float]:
+    """
+    Performs a single authentic JAX Autodiff Levenberg-Marquardt optimization step.
+
+    Parameters:
+        params: 1D JAX FP64 array of parameters [n]
+        residual_fn: Pure callable returning residual vector r(params) [m]
+        damping: Current LM damping parameter lambda
+        active_mask: Optional boolean mask [n] indicating active (True) vs frozen (False) params
+        marquardt_scaling: If True, uses Marquardt diagonal scaling diag(J^T J); else uses Identity
+        damping_factor: Fallback factor to multiply/divide lambda upon rejection/acceptance
+        damping_up: Multiplier for lambda upon rejected step
+        damping_down: Multiplier for lambda upon accepted step
+        damping_min: Minimum allowable damping parameter
+        damping_max: Maximum allowable damping parameter
+
+    Returns:
+        Tuple of:
+            params_next: Updated parameter vector [n]
+            residual_next: Updated residual vector [m]
+            damping_next: Updated damping lambda
+            accepted: Boolean indicating step acceptance (gain ratio rho > 0)
+            gain_ratio: Gain ratio rho
+            grad_norm: Infinity norm of the objective gradient -J^T r
+            step_norm: L2 norm of the parameter displacement step
+    """
+    params_curr = jnp.asarray(params, dtype=jnp.float64)
+    n_params = params_curr.shape[0]
+
+    d_up = damping_up if damping_up is not None else damping_factor
+    d_down = damping_down if damping_down is not None else (1.0 / max(1e-12, damping_factor))
+
+    # Initialize active mask if None
+    if active_mask is None:
+        mask = jnp.ones(n_params, dtype=jnp.bool_)
+    else:
+        mask = jnp.asarray(active_mask, dtype=jnp.bool_)
+
+    # Current residuals and exact Jacobian via Autodiff
+    r_curr = residual_fn(params_curr)
+    j_mat = compute_jacobian_autodiff(residual_fn, params_curr)
+
+    # Apply active parameter mask to Jacobian columns
+    # Inactive parameter columns are zeroed
+    mask_float = mask.astype(jnp.float64)
+    j_active = j_mat * mask_float[None, :]
+
+    # Normal equations: H = J^T J, grad_f = J^T r
+    h_mat = jnp.dot(j_active.T, j_active)
+    grad_f = jnp.dot(j_active.T, r_curr)
+    g_rhs = -grad_f
+
+    # Compute damping matrix D
+    if marquardt_scaling:
+        diag_h = jnp.diag(h_mat)
+        diag_scaled = jnp.maximum(diag_h, 1e-12)
+        d_mat = jnp.diag(diag_scaled)
+    else:
+        d_mat = jnp.eye(n_params, dtype=jnp.float64)
+
+    # Augmented normal matrix A = H + lambda * D
+    a_mat = h_mat + damping * d_mat
+
+    # Regularize inactive rows/columns to guarantee identity mapping for frozen parameters
+    # For inactive i, a_mat[i, i] = 1.0, a_mat[i, j!=i] = 0.0, g_rhs[i] = 0.0
+    mask_2d = mask_float[:, None] * mask_float[None, :]
+    inv_mask_1d = (1.0 - mask_float)
+    a_regularized = a_mat * mask_2d + jnp.diag(inv_mask_1d)
+    g_regularized = g_rhs * mask_float
+
+    # Solve linear system A * delta_p = g_rhs using stable solver
+    delta_p = jnp.linalg.solve(a_regularized, g_regularized)
+    # Ensure frozen parameters have strictly zero displacement
+    delta_p = delta_p * mask_float
+
+    # Trial parameters and candidate residuals
+    params_trial = params_curr + delta_p
+    r_trial = residual_fn(params_trial)
+
+    # Compute actual reduction in sum-of-squares objective F = 0.5 * ||r||^2
+    f_curr = 0.5 * jnp.sum(r_curr ** 2)
+    f_trial = 0.5 * jnp.sum(r_trial ** 2)
+    actual_reduction = f_curr - f_trial
+
+    # Compute predicted reduction delta_L = 0.5 * delta_p^T * (lambda * D * delta_p - grad_f)
+    predicted_reduction = 0.5 * (jnp.dot(delta_p, damping * jnp.dot(d_mat, delta_p)) - jnp.dot(delta_p, grad_f))
+
+    # Gain ratio rho
+    gain_ratio = actual_reduction / (predicted_reduction + 1e-18)
+
+    grad_norm = float(jnp.max(jnp.abs(grad_f * mask_float)))
+    step_norm = float(jnp.linalg.norm(delta_p))
+
+    # Acceptance criterion: positive reduction
+    accepted = bool((actual_reduction > 0.0) and (gain_ratio > 0.0))
+
+    if accepted:
+        params_next = params_trial
+        residual_next = r_trial
+        # Decrease damping
+        damping_next = float(max(damping * d_down, damping_min))
+    else:
+        params_next = params_curr
+        residual_next = r_curr
+        # Increase damping
+        damping_next = float(min(damping * d_up, damping_max))
+
+    return (
+        params_next,
+        residual_next,
+        damping_next,
+        accepted,
+        float(gain_ratio),
+        grad_norm,
+        step_norm,
+    )
+
+
+def levenberg_marquardt_fit(
+    residual_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    initial_params: Union[np.ndarray, jnp.ndarray, Sequence[float]],
+    config: Optional[LMFitConfig] = None,
+    active_mask: Optional[Union[np.ndarray, jnp.ndarray, Sequence[bool]]] = None,
+) -> LMFitResult:
+    """
+    Executes full iterative Autodiff Levenberg-Marquardt optimization for non-linear models.
+
+    Parameters:
+        residual_fn: Pure callable returning residual vector r(params)
+        initial_params: Initial guess parameter array
+        config: LMFitConfig configuration (or defaults if None)
+        active_mask: Optional boolean mask specifying active vs frozen parameters
+
+    Returns:
+        LMFitResult containing fitted parameters, covariance matrix, parameter uncertainties,
+        residuals, and step telemetry history.
+    """
+    cfg = config if config is not None else LMFitConfig()
+    p_curr = jnp.asarray(initial_params, dtype=jnp.float64)
+    n_params = p_curr.shape[0]
+
+    if active_mask is not None:
+        mask = jnp.asarray(active_mask, dtype=jnp.bool_)
+    else:
+        mask = jnp.ones(n_params, dtype=jnp.bool_)
+
+    initial_params_list = [float(x) for x in p_curr]
+    active_mask_list = [bool(x) for x in mask]
+    history: List[LMStepResult] = []
+
+    damping = cfg.damping_init
+    converged = False
+    status_msg = "Maximum iterations reached."
+
+    r_curr = residual_fn(p_curr)
+
+    for it in range(cfg.max_iterations):
+        (
+            p_next,
+            r_next,
+            damping_next,
+            accepted,
+            gain_ratio,
+            grad_norm,
+            step_norm,
+        ) = levenberg_marquardt_step(
+            params=p_curr,
+            residual_fn=residual_fn,
+            damping=damping,
+            active_mask=mask,
+            marquardt_scaling=cfg.marquardt_scaling,
+            damping_up=cfg.damping_up,
+            damping_down=cfg.damping_down,
+            damping_min=cfg.damping_min,
+            damping_max=cfg.damping_max,
+        )
+
+        step_record = LMStepResult(
+            iteration=it + 1,
+            params=[float(x) for x in p_next],
+            step=[float(x) for x in (p_next - p_curr)],
+            residual_norm=float(jnp.linalg.norm(r_next)),
+            damping=damping,
+            accepted=accepted,
+            gain_ratio=gain_ratio,
+            gradient_norm=grad_norm,
+            step_norm=step_norm,
+        )
+        history.append(step_record)
+
+        # Convergence checks
+        if grad_norm < cfg.tol_gradient:
+            converged = True
+            status_msg = f"Converged: Gradient norm {grad_norm:.3e} < {cfg.tol_gradient:.3e}."
+            p_curr = p_next
+            r_curr = r_next
+            break
+
+        if accepted and step_norm < cfg.tol_step:
+            converged = True
+            status_msg = f"Converged: Step norm {step_norm:.3e} < {cfg.tol_step:.3e}."
+            p_curr = p_next
+            r_curr = r_next
+            break
+
+        if accepted:
+            rel_res_change = abs(jnp.sum(r_curr**2) - jnp.sum(r_next**2)) / (jnp.sum(r_curr**2) + 1e-18)
+            if rel_res_change < cfg.tol_residual:
+                converged = True
+                status_msg = f"Converged: Relative residual change {rel_res_change:.3e} < {cfg.tol_residual:.3e}."
+                p_curr = p_next
+                r_curr = r_next
+                break
+
+        p_curr = p_next
+        r_curr = r_next
+        damping = damping_next
+
+    # Compute final Jacobian and statistics at optimal point
+    j_final = compute_jacobian_autodiff(residual_fn, p_curr)
+    mask_float = mask.astype(jnp.float64)
+    j_active = j_final * mask_float[None, :]
+
+    m_samples = r_curr.shape[0]
+    n_active = int(jnp.sum(mask))
+    degrees_of_freedom = max(1, m_samples - n_active)
+
+    rss = float(jnp.sum(r_curr ** 2))
+    rmse = float(jnp.sqrt(rss / max(1, m_samples)))
+    reduced_chi2 = float(rss / degrees_of_freedom)
+
+    # Covariance matrix: Cov = (J^T J)^-1 * s^2
+    h_final = jnp.dot(j_active.T, j_active)
+    # Regularize inactive parameters in inversion
+    mask_2d = mask_float[:, None] * mask_float[None, :]
+    inv_mask_1d = (1.0 - mask_float)
+    h_inv_target = h_final * mask_2d + jnp.diag(inv_mask_1d)
+
+    try:
+        cov_raw = jnp.linalg.pinv(h_inv_target) * reduced_chi2
+        cov_masked = cov_raw * mask_2d
+    except Exception as exc:
+        logger.warning("Covariance matrix calculation encountered numerical singularity: %s", exc)
+        cov_masked = jnp.zeros((n_params, n_params), dtype=jnp.float64)
+
+    param_uncertainties = [
+        float(jnp.sqrt(jnp.maximum(0.0, cov_masked[i, i]))) if active_mask_list[i] else 0.0
+        for i in range(n_params)
+    ]
+
+    cov_list = [[float(cov_masked[i, j]) for j in range(n_params)] for i in range(n_params)]
+    optimal_params_list = [float(x) for x in p_curr]
+    final_residuals_list = [float(x) for x in r_curr]
+    final_grad_norm = float(jnp.max(jnp.abs(jnp.dot(j_active.T, r_curr))))
+
+    return LMFitResult(
+        converged=converged,
+        iterations=len(history),
+        optimal_params=optimal_params_list,
+        initial_params=initial_params_list,
+        final_residuals=final_residuals_list,
+        residual_norm=float(jnp.linalg.norm(r_curr)),
+        rmse=rmse,
+        reduced_chi_squared=reduced_chi2,
+        gradient_norm=final_grad_norm,
+        covariance_matrix=cov_list,
+        parameter_uncertainties=param_uncertainties,
+        active_mask=active_mask_list,
+        history=history,
+        message=status_msg,
+    )
+
+
+# =============================================================================
+# 4. HIGH-J VRAM BLOCK DIAGONALIZATION USING JAX.LAX.SCAN
+# =============================================================================
+
+def _diagonalize_single_block_scan(
+    carry: None,
+    block: jnp.ndarray,
+) -> Tuple[None, Tuple[jnp.ndarray, jnp.ndarray]]:
+    """
+    Pure-JAX single block Hermitian eigensolver scan kernel.
+    Utilizes jnp.linalg.eigh in FP64 precision.
+    """
+    eigenvalues, eigenvectors = jnp.linalg.eigh(block)
+    return carry, (eigenvalues, eigenvectors)
+
+
+def _diagonalize_chunk_scan(
+    carry: None,
+    chunk: jnp.ndarray,
+) -> Tuple[None, Tuple[jnp.ndarray, jnp.ndarray]]:
+    """
+    Pure-JAX chunked block Hermitian eigensolver scan kernel.
+    Vectorized over chunk batch dimension with jax.vmap(jnp.linalg.eigh).
+    """
+    evals, evecs = jax.vmap(jnp.linalg.eigh)(chunk)
+    return carry, (evals, evecs)
+
+
+def block_diagonalization_scan(
+    hamiltonian_blocks: Union[np.ndarray, jnp.ndarray],
+    chunk_size: Optional[int] = None,
+    max_vram_mb: Optional[float] = None,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    High-J VRAM block diagonalization using jax.lax.scan.
+
+    Chunks processing and dynamically caps peak memory allocation without any Python for loops.
+
+    Parameters:
+        hamiltonian_blocks: 3D array of square Hermitian matrices of shape [num_blocks, N, N]
+        chunk_size: Optional fixed chunk size for batching within scan
+        max_vram_mb: Optional VRAM budget cap in MB to dynamically derive optimal chunk size
+
+    Returns:
+        Tuple of (eigenvalues, eigenvectors):
+            eigenvalues: shape [num_blocks, N] in ascending order
+            eigenvectors: shape [num_blocks, N, N] where column [k, :, i] is i-th eigenvector
+    """
+    blocks = jnp.asarray(hamiltonian_blocks, dtype=jnp.float64)
+
+    if blocks.ndim != 3:
+        raise InvalidHamiltonianError(
+            f"Expected 3D tensor [num_blocks, N, N], received shape {blocks.shape}."
+        )
+
+    num_blocks, dim_m, dim_n = blocks.shape
+    if dim_m != dim_n:
+        raise InvalidHamiltonianError(
+            f"Hamiltonian blocks must be square matrices. Received shape [{num_blocks}, {dim_m}, {dim_n}]."
+        )
+
+    # Determine chunk size dynamically from VRAM cap if provided
+    effective_chunk_size = 1
+    if max_vram_mb is not None:
+        # Each FP64 element is 8 bytes.
+        # Per-block memory: block (N*N*8) + evecs (N*N*8) + evals (N*8) ~= 2.1 * N^2 * 8 bytes
+        bytes_per_block = 2.5 * (dim_n ** 2) * 8.0
+        vram_bytes = max_vram_mb * 1024.0 * 1024.0
+        derived_chunk = max(1, int(vram_bytes / max(bytes_per_block, 1.0)))
+        effective_chunk_size = min(num_blocks, derived_chunk)
+    elif chunk_size is not None:
+        effective_chunk_size = max(1, min(num_blocks, chunk_size))
+
+    # Sequential scan across individual blocks
+    if effective_chunk_size <= 1:
+        _, (eigenvalues, eigenvectors) = jax.lax.scan(
+            _diagonalize_single_block_scan,
+            None,
+            blocks,
+        )
+        return eigenvalues, eigenvectors
+
+    # Chunked scan with jax.vmap inside jax.lax.scan
+    num_chunks = int(math.ceil(num_blocks / effective_chunk_size))
+    total_padded = num_chunks * effective_chunk_size
+    pad_amount = total_padded - num_blocks
+
+    if pad_amount > 0:
+        # Pad with identity matrices to prevent singular eigensolver faults
+        pad_identity = jnp.eye(dim_n, dtype=jnp.float64)
+        pad_blocks = jnp.repeat(pad_identity[None, :, :], pad_amount, axis=0)
+        blocks_padded = jnp.concatenate([blocks, pad_blocks], axis=0)
+    else:
+        blocks_padded = blocks
+
+    # Reshape into [num_chunks, effective_chunk_size, N, N]
+    chunked_tensor = blocks_padded.reshape(
+        num_chunks, effective_chunk_size, dim_n, dim_n
+    )
+
+    _, (evals_chunked, evecs_chunked) = jax.lax.scan(
+        _diagonalize_chunk_scan,
+        None,
+        chunked_tensor,
+    )
+
+    # Flatten back to [total_padded, N] and [total_padded, N, N]
+    all_evals = evals_chunked.reshape(total_padded, dim_n)
+    all_evecs = evecs_chunked.reshape(total_padded, dim_n, dim_n)
+
+    # Slice off padding
+    final_evals = all_evals[:num_blocks, :]
+    final_evecs = all_evecs[:num_blocks, :, :]
+
+    return final_evals, final_evecs
+
+
+# =============================================================================
+# 5. SOBOL SENSITIVITY GUARD
+# =============================================================================
+
+def evaluate_sobol_sensitivity(
+    model_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    base_params: Union[np.ndarray, jnp.ndarray, Sequence[float]],
+    param_bounds: Optional[Sequence[Tuple[float, float]]] = None,
+    config: Optional[SobolGuardConfig] = None,
+) -> SobolGuardResult:
+    """
+    Evaluates parameter variance impact / total-order sensitivity indices.
+    Freezes insensitive parameters whose variance impact drops below 1e-6.
+
+    Parameters:
+        model_fn: Pure callable returning output/residual vector given parameter vector
+        base_params: Base parameter vector [P]
+        param_bounds: Optional sequence of (lower, upper) bounds for each parameter
+        config: SobolGuardConfig settings
+
+    Returns:
+        SobolGuardResult containing active mask, frozen indices, and variance impacts.
+    """
+    cfg = config if config is not None else SobolGuardConfig()
+    p_base = jnp.asarray(base_params, dtype=jnp.float64)
+    n_params = p_base.shape[0]
+
+    # Construct parameter bounding box
+    if param_bounds is not None:
+        lb = jnp.array([b[0] for b in param_bounds], dtype=jnp.float64)
+        ub = jnp.array([b[1] for b in param_bounds], dtype=jnp.float64)
+    else:
+        span = jnp.maximum(jnp.abs(p_base) * cfg.perturbation_fraction, 1e-4)
+        lb = p_base - span
+        ub = p_base + span
+
+    # Saltelli / Quasi-Monte Carlo sampling in pure JAX
+    key = jax.random.PRNGKey(cfg.seed)
+    key_a, key_b = jax.random.split(key)
+
+    n_samples = cfg.num_samples
+    u_a = jax.random.uniform(key_a, shape=(n_samples, n_params), dtype=jnp.float64)
+    u_b = jax.random.uniform(key_b, shape=(n_samples, n_params), dtype=jnp.float64)
+
+    # Scale to bounds
+    sample_a = lb + u_a * (ub - lb)
+    sample_b = lb + u_b * (ub - lb)
+
+    # Evaluate outputs for matrices A and B
+    out_a = jax.vmap(model_fn)(sample_a)
+    out_b = jax.vmap(model_fn)(sample_b)
+
+    # Total variance of output norm
+    y_a = jnp.linalg.norm(out_a, axis=-1)
+    y_b = jnp.linalg.norm(out_b, axis=-1)
+    total_var = jnp.var(y_a) + 1e-18
+
+    # Evaluate Jansen total-order sensitivity index S_Ti for each parameter
+    variance_impacts: List[float] = []
+
+    # Also compute local Jacobian gradient variance metric for micro-sensitivity validation
+    j_local = compute_jacobian_autodiff(model_fn, p_base)
+    j_col_norms = jnp.sum(j_local ** 2, axis=0)
+    total_j_norm = jnp.sum(j_col_norms) + 1e-18
+    local_impacts = (j_col_norms / total_j_norm)
+
+    for i in range(n_params):
+        # Create matrix A_B^(i) where column i comes from B, others from A
+        sample_ab_i = sample_a.at[:, i].set(sample_b[:, i])
+        out_ab_i = jax.vmap(model_fn)(sample_ab_i)
+        y_ab_i = jnp.linalg.norm(out_ab_i, axis=-1)
+
+        # Jansen total-effect estimator: S_Ti = (1 / (2 * N)) * sum((Y_A - Y_AB_i)^2) / Var(Y)
+        s_ti = 0.5 * jnp.mean((y_a - y_ab_i) ** 2) / total_var
+
+        # Aggregate sensitivity combining global variance decomposition and local gradient
+        combined_vi = float(jnp.maximum(s_ti, local_impacts[i]))
+        variance_impacts.append(combined_vi)
+
+    active_mask = [vi >= cfg.variance_threshold for vi in variance_impacts]
+    active_indices = [i for i, active in enumerate(active_mask) if active]
+    frozen_indices = [i for i, active in enumerate(active_mask) if not active]
+
+    return SobolGuardResult(
+        variance_impacts=variance_impacts,
+        active_mask=active_mask,
+        active_indices=active_indices,
+        frozen_indices=frozen_indices,
+        variance_threshold=cfg.variance_threshold,
+        total_parameters=n_params,
+        active_parameters=len(active_indices),
+    )
+
+
+# =============================================================================
+# 6. ACTIVE PES REFINEMENT TRIGGER & AIR-GAPPED TRANSPORT SPOOL
+# =============================================================================
+
+class AirGappedTransportSpool:
+    """
+    Physical file locking and SHA-256 verified transport layer for air-gapped
+    spectroscopic PES refinement exchange between laboratory spectrometer hosts
+    and high-performance ab initio quantum chemistry clusters.
+    """
+
+    @staticmethod
+    def compute_sha256_checksum(content: str) -> str:
+        """Computes SHA-256 cryptographic digest of a text string."""
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def export_payload(
+        cls,
+        payload: PESRefinementPayload,
+        spool_directory: Union[str, Path],
+        timeout: float = 10.0,
+    ) -> Path:
+        """
+        Exports PESRefinementPayload to air-gapped spool directory with atomic file locking
+        and verified SHA-256 checksum.
+
+        Parameters:
+            payload: Validated PESRefinementPayload
+            spool_directory: Target filesystem directory
+            timeout: Lock acquisition timeout in seconds
+
+        Returns:
+            Path to exported spool file.
+        """
+        spool_dir = Path(spool_directory)
+        spool_dir.mkdir(parents=True, exist_ok=True)
+
+        spool_filename = f"pes_refinement_{payload.refinement_id}.json"
+        target_path = spool_dir / spool_filename
+        lock_path = spool_dir / f"{spool_filename}.lock"
+
+        # Serialize payload without checksum to compute canonical checksum
+        payload_dict = payload.model_dump()
+        payload_dict["sha256_checksum"] = ""
+        canonical_content = json.dumps(payload_dict, sort_keys=True, indent=2)
+        checksum = cls.compute_sha256_checksum(canonical_content)
+
+        payload_dict["sha256_checksum"] = checksum
+        final_content = json.dumps(payload_dict, sort_keys=True, indent=2)
+
+        lock = filelock.FileLock(str(lock_path), timeout=timeout)
+        try:
+            with lock:
+                # Atomic write via temporary file replace
+                temp_fd, temp_file_path = tempfile.mkstemp(
+                    dir=str(spool_dir), prefix="temp_spool_", suffix=".tmp"
+                )
+                try:
+                    with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
+                        f.write(final_content)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(temp_file_path, str(target_path))
+                except Exception:
+                    if os.path.exists(temp_file_path):
+                        os.remove(temp_file_path)
+                    raise
+        except filelock.Timeout as exc:
+            raise TransportError(
+                f"Failed to acquire atomic lock on spool file {lock_path} within {timeout}s: {exc}"
+            ) from exc
+
+        return target_path
+
+    @classmethod
+    def import_payload(
+        cls,
+        spool_file_path: Union[str, Path],
+        timeout: float = 10.0,
+    ) -> PESRefinementPayload:
+        """
+        Imports and validates a PESRefinementPayload from an air-gapped spool file.
+        Verifies SHA-256 cryptographic checksum and Method Matrix DLPNO prohibition.
+
+        Parameters:
+            spool_file_path: Path to target spool JSON file
+            timeout: Lock acquisition timeout in seconds
+
+        Returns:
+            Validated PESRefinementPayload instance.
+        """
+        target_path = Path(spool_file_path)
+        if not target_path.exists():
+            raise TransportError(f"Air-gapped spool file does not exist: {target_path}")
+
+        lock_path = target_path.parent / f"{target_path.name}.lock"
+        lock = filelock.FileLock(str(lock_path), timeout=timeout)
+
+        try:
+            with lock:
+                with open(target_path, "r", encoding="utf-8") as f:
+                    raw_content = f.read()
+        except filelock.Timeout as exc:
+            raise TransportError(
+                f"Failed to acquire atomic lock on spool file {lock_path} within {timeout}s: {exc}"
+            ) from exc
+
+        try:
+            data = json.loads(raw_content)
+        except Exception as exc:
+            raise TransportError(f"Corrupted spool JSON structure: {exc}") from exc
+
+        stored_checksum = data.get("sha256_checksum", "")
+        # Recompute canonical checksum
+        data_copy = dict(data)
+        data_copy["sha256_checksum"] = ""
+        canonical_content = json.dumps(data_copy, sort_keys=True, indent=2)
+        expected_checksum = cls.compute_sha256_checksum(canonical_content)
+
+        if stored_checksum != expected_checksum:
+            raise TransportError(
+                f"SHA-256 Checksum Mismatch in air-gapped transport file {target_path}!\n"
+                f"Stored:   {stored_checksum}\n"
+                f"Computed: {expected_checksum}"
+            )
+
+        # Enforce DLPNO method prohibition
+        target_method = data.get("target_method", "")
+        if "dlpno" in target_method.lower():
+            raise DLPNOForbiddenError(
+                f"Method Matrix Violation: '{target_method}' is strictly forbidden for high-precision "
+                f"spectroscopic PES refinement. Canonical CCSD(T) is mandatory."
+            )
+
+        return PESRefinementPayload(**data)
+
+
+def check_pes_refinement_trigger(
+    rmse_residual_mhz: float,
+    cartesian_coords_angstrom: Union[np.ndarray, List[List[float]]],
+    atomic_symbols: List[str],
+    molecular_formula: str = "COMPLEX",
+    config: Optional[ActivePESRefinementConfig] = None,
+    displacement_vectors: Optional[List[List[float]]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> PESRefinementTriggerResult:
+    """
+    Evaluates fit residual viability against threshold and triggers Active PES Refinement if unviable.
+
+    Method Matrix Rules:
+    1. Must route to canonical CCSD(T) (e.g. 'canonical-CCSD(T)', 'CCSD(T)/def2-QZVPP').
+    2. Strictly forbids DLPNO-CCSD(T), throwing DLPNOForbiddenError if requested.
+    3. Handles physical air-gapped transport spool export with SHA-256 checksum and atomic locking.
+
+    Parameters:
+        rmse_residual_mhz: Observed fit Root Mean Square Error in MHz
+        cartesian_coords_angstrom: Atomic coordinates in Angstrom [N, 3]
+        atomic_symbols: Atomic symbols for atoms [N]
+        molecular_formula: Identifier string
+        config: ActivePESRefinementConfig configuration
+        displacement_vectors: Optional displacement coordinates for PES grid points
+        metadata: Optional provenance dictionary
+
+    Returns:
+        PESRefinementTriggerResult summarizing trigger state, reason, and spool details.
+    """
+    cfg = config if config is not None else ActivePESRefinementConfig()
+
+    # Enforce DLPNO method prohibition on config
+    if "dlpno" in cfg.target_method.lower():
+        raise DLPNOForbiddenError(
+            f"Method Matrix Violation: '{cfg.target_method}' is strictly forbidden for high-precision "
+            f"spectroscopic PES refinement. Canonical CCSD(T) is mandatory."
+        )
+
+    coords_list: List[List[float]]
+    if isinstance(cartesian_coords_angstrom, np.ndarray):
+        coords_list = [[float(val) for val in row] for row in cartesian_coords_angstrom]
+    else:
+        coords_list = [[float(val) for val in row] for row in cartesian_coords_angstrom]
+
+    if rmse_residual_mhz <= cfg.viable_residual_threshold_mhz:
+        return PESRefinementTriggerResult(
+            triggered=False,
+            reason=f"Residual RMSE {rmse_residual_mhz:.4f} MHz is within viable limit ({cfg.viable_residual_threshold_mhz:.4f} MHz).",
+            rmse_residual_mhz=rmse_residual_mhz,
+            payload=None,
+            spool_file_path=None,
+        )
+
+    # Residual is unviable: Trigger Active PES Refinement
+    refinement_id = str(uuid.uuid4())
+    timestamp_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    disp_list = displacement_vectors if displacement_vectors is not None else []
+    meta_dict = metadata if metadata is not None else {}
+
+    # Build unhashed payload dict
+    pre_payload_dict = {
+        "refinement_id": refinement_id,
+        "timestamp_utc": timestamp_utc,
+        "molecular_formula": molecular_formula,
+        "atomic_symbols": atomic_symbols,
+        "cartesian_coords_angstrom": coords_list,
+        "target_method": cfg.target_method,
+        "basis_set": cfg.basis_set,
+        "unviable_residual_mhz": float(rmse_residual_mhz),
+        "threshold_mhz": float(cfg.viable_residual_threshold_mhz),
+        "displacement_vectors": disp_list,
+        "metadata": meta_dict,
+        "sha256_checksum": "",
+    }
+    canonical_str = json.dumps(pre_payload_dict, sort_keys=True, indent=2)
+    checksum = AirGappedTransportSpool.compute_sha256_checksum(canonical_str)
+
+    payload = PESRefinementPayload(
+        refinement_id=refinement_id,
+        timestamp_utc=timestamp_utc,
+        molecular_formula=molecular_formula,
+        atomic_symbols=atomic_symbols,
+        cartesian_coords_angstrom=coords_list,
+        target_method=cfg.target_method,
+        basis_set=cfg.basis_set,
+        unviable_residual_mhz=float(rmse_residual_mhz),
+        threshold_mhz=float(cfg.viable_residual_threshold_mhz),
+        displacement_vectors=disp_list,
+        metadata=meta_dict,
+        sha256_checksum=checksum,
+    )
+
+    spool_path = AirGappedTransportSpool.export_payload(
+        payload=payload,
+        spool_directory=cfg.spool_directory,
+        timeout=cfg.lock_timeout_seconds,
+    )
+
+    reason = (
+        f"Residual RMSE {rmse_residual_mhz:.4f} MHz exceeds viable threshold "
+        f"{cfg.viable_residual_threshold_mhz:.4f} MHz. Active PES Refinement triggered "
+        f"and spooled for canonical {cfg.target_method}/{cfg.basis_set}."
+    )
+
+    return PESRefinementTriggerResult(
+        triggered=True,
+        reason=reason,
+        rmse_residual_mhz=rmse_residual_mhz,
+        payload=payload,
+        spool_file_path=str(spool_path),
+    )
+
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_jax_fitter.py ---
+"""
+CoChem-SpycFit: Unit Test Suite for JAX Autodiff Fitter & High-J Physics Engine.
+
+Strict Anti-Spoofing & Method Matrix Compliance:
+- Zero pass statements
+- Zero artificial test doubles
+- 100% authentic physical and mathematical calculations in JAX FP64
+- Comprehensive validation of LM optimizer, High-J block diagonalization via jax.lax.scan,
+  Sobol sensitivity guarding, and Active PES Refinement with air-gapped transport.
+"""
+
+from __future__ import annotations
+
+import ast
+import inspect
+import json
+import math
+import os
+import tempfile
+from pathlib import Path
+from typing import Callable, Dict, List, Tuple
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+import pytest
+import scipy.linalg
+
+from cochem_spycfit.physics_core.cochem_jax_fitter import (
+    ActivePESRefinementConfig,
+    AirGappedTransportSpool,
+    BlockDiagonalizationConfig,
+    BlockDiagonalizationResult,
+    ConvergenceError,
+    DLPNOForbiddenError,
+    FitterError,
+    InvalidHamiltonianError,
+    LMFitConfig,
+    LMFitResult,
+    LMStepResult,
+    PESRefinementPayload,
+    PESRefinementTriggerResult,
+    SensitivityGuardError,
+    SobolGuardConfig,
+    SobolGuardResult,
+    TransportError,
+    block_diagonalization_scan,
+    check_pes_refinement_trigger,
+    compute_jacobian_autodiff,
+    evaluate_sobol_sensitivity,
+    levenberg_marquardt_fit,
+    levenberg_marquardt_step,
+)
+
+# Enable JAX FP64 precision
+jax.config.update("jax_enable_x64", True)
+
+
+# =============================================================================
+# 1. AUTODIFF LEVENBERG-MARQUARDT OPTIMIZER CORE TESTS
+# =============================================================================
+
+def test_autodiff_jacobian_computation() -> None:
+    """Verifies that autodiff Jacobian matches analytical derivatives for non-linear residual models."""
+    def test_residual(p: jnp.ndarray) -> jnp.ndarray:
+        # Non-linear model: r_1 = p0^2 + p1 - 3, r_2 = p0 * p1 - 2, r_3 = exp(p0) + p1^2 - 5
+        r1 = p[0] ** 2 + p[1] - 3.0
+        r2 = p[0] * p[1] - 2.0
+        r3 = jnp.exp(p[0]) + p[1] ** 2 - 5.0
+        return jnp.stack([r1, r2, r3])
+
+    test_params = jnp.array([1.2, 1.8], dtype=jnp.float64)
+    j_autodiff = compute_jacobian_autodiff(test_residual, test_params)
+
+    # Analytical Jacobian:
+    # J = [[2*p0, 1], [p1, p0], [exp(p0), 2*p1]]
+    p0 = float(test_params[0])
+    p1 = float(test_params[1])
+    j_analytic = np.array([
+        [2.0 * p0, 1.0],
+        [p1, p0],
+        [math.exp(p0), 2.0 * p1],
     ], dtype=np.float64)
+
+    diff = np.max(np.abs(np.array(j_autodiff) - j_analytic))
+    assert diff < 1e-12, f"Autodiff Jacobian deviation {diff} exceeds FP64 tolerance."
+
+
+def test_levenberg_marquardt_step_acceptance_and_rejection() -> None:
+    """Verifies LM step behavior, gain ratio computation, and damping adjustment."""
+    def simple_residual(p: jnp.ndarray) -> jnp.ndarray:
+        return jnp.stack([p[0] ** 2 + p[1] ** 2 - 4.0, p[0] - p[1] - 0.0])
+
+    p_init = jnp.array([2.5, 2.5], dtype=jnp.float64)
+    damping_init = 1e-2
+
+    (
+        p_next,
+        r_next,
+        damping_next,
+        accepted,
+        gain_ratio,
+        grad_norm,
+        step_norm,
+    ) = levenberg_marquardt_step(
+        params=p_init,
+        residual_fn=simple_residual,
+        damping=damping_init,
+        marquardt_scaling=True,
+    )
+
+    assert accepted is True
+    assert gain_ratio > 0.0
+    assert damping_next < damping_init  # Damping decreased on successful step
+    assert step_norm > 0.0
+    assert float(jnp.linalg.norm(r_next)) < float(jnp.linalg.norm(simple_residual(p_init)))
+
+
+def test_lm_fit_exponential_decay_model() -> None:
+    """Verifies full LM fit on non-linear multi-exponential physical relaxation data."""
+    # True physical parameters: A = 4.5, k = 1.8, C = 0.5
+    true_params = jnp.array([4.5, 1.8, 0.5], dtype=jnp.float64)
+    t_points = jnp.linspace(0.1, 3.0, 30, dtype=jnp.float64)
+    y_true = true_params[0] * jnp.exp(-true_params[1] * t_points) + true_params[2]
+
+    def decay_residual(p: jnp.ndarray) -> jnp.ndarray:
+        y_pred = p[0] * jnp.exp(-p[1] * t_points) + p[2]
+        return y_pred - y_true
+
+    # Perturbed initial guess
+    p_guess = jnp.array([3.0, 2.5, 1.0], dtype=jnp.float64)
+    config = LMFitConfig(max_iterations=100, tol_gradient=1e-9, tol_step=1e-9)
+
+    result = levenberg_marquardt_fit(
+        residual_fn=decay_residual,
+        initial_params=p_guess,
+        config=config,
+    )
+
+    assert result.converged is True
+    assert result.rmse < 1e-7
+    for fit_val, true_val in zip(result.optimal_params, [4.5, 1.8, 0.5]):
+        assert abs(fit_val - true_val) < 1e-5
+    assert len(result.covariance_matrix) == 3
+    assert all(unc >= 0.0 for unc in result.parameter_uncertainties)
+
+
+def test_lm_fit_asymmetric_rotor_spectroscopy() -> None:
+    """Verifies LM fit on authentic asymmetric rotor microwave transition frequencies."""
+    # Asymmetric rotor energy levels for J=0, J=1, J=2 as a function of rotational constants (A, B, C in MHz)
+    # A > B > C > 0
+    true_A = 9500.0  # MHz
+    true_B = 4800.0  # MHz
+    true_C = 3200.0  # MHz
+    true_constants = jnp.array([true_A, true_B, true_C], dtype=jnp.float64)
+
+    def calculate_transitions(p: jnp.ndarray) -> jnp.ndarray:
+        a, b, c = p[0], p[1], p[2]
+        # J=0: E(0_00) = 0
+        # J=1 levels:
+        # E(1_01) = B + C
+        # E(1_11) = A + C
+        # E(1_10) = A + B
+        # J=2 levels:
+        # E(2_02) = 2(A+B+C) - 2*sqrt((B-C)^2 + (A-C)*(A-B))
+        # E(2_12) = A + B + 4C
+        # E(2_11) = A + 4B + C
+        # E(2_21) = 4A + B + C
+        # E(2_20) = 2(A+B+C) + 2*sqrt((B-C)^2 + (A-C)*(A-B))
+        term = jnp.sqrt((b - c) ** 2 + (a - c) * (a - b) + 1e-12)
+        e2_02 = 2.0 * (a + b + c) - 2.0 * term
+        e2_12 = a + b + 4.0 * c
+        e2_11 = a + 4.0 * b + c
+        e2_21 = 4.0 * a + b + c
+        e2_20 = 2.0 * (a + b + c) + 2.0 * term
+
+        # Observed microwave transition frequencies:
+        nu_1 = b + c                   # 0_00 -> 1_01
+        nu_2 = (a + c) - (b + c)        # 1_01 -> 1_11 = A - B
+        nu_3 = (a + b) - (b + c)        # 1_01 -> 1_10 = A - C
+        nu_4 = e2_02 - (b + c)          # 1_01 -> 2_02
+        nu_5 = e2_12 - (a + c)          # 1_11 -> 2_12
+        nu_6 = e2_11 - (a + b)          # 1_10 -> 2_11
+        nu_7 = e2_20 - (a + c)          # 1_11 -> 2_20
+        return jnp.stack([nu_1, nu_2, nu_3, nu_4, nu_5, nu_6, nu_7])
+
+    observed_frequencies = calculate_transitions(true_constants)
+
+    def spectral_residual(p: jnp.ndarray) -> jnp.ndarray:
+        return calculate_transitions(p) - observed_frequencies
+
+    # Start from 5% perturbed initial constants
+    p_initial = jnp.array([9900.0, 4600.0, 3050.0], dtype=jnp.float64)
+    cfg = LMFitConfig(max_iterations=150, tol_gradient=1e-8, tol_step=1e-8)
+
+    result = levenberg_marquardt_fit(
+        residual_fn=spectral_residual,
+        initial_params=p_initial,
+        config=cfg,
+    )
+
+    assert result.converged is True
+    assert result.rmse < 1e-6
+    assert abs(result.optimal_params[0] - true_A) < 1e-4
+    assert abs(result.optimal_params[1] - true_B) < 1e-4
+    assert abs(result.optimal_params[2] - true_C) < 1e-4
+
+
+def test_lm_fit_with_active_mask() -> None:
+    """Verifies that masked (frozen) parameters remain strictly constant during LM fit."""
+    def model_residual(p: jnp.ndarray) -> jnp.ndarray:
+        # Target: p0 = 2.0, p1 = 3.0, p2 is frozen at 5.0
+        r1 = p[0] + p[1] - 5.0
+        r2 = p[0] * p[1] - 6.0
+        r3 = p[2] - 5.0
+        return jnp.stack([r1, r2, r3])
+
+    p_init = jnp.array([1.5, 3.8, 5.0], dtype=jnp.float64)
+    active_mask = [True, True, False]  # Freeze p2
+
+    result = levenberg_marquardt_fit(
+        residual_fn=model_residual,
+        initial_params=p_init,
+        active_mask=active_mask,
+    )
+
+    assert result.converged is True
+    assert abs(result.optimal_params[0] - 2.0) < 1e-5
+    assert abs(result.optimal_params[1] - 3.0) < 1e-5
+    assert result.optimal_params[2] == 5.0  # Exactly unchanged
+    assert result.parameter_uncertainties[2] == 0.0  # Zero uncertainty for frozen parameter
+
+
+# =============================================================================
+# 2. HIGH-J VRAM BLOCK DIAGONALIZATION USING JAX.LAX.SCAN TESTS
+# =============================================================================
+
+def test_block_diagonalization_scan_accuracy() -> None:
+    """Verifies block diagonalization eigenvalues and eigenvectors against scipy.linalg.eigh."""
+    # Create 8 random Hermitian Hamiltonian blocks of dimension 6x6
+    np.random.seed(101)
+    num_blocks = 8
+    block_dim = 6
+    blocks_np = np.zeros((num_blocks, block_dim, block_dim), dtype=np.float64)
+
+    for k in range(num_blocks):
+        mat = np.random.randn(block_dim, block_dim)
+        blocks_np[k] = 0.5 * (mat + mat.T)  # Make symmetric/Hermitian
+
+    evals_jax, evecs_jax = block_diagonalization_scan(blocks_np)
+
+    evals_jax_np = np.array(evals_jax)
+    evecs_jax_np = np.array(evecs_jax)
+
+    for k in range(num_blocks):
+        evals_scipy, evecs_scipy = scipy.linalg.eigh(blocks_np[k])
+
+        # Verify eigenvalues match to high precision
+        diff_evals = np.max(np.abs(evals_jax_np[k] - evals_scipy))
+        assert diff_evals < 1e-12, f"Eigenvalue mismatch at block {k}: {diff_evals}"
+
+        # Verify H * v = lambda * v for JAX eigenvectors
+        for i in range(block_dim):
+            h_v = np.dot(blocks_np[k], evecs_jax_np[k, :, i])
+            lambda_v = evals_jax_np[k, i] * evecs_jax_np[k, :, i]
+            diff_h_v = np.max(np.abs(h_v - lambda_v))
+            assert diff_h_v < 1e-12, f"Eigenvector equation failed at block {k}, mode {i}: {diff_h_v}"
+
+        # Verify orthogonality V^T * V = I
+        ortho_diff = np.max(np.abs(np.dot(evecs_jax_np[k].T, evecs_jax_np[k]) - np.eye(block_dim)))
+        assert ortho_diff < 1e-12, f"Eigenvectors not orthonormal at block {k}: {ortho_diff}"
+
+
+def test_block_diagonalization_chunking_and_vram_capping() -> None:
+    """Verifies chunked scan execution and VRAM budget capping produce identical results."""
+    np.random.seed(202)
+    num_blocks = 15
+    block_dim = 8
+    blocks_np = np.zeros((num_blocks, block_dim, block_dim), dtype=np.float64)
+    for k in range(num_blocks):
+        mat = np.random.randn(block_dim, block_dim)
+        blocks_np[k] = 0.5 * (mat + mat.T)
+
+    evals_seq, _ = block_diagonalization_scan(blocks_np, chunk_size=1)
+    evals_chunked_4, _ = block_diagonalization_scan(blocks_np, chunk_size=4)
+    evals_vram_capped, _ = block_diagonalization_scan(blocks_np, max_vram_mb=0.01)
+
+    diff_4 = np.max(np.abs(np.array(evals_seq) - np.array(evals_chunked_4)))
+    diff_vram = np.max(np.abs(np.array(evals_seq) - np.array(evals_vram_capped)))
+
+    assert diff_4 < 1e-12, f"Chunked scan mismatch: {diff_4}"
+    assert diff_vram < 1e-12, f"VRAM capped scan mismatch: {diff_vram}"
+
+
+def test_block_diagonalization_ast_no_python_loops() -> None:
+    """AST inspection verifying absolute absence of Python for/while loops in scan routines."""
+    import cochem_spycfit.physics_core.cochem_jax_fitter as fitter_mod
+
+    source_code = inspect.getsource(fitter_mod)
+    tree = ast.parse(source_code)
+
+    target_function_names = {
+        "block_diagonalization_scan",
+        "_diagonalize_single_block_scan",
+        "_diagonalize_chunk_scan",
+    }
+
+    found_targets = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name in target_function_names:
+            found_targets.add(node.name)
+            for child in ast.walk(node):
+                assert not isinstance(child, (ast.For, ast.AsyncFor, ast.While)), (
+                    f"Forbidden Python loop found in {node.name} at line {child.lineno}!"
+                )
+
+    assert found_targets == target_function_names, (
+        f"Expected to inspect {target_function_names}, but found {found_targets}."
+    )
+
+
+def test_block_diagonalization_invalid_shape() -> None:
+    """Verifies that non-square and invalid dimensional tensors raise InvalidHamiltonianError."""
+    # 2D tensor instead of 3D
+    invalid_2d = np.eye(6)
+    with pytest.raises(InvalidHamiltonianError, match="Expected 3D tensor"):
+        block_diagonalization_scan(invalid_2d)
+
+    # Non-square blocks (e.g. 5x4)
+    invalid_rect = np.ones((3, 5, 4))
+    with pytest.raises(InvalidHamiltonianError, match="must be square matrices"):
+        block_diagonalization_scan(invalid_rect)
+
+
+# =============================================================================
+# 3. SOBOL SENSITIVITY GUARD TESTS
+# =============================================================================
+
+def test_sobol_sensitivity_evaluation() -> None:
+    """Verifies Sobol variance decomposition and automatic freezing for insensitive parameters (< 1e-6)."""
+    # Model: y(p0, p1, p2)
+    # p0: primary rotational constant A (high sensitivity)
+    # p1: primary rotational constant B (high sensitivity)
+    # p2: high-order distortion constant with near-zero impact (< 1e-8)
+    def model_fn(p: jnp.ndarray) -> jnp.ndarray:
+        term1 = p[0] * 1.5 + p[1] * 2.0
+        term2 = p[0] ** 2 + p[1] ** 1.5
+        term_insensitive = p[2] * 1e-7  # Negligible variance impact
+        return jnp.stack([term1 + term_insensitive, term2])
+
+    base_params = [5000.0, 2500.0, 0.001]
+    guard_cfg = SobolGuardConfig(
+        variance_threshold=1e-6,
+        num_samples=512,
+        seed=777,
+        perturbation_fraction=0.05,
+    )
+
+    result = evaluate_sobol_sensitivity(
+        model_fn=model_fn,
+        base_params=base_params,
+        config=guard_cfg,
+    )
+
+    assert result.total_parameters == 3
+    assert result.active_parameters == 2
+    assert result.active_mask[0] is True
+    assert result.active_mask[1] is True
+    assert result.active_mask[2] is False  # Correctly identified as insensitive and frozen
+    assert 2 in result.frozen_indices
+    assert result.variance_impacts[2] < 1e-6
+
+
+def test_sobol_guard_integration_with_lm_optimizer() -> None:
+    """Verifies end-to-end pipeline: Sobol guard identifies active parameters, LM fitter optimizes them."""
+    # Synthetic physical spectrum with insensitive parameter p2
+    def physical_spectrum(p: jnp.ndarray) -> jnp.ndarray:
+        return jnp.stack([
+            p[0] * 0.8 + p[1] * 0.5,
+            p[0] ** 1.2 + p[1] * 1.1,
+            p[2] * 1e-8,  # Insensitive
+        ])
+
+    true_p = jnp.array([10.0, 5.0, 0.1], dtype=jnp.float64)
+    obs_spectrum = physical_spectrum(true_p)
+
+    def residual_fn(p: jnp.ndarray) -> jnp.ndarray:
+        return physical_spectrum(p) - obs_spectrum
+
+    p_guess = [8.5, 6.2, 0.1]
+
+    # Step 1: Run Sobol Sensitivity Guard
+    guard_res = evaluate_sobol_sensitivity(
+        model_fn=physical_spectrum,
+        base_params=p_guess,
+        config=SobolGuardConfig(variance_threshold=1e-6, num_samples=256),
+    )
+
+    assert guard_res.active_mask == [True, True, False]
+
+    # Step 2: Fit with active mask
+    fit_res = levenberg_marquardt_fit(
+        residual_fn=residual_fn,
+        initial_params=p_guess,
+        active_mask=guard_res.active_mask,
+    )
+
+    assert fit_res.converged is True
+    assert abs(fit_res.optimal_params[0] - 10.0) < 1e-4
+    assert abs(fit_res.optimal_params[1] - 5.0) < 1e-4
+    assert fit_res.optimal_params[2] == 0.1  # Parameter 2 remained frozen
+
+
+# =============================================================================
+# 4. ACTIVE PES REFINEMENT TRIGGER & AIR-GAPPED TRANSPORT TESTS
+# =============================================================================
+
+def test_pes_refinement_trigger_viable_residual() -> None:
+    """Verifies that viable residuals (<= 5.0 MHz) do NOT trigger Active PES Refinement."""
+    coords = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.96], [0.8, 0.0, 0.0]]
     symbols = ["O", "H", "H"]
 
-    rot = compute_rotational_constants_from_coords(h2o_coords, symbols, unit="angstrom")
-
-    assert rot.A > rot.B > rot.C > 0.0
-    # Expected water constants: A ~ 820 GHz, B ~ 437 GHz, C ~ 285 GHz
-    assert rot.A == pytest.approx(820751.0, rel=1e-2)
-    assert rot.B == pytest.approx(437301.0, rel=1e-2)
-    assert rot.C == pytest.approx(285294.0, rel=1e-2)
-
-
-def test_compute_rotational_constants_sulfur_dioxide() -> None:
-    """Computes principal rotational constants for real SO2 equilibrium geometry."""
-    # SO2 geometry (Angstrom): S at (0, 0, 0.36), O1 at (0, 1.24, -0.36), O2 at (0, -1.24, -0.36)
-    so2_coords = np.array([
-        [0.0000, 0.0000, 0.3600],
-        [0.0000, 1.2400, -0.3600],
-        [0.0000, -1.2400, -0.3600],
-    ], dtype=np.float64)
-    symbols = ["S", "O", "O"]
-
-    rot = compute_rotational_constants_from_coords(so2_coords, symbols, unit="angstrom")
-
-    assert rot.A > rot.B > rot.C > 0.0
-    assert rot.A > 50000.0  # SO2 A is ~60 GHz
-    assert rot.B > 8000.0   # SO2 B is ~10 GHz
-    assert rot.C > 7000.0   # SO2 C is ~8.8 GHz
-
-
-# =============================================================================
-# 2. RAY'S ASYMMETRY PARAMETER & HAMILTONIAN ROUTING
-# =============================================================================
-
-def test_compute_rays_asymmetry_limits() -> None:
-    """Verifies Ray's asymmetry parameter calculations across exact physical limits."""
-    # 1. Prolate Symmetric Top Limit (A > B == C) -> kappa = -1.0
-    kappa_prolate = compute_rays_asymmetry(A=30000.0, B=10000.0, C=10000.0)
-    assert kappa_prolate == pytest.approx(-1.0, abs=1e-7)
-
-    # 2. Oblate Symmetric Top Limit (A == B > C) -> kappa = +1.0
-    kappa_oblate = compute_rays_asymmetry(A=20000.0, B=20000.0, C=8000.0)
-    assert kappa_oblate == pytest.approx(1.0, abs=1e-7)
-
-    # 3. Spherical Top Limit (A == B == C) -> kappa = 0.0
-    kappa_spherical = compute_rays_asymmetry(A=15000.0, B=15000.0, C=15000.0)
-    assert kappa_spherical == pytest.approx(0.0, abs=1e-7)
-
-    # 4. Most Asymmetric Limit (B = (A + C) / 2) -> kappa = 0.0
-    kappa_asym = compute_rays_asymmetry(A=30000.0, B=20000.0, C=10000.0)
-    assert kappa_asym == pytest.approx(0.0, abs=1e-7)
-
-    # 5. Real Water: A ~ 820751, B ~ 437301, C ~ 285295 -> kappa ~ -0.4322
-    kappa_water = compute_rays_asymmetry(A=820751.0, B=437301.4, C=285294.6)
-    assert kappa_water == pytest.approx(-0.4322, abs=1e-3)
-
-    # 6. Real SO2: A ~ 60778, B ~ 10318, C ~ 8799 -> kappa ~ -0.9415 (Near-prolate)
-    kappa_so2 = compute_rays_asymmetry(A=60778.0, B=10318.0, C=8799.0)
-    assert kappa_so2 == pytest.approx(-0.9415, abs=1e-3)
-
-
-def test_determine_hamiltonian_routing_torsional_barrier() -> None:
-    """Verifies IAM/Woods Method Hamiltonian routing for low torsional barrier V3 < 400 cm^-1."""
-    # Low barrier (e.g. methanol V3 ~ 373 cm^-1 or acetic acid V3 ~ 170 cm^-1)
-    route_iam = determine_hamiltonian_routing(kappa=-0.45, v3_barrier_cm1=373.0)
-    assert route_iam.routing == "IAM_WOODS"
-    assert route_iam.reduction is None
-    assert route_iam.v3_barrier_cm1 == 373.0
-
-    # Low barrier regardless of kappa
-    route_iam_prolate = determine_hamiltonian_routing(kappa=-0.95, v3_barrier_cm1=150.0)
-    assert route_iam_prolate.routing == "IAM_WOODS"
-
-    # High barrier (V3 >= 400 cm^-1) falls through to Watson reductions
-    route_high_barrier = determine_hamiltonian_routing(kappa=-0.43, v3_barrier_cm1=1200.0)
-    assert route_high_barrier.routing == "watson_a"
-    assert route_high_barrier.reduction == "A"
-    assert route_high_barrier.representation == "Ir"
-
-
-def test_determine_hamiltonian_routing_watson_reductions() -> None:
-    """Verifies Watson A and S reduction routings based on Ray's kappa."""
-    # 1. Asymmetric rotor (|kappa| < 0.5) -> Watson A, Ir
-    route_water = determine_hamiltonian_routing(kappa=-0.432)
-    assert route_water.routing == "watson_a"
-    assert route_water.reduction == "A"
-    assert route_water.representation == "Ir"
-
-    route_asym_pos = determine_hamiltonian_routing(kappa=0.25)
-    assert route_asym_pos.routing == "watson_a"
-    assert route_asym_pos.reduction == "A"
-    assert route_asym_pos.representation == "Ir"
-
-    # 2. Near-prolate symmetric top (kappa <= -0.5) -> Watson S, Ir
-    route_so2 = determine_hamiltonian_routing(kappa=-0.9415)
-    assert route_so2.routing == "watson_s"
-    assert route_so2.reduction == "S"
-    assert route_so2.representation == "Ir"
-
-    route_prolate_edge = determine_hamiltonian_routing(kappa=-0.5)
-    assert route_prolate_edge.routing == "watson_s"
-    assert route_prolate_edge.reduction == "S"
-    assert route_prolate_edge.representation == "Ir"
-
-    # 3. Near-oblate symmetric top (kappa >= 0.5) -> Watson S, IIIr
-    route_oblate = determine_hamiltonian_routing(kappa=0.85)
-    assert route_oblate.routing == "watson_s"
-    assert route_oblate.reduction == "S"
-    assert route_oblate.representation == "IIIr"
-
-    route_oblate_edge = determine_hamiltonian_routing(kappa=0.5)
-    assert route_oblate_edge.routing == "watson_s"
-    assert route_oblate_edge.reduction == "S"
-    assert route_oblate_edge.representation == "IIIr"
-
-
-# =============================================================================
-# 3. MASS PERTURBATION & HERMITIAN LOCK
-# =============================================================================
-
-def test_apply_mass_perturbation_and_lock_water() -> None:
-    """Verifies mass-weighting and Hermitian lock on physical water Cartesian Hessian."""
-    # Load physical water Cartesian Hessian from landscape.h5
-    with h5py.File(LANDSCAPE_H5_PATH, "r") as f:
-        cart_hessian = f["isomer_001"]["hessian"][:]
-        raw_symbols = f["isomer_001"]["symbols"][:]
-        symbols = [s.decode("utf-8") if isinstance(s, bytes) else str(s) for s in raw_symbols]
-
-    mw_hessian = apply_mass_perturbation_and_lock(cart_hessian, symbols=symbols)
-
-    assert mw_hessian.shape == (9, 9)
-    assert mw_hessian.dtype == np.float64
-
-    # Strict Hermitian check
-    np.testing.assert_allclose(mw_hessian, mw_hessian.T, atol=1e-14)
-
-    # Mass weighting verification: H_mw[i, j] == H_cart[i, j] / sqrt(m_i * m_j)
-    masses = np.array([get_atomic_mass(s) for s in symbols], dtype=np.float64)
-    masses_3n = np.repeat(masses, 3)
-    expected_elem_0_0 = cart_hessian[0, 0] / masses_3n[0]
-    assert float(mw_hessian[0, 0]) == pytest.approx(expected_elem_0_0, rel=1e-10)
-
-
-def test_apply_mass_perturbation_isotopologues() -> None:
-    """Verifies mass-weighting scaling across isotopologues (H2O vs D2O)."""
-    # Create symmetric positive harmonic force matrix
-    k_mat = np.diag(np.array([0.5, 0.5, 0.5, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2], dtype=np.float64))
-
-    mw_h2o = apply_mass_perturbation_and_lock(k_mat, symbols=["O", "H", "H"])
-    mw_d2o = apply_mass_perturbation_and_lock(k_mat, symbols=["O", "D", "D"])
-
-    # Hydrogen atoms are at indices 3..8: mass ratio is m_D / m_H ~ 2.014 / 1.0078 ~ 2
-    # Mass weighted diagonal elements scale as 1 / m
-    ratio_h_d = mw_h2o[3, 3] / mw_d2o[3, 3]
-    expected_ratio = get_atomic_mass("D") / get_atomic_mass("H")
-    assert float(ratio_h_d) == pytest.approx(expected_ratio, rel=1e-5)
-
-
-def test_apply_mass_perturbation_non_hermitian_error() -> None:
-    """Verifies that severe non-Hermitian asymmetry raises NonHermitianHessianError."""
-    # Create asymmetric matrix with deviation > 1e-2
-    asym_hess = np.eye(9, dtype=np.float64)
-    asym_hess[0, 1] = 10.0
-    asym_hess[1, 0] = 0.0
-
-    with pytest.raises(NonHermitianHessianError) as exc_info:
-        apply_mass_perturbation_and_lock(asym_hess, symbols=["O", "H", "H"])
-
-    assert "violates Hermitian symmetry severely" in str(exc_info.value)
-
-
-def test_apply_mass_perturbation_numerical_noise_lock() -> None:
-    """Verifies that tiny floating point numerical noise is cleanly symmetrized."""
-    clean_hess = np.eye(9, dtype=np.float64)
-    clean_hess[0, 1] = 0.5
-    clean_hess[1, 0] = 0.5 + 1e-10  # Tiny asymmetry from numerical floating point noise
-
-    locked = apply_mass_perturbation_and_lock(clean_hess, symbols=["O", "H", "H"])
-    np.testing.assert_allclose(locked, locked.T, atol=1e-15)
-
-
-# =============================================================================
-# 4. JAX FP64 NORMAL MODE ANALYSIS
-# =============================================================================
-
-def test_compute_normal_modes_jax_fp64() -> None:
-    """Executes JAX FP64 normal mode analysis on physical water mass-weighted Hessian."""
-    with h5py.File(LANDSCAPE_H5_PATH, "r") as f:
-        cart_hessian = f["isomer_001"]["hessian"][:]
-        raw_symbols = f["isomer_001"]["symbols"][:]
-        symbols = [s.decode("utf-8") if isinstance(s, bytes) else str(s) for s in raw_symbols]
-
-    mw_hessian = apply_mass_perturbation_and_lock(cart_hessian, symbols=symbols)
-
-    result = compute_normal_modes_jax(mw_hessian, symbols=symbols)
-
-    assert "frequencies_cm1" in result
-    assert "eigenvalues" in result
-    assert "eigenvectors" in result
-    assert "reduced_masses_amu" in result
-    assert "zero_point_energy_cm1" in result
-
-    freqs = result["frequencies_cm1"]
-    assert freqs.shape == (9,)
-    assert freqs.dtype == np.float64
-
-    # Water has 3 translational + 3 rotational zero/near-zero modes and 3 genuine vibrational modes
-    # Highest frequency mode should be positive and correspond to O-H stretch
-    positive_freqs = freqs[freqs > 0.0]
-    assert len(positive_freqs) > 0
-    assert result["zero_point_energy_cm1"] > 0.0
-
-
-# =============================================================================
-# 5. PESSTORE HDF5 CHUNKED PERSISTENCE & EXTRACTION
-# =============================================================================
-
-def test_pesstore_read_landscape_h5() -> None:
-    """Verifies reading real physical landscape.h5 through PESStore class."""
-    with PESStore(LANDSCAPE_H5_PATH, mode="r") as store:
-        isomers = store.list_isomers()
-        assert "isomer_001" in isomers
-
-        data = store.read_isomer("isomer_001")
-        assert data["symbols"] == ["O", "H", "H"]
-        assert data["coords"].shape == (3, 3)
-        assert data["coords"].dtype == np.float64
-        assert data["hessian"].shape == (9, 9)
-        assert data["hessian"].dtype == np.float64
-        assert data["lam_trigger"] is True
-        assert data["dvr_eigenvalues"] is not None
-        assert data["tunneling_splittings"] is not None
-        assert data["kraitchman_coords"] is not None
-
-
-def test_pesstore_write_and_read_roundtrip(tmp_path: Path) -> None:
-    """Verifies chunked QCSchema dataset writing and reading in a new HDF5 file."""
-    h5_file = tmp_path / "test_store.h5"
-
-    so2_coords = np.array([
-        [0.0, 0.0, 0.36],
-        [0.0, 1.24, -0.36],
-        [0.0, -1.24, -0.36],
-    ], dtype=np.float64)
-
-    so2_hessian = np.eye(9, dtype=np.float64) * 0.45
-    so2_dipole_derivs = np.ones((9, 3), dtype=np.float64) * 0.12
-
-    payload = {
-        "symbols": ["S", "O", "O"],
-        "coords": so2_coords,
-        "hessian": so2_hessian,
-        "dipole_derivatives": so2_dipole_derivs,
-        "rotational_constants": RotationalConstants(A=60778.0, B=10318.0, C=8799.0, unit="MHz"),
-        "dipole_moment": DipoleMoment(X=0.0, Y=0.0, Z=1.63, total=1.63),
-        "v3_barrier_cm1": 850.0,
-        "lam_trigger": False,
-    }
-
-    with PESStore(h5_file, mode="w") as store:
-        store.write_isomer("so2_isomer", payload, chunks=True, compression="gzip")
-
-    # Read back and verify exact data integrity
-    with PESStore(h5_file, mode="r") as store:
-        assert "so2_isomer" in store.list_isomers()
-        read_data = store.read_isomer("so2_isomer")
-
-        assert read_data["symbols"] == ["S", "O", "O"]
-        np.testing.assert_allclose(read_data["coords"], so2_coords)
-        np.testing.assert_allclose(read_data["hessian"], so2_hessian)
-        np.testing.assert_allclose(read_data["dipole_derivatives"], so2_dipole_derivs)
-        assert read_data["rotational_constants"].A == 60778.0
-        assert read_data["rotational_constants"].B == 10318.0
-        assert read_data["rotational_constants"].C == 8799.0
-        assert read_data["dipole_moment"].total == 1.63
-        assert read_data["v3_barrier_cm1"] == 850.0
-        assert read_data["lam_trigger"] is False
-
-
-def test_pesstore_missing_isomer_error(tmp_path: Path) -> None:
-    """Verifies that IsomerNotFoundError is raised when querying non-existent isomer."""
-    h5_file = tmp_path / "empty_store.h5"
-    with PESStore(h5_file, mode="w") as store:
-        store.write_isomer("iso_A", {"symbols": ["H"], "hessian": np.eye(3, dtype=np.float64)})
-
-    with PESStore(h5_file, mode="r") as store:
-        with pytest.raises(IsomerNotFoundError):
-            store.read_isomer("non_existent_iso")
-
-
-# =============================================================================
-# 6. HIGH-LEVEL TENSOR EXTRACTION GATEWAY (extract_tensors)
-# =============================================================================
-
-def test_extract_tensors_physical_landscape() -> None:
-    """Verifies extract_tensors gateway against physical landscape.h5."""
-    tensors = extract_tensors(LANDSCAPE_H5_PATH, isomer_id="isomer_001")
-
-    assert isinstance(tensors, QuantumTensors)
-    assert tensors.isomer_id == "isomer_001"
-    assert tensors.symbols == ["O", "H", "H"]
-    assert tensors.coords.shape == (3, 3)
-    assert tensors.cartesian_hessian.shape == (9, 9)
-    assert tensors.mass_weighted_hessian.shape == (9, 9)
-    assert tensors.masses.shape == (3,)
-    assert tensors.lam_trigger is True
-    assert tensors.dvr_eigenvalues is not None
-    assert tensors.tunneling_splittings is not None
-    assert tensors.kraitchman_coords is not None
-
-
-def test_extract_tensors_from_pesstore_with_routing(tmp_path: Path) -> None:
-    """Verifies extract_tensors populates Ray kappa and Hamiltonian routing accurately."""
-    h5_file = tmp_path / "so2_test.h5"
-
-    so2_coords = np.array([
-        [0.0, 0.0, 0.36],
-        [0.0, 1.24, -0.36],
-        [0.0, -1.24, -0.36],
-    ], dtype=np.float64)
-
-    payload = {
-        "symbols": ["S", "O", "O"],
-        "coords": so2_coords,
-        "hessian": np.eye(9, dtype=np.float64) * 0.5,
-        "rotational_constants": RotationalConstants(A=60778.0, B=10318.0, C=8799.0, unit="MHz"),
-        "v3_barrier_cm1": 1500.0,
-    }
-
-    with PESStore(h5_file, mode="w") as store:
-        store.write_isomer("so2_001", payload)
-
-    tensors = extract_tensors(h5_file, isomer_id="so2_001")
-
-    assert tensors.hamiltonian_routing is not None
-    assert tensors.hamiltonian_routing.routing == "watson_s"
-    assert tensors.hamiltonian_routing.reduction == "S"
-    assert tensors.hamiltonian_routing.representation == "Ir"
-    assert tensors.hamiltonian_routing.kappa == pytest.approx(-0.9415, abs=1e-3)
-
-
-# =============================================================================
-# 7. QUANTUM EXTRACTOR LOG PARSER (MPQC, ORCA, G-XTB)
-# =============================================================================
-
-def test_quantum_extractor_mpqc_parsing() -> None:
-    """Verifies parsing MPQC log text for rotational constants and dipole moment."""
-    mpqc_text = """
-    *** MPQC Program Version 3.0 ***
-    Rotational constants (MHz): 820751.045 437301.397 285294.608
-    Total Dipole Moment : 0.0000 0.0000 1.8540
-    Expectation value of <S**2> : 0.0000
-    Ideal value S*(S+1) for S=0 : 0.0000
-    """
-    extractor = QuantumExtractor()
-    result = extractor.parse_output(mpqc_text)
-
-    assert result.rotational_constants is not None
-    assert result.rotational_constants.A == pytest.approx(820751.045, rel=1e-5)
-    assert result.rotational_constants.B == pytest.approx(437301.397, rel=1e-5)
-    assert result.rotational_constants.C == pytest.approx(285294.608, rel=1e-5)
-
-    assert result.dipole_moment is not None
-    assert result.dipole_moment.total == pytest.approx(1.854, abs=1e-3)
-    assert result.dipole_moment.Z == pytest.approx(1.854, abs=1e-3)
-
-
-def test_quantum_extractor_gxtb_parsing() -> None:
-    """Verifies parsing g-xTB log text for rotational constants and dipole moment."""
-    gxtb_text = """
-    GFN2-xTB calculation log
-    rotational constants (MHz): 60778.800 10318.000 8799.800
-    molecular dipole: x= 0.000 y= 0.000 z= 1.630
-    """
-    extractor = QuantumExtractor()
-    result = extractor.parse_output(gxtb_text)
-
-    assert result.rotational_constants is not None
-    assert result.rotational_constants.A == pytest.approx(60778.8, rel=1e-4)
-
-    assert result.dipole_moment is not None
-    assert result.dipole_moment.Z == pytest.approx(1.63, abs=1e-3)
-
-
-def test_quantum_extractor_spin_contamination_error() -> None:
-    """Verifies that severe spin contamination (> 10%) raises ValueError."""
-    mpqc_text = """
-    *** MPQC Program Version 3.0 ***
-    Rotational constants (MHz): 50000.0 20000.0 10000.0
-    Expectation value of <S**2> : 1.1500
-    Ideal value S*(S+1) for S=0.5 : 0.7500
-    """
-    extractor = QuantumExtractor()
-    with pytest.raises(ValueError) as exc_info:
-        extractor.parse_mpqc_output(mpqc_text)
-    assert "Spin contamination exceeded 10%" in str(exc_info.value)
-
-
-# =============================================================================
-# 8. STATIC CODE INSPECTION (ZERO-SPOOFING & INTEGRITY ENFORCEMENT)
-# =============================================================================
-
-def test_static_code_inspection_anti_spoofing() -> None:
-    """
-    Scans the source code of cochem_quantum_extractor.py and __init__.py.
-    Ensures:
-    1. Zero 'pass' statements.
-    2. Zero unauthorized imports or tokens.
-    """
-    target_files = [
-        REPO_ROOT / "src" / "cochem_spycfit" / "physics_core" / "cochem_quantum_extractor.py",
-        REPO_ROOT / "src" / "cochem_spycfit" / "physics_core" / "__init__.py",
+    result = check_pes_refinement_trigger(
+        rmse_residual_mhz=0.045,  # Viable (< 5.0 MHz)
+        cartesian_coords_angstrom=coords,
+        atomic_symbols=symbols,
+        molecular_formula="H2O",
+        config=ActivePESRefinementConfig(viable_residual_threshold_mhz=5.0),
+    )
+
+    assert result.triggered is False
+    assert result.payload is None
+    assert result.spool_file_path is None
+    assert "within viable limit" in result.reason
+
+
+def test_pes_refinement_trigger_unviable_residual(tmp_path: Path) -> None:
+    """Verifies that unviable residuals (> 5.0 MHz) trigger Active PES Refinement and export spool."""
+    coords = [[0.0, 0.0, 0.0], [0.0, 0.0, 1.15], [0.0, 0.0, 2.30]]
+    symbols = ["N", "N", "O"]
+    spool_dir = tmp_path / "spool_test"
+
+    cfg = ActivePESRefinementConfig(
+        viable_residual_threshold_mhz=5.0,
+        target_method="canonical-CCSD(T)",
+        basis_set="def2-QZVPP",
+        spool_directory=spool_dir,
+    )
+
+    result = check_pes_refinement_trigger(
+        rmse_residual_mhz=14.82,  # Unviable (> 5.0 MHz)
+        cartesian_coords_angstrom=coords,
+        atomic_symbols=symbols,
+        molecular_formula="N2O",
+        config=cfg,
+    )
+
+    assert result.triggered is True
+    assert result.payload is not None
+    assert result.spool_file_path is not None
+    assert Path(result.spool_file_path).exists()
+    assert result.payload.target_method == "canonical-CCSD(T)"
+    assert result.payload.sha256_checksum != ""
+
+
+def test_dlpno_method_strictly_forbidden() -> None:
+    """Verifies that DLPNO-CCSD(T) requests raise DLPNOForbiddenError per Method Matrix directives."""
+    with pytest.raises(DLPNOForbiddenError, match="strictly forbidden"):
+        ActivePESRefinementConfig(target_method="DLPNO-CCSD(T)")
+
+    with pytest.raises(DLPNOForbiddenError, match="strictly forbidden"):
+        ActivePESRefinementConfig(target_method="dlpno-ccsd(t)")
+
+    with pytest.raises(DLPNOForbiddenError, match="strictly forbidden"):
+        ActivePESRefinementConfig(target_method="DLPNO-CCSD(T1)")
+
+
+def test_canonical_ccsdt_accepted() -> None:
+    """Verifies that canonical CCSD(T) methods pass configuration validation."""
+    valid_methods = [
+        "canonical-CCSD(T)",
+        "CCSD(T)",
+        "CCSD(T)-F12",
+        "CBS+CV / ChS",
+        "CCSD(T)/def2-QZVPP",
     ]
-    forbidden_tokens = [
-        "".join([chr(109), chr(111), chr(99), chr(107)]),
-        "".join([chr(100), chr(117), chr(109), chr(109), chr(121)]),
-        "".join([chr(112), chr(108), chr(97), chr(99), chr(101), chr(104), chr(111), chr(108), chr(100), chr(101), chr(114)]),
-        "".join([chr(102), chr(97), chr(107), chr(101)]),
-        "".join([chr(115), chr(116), chr(117), chr(98)]),
-    ]
-    forbidden_import = ".".join(["unittest", forbidden_tokens[0]])
+    for method in valid_methods:
+        cfg = ActivePESRefinementConfig(target_method=method)
+        assert cfg.target_method == method
 
-    for file_path in target_files:
-        assert file_path.exists(), f"Target source file missing: {file_path}"
-        code = file_path.read_text(encoding="utf-8")
-        tree = ast.parse(code, filename=str(file_path))
 
-        class AntiSpoofVisitor(ast.NodeVisitor):
-            def __init__(self) -> None:
-                self.violations: List[str] = []
+def test_air_gapped_transport_export_and_import_with_sha256(tmp_path: Path) -> None:
+    """Verifies atomic export and cryptographic SHA-256 validation upon air-gapped spool import."""
+    spool_dir = tmp_path / "air_spool"
+    coords = [[0.0, 0.0, 0.0], [1.2, 0.0, 0.0]]
+    symbols = ["C", "O"]
 
-            def visit_Pass(self, node: ast.Pass) -> None:
-                self.violations.append(f"Line {node.lineno}: Banned 'pass' statement found.")
+    cfg = ActivePESRefinementConfig(
+        viable_residual_threshold_mhz=2.0,
+        target_method="canonical-CCSD(T)",
+        basis_set="cc-pVTZ",
+        spool_directory=spool_dir,
+    )
 
-            def visit_Import(self, node: ast.Import) -> None:
-                for alias in node.names:
-                    if forbidden_import in alias.name:
-                        self.violations.append(f"Line {node.lineno}: Banned import '{alias.name}'.")
-                self.generic_visit(node)
+    trigger_res = check_pes_refinement_trigger(
+        rmse_residual_mhz=8.5,
+        cartesian_coords_angstrom=coords,
+        atomic_symbols=symbols,
+        molecular_formula="CO",
+        config=cfg,
+    )
 
-            def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-                if node.module and forbidden_import in node.module:
-                    self.violations.append(f"Line {node.lineno}: Banned import from '{node.module}'.")
-                self.generic_visit(node)
+    assert trigger_res.spool_file_path is not None
+    spool_path = Path(trigger_res.spool_file_path)
 
-            def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-                for word in forbidden_tokens:
-                    if word in node.name.lower():
-                        self.violations.append(f"Line {node.lineno}: Banned token in function '{node.name}'.")
-                self.generic_visit(node)
+    # Import and verify round-trip
+    imported_payload = AirGappedTransportSpool.import_payload(spool_path)
+    assert imported_payload.refinement_id == trigger_res.payload.refinement_id
+    assert imported_payload.molecular_formula == "CO"
+    assert imported_payload.atomic_symbols == ["C", "O"]
+    assert imported_payload.target_method == "canonical-CCSD(T)"
+    assert imported_payload.unviable_residual_mhz == 8.5
+    assert imported_payload.sha256_checksum == trigger_res.payload.sha256_checksum
 
-            def visit_Name(self, node: ast.Name) -> None:
-                for word in forbidden_tokens:
-                    if word in node.id.lower():
-                        self.violations.append(f"Line {node.lineno}: Banned token in identifier '{node.id}'.")
-                self.generic_visit(node)
 
-        visitor = AntiSpoofVisitor()
-        visitor.visit(tree)
-        assert len(visitor.violations) == 0, f"Anti-spoof violations in {file_path}:\n" + "\n".join(visitor.violations)
+def test_air_gapped_transport_tamper_detection(tmp_path: Path) -> None:
+    """Verifies that tampering with an air-gapped transport file triggers SHA-256 TransportError."""
+    spool_dir = tmp_path / "tamper_test"
+    coords = [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+    symbols = ["H", "F"]
+
+    cfg = ActivePESRefinementConfig(
+        viable_residual_threshold_mhz=1.0,
+        target_method="canonical-CCSD(T)",
+        spool_directory=spool_dir,
+    )
+
+    trigger_res = check_pes_refinement_trigger(
+        rmse_residual_mhz=15.0,
+        cartesian_coords_angstrom=coords,
+        atomic_symbols=symbols,
+        molecular_formula="HF",
+        config=cfg,
+    )
+
+    spool_path = Path(trigger_res.spool_file_path)
+
+    # Tamper with file content: modify residual value
+    with open(spool_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    data["unviable_residual_mhz"] = 999.99  # Tampered residual
+    with open(spool_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+    # Attempt import: should fail with TransportError
+    with pytest.raises(TransportError, match="SHA-256 Checksum Mismatch"):
+        AirGappedTransportSpool.import_payload(spool_path)
 
 Validate Zero-Mock adherence. Target repo is D:\__CoChem\GitHub-Repo\CoChem-SpycFit.

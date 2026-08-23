@@ -3,9 +3,36 @@ CoChem-SpycFit: Theoretical Tensor Gateway & Physics Core.
 
 Provides exact mass-weighted Cartesian Hessian transformations, Hermitian locking,
 Ray's asymmetry parameter calculations, torsional barrier Hamiltonian routing,
-QCSchema-compliant chunked HDF5 PESStore integration, and JAX FP64 normal mode analysis.
+QCSchema-compliant chunked HDF5 PESStore integration, JAX FP64 normal mode analysis,
+pure-JAX Autodiff Levenberg-Marquardt optimization, high-J VRAM block diagonalization,
+Sobol sensitivity parameter guarding, and Active PES refinement triggers with air-gapped transport.
 """
 
+from .cochem_jax_fitter import (
+    ActivePESRefinementConfig,
+    AirGappedTransportSpool,
+    BlockDiagonalizationConfig,
+    BlockDiagonalizationResult,
+    ConvergenceError,
+    DLPNOForbiddenError,
+    FitterError,
+    InvalidHamiltonianError,
+    LMFitConfig,
+    LMFitResult,
+    LMStepResult,
+    PESRefinementPayload,
+    PESRefinementTriggerResult,
+    SensitivityGuardError,
+    SobolGuardConfig,
+    SobolGuardResult,
+    TransportError,
+    block_diagonalization_scan,
+    check_pes_refinement_trigger,
+    compute_jacobian_autodiff,
+    evaluate_sobol_sensitivity,
+    levenberg_marquardt_fit,
+    levenberg_marquardt_step,
+)
 from .cochem_quantum_extractor import (
     DEFAULT_CHUNK_SIZE,
     HARTREE_BOHR2_AMU_TO_CM1,
@@ -31,6 +58,7 @@ from .cochem_quantum_extractor import (
 )
 
 __all__ = [
+    # Extractor & Tensor Core
     "DEFAULT_CHUNK_SIZE",
     "HARTREE_BOHR2_AMU_TO_CM1",
     "MASS_DICT",
@@ -52,4 +80,28 @@ __all__ = [
     "determine_hamiltonian_routing",
     "extract_tensors",
     "get_atomic_mass",
+    # JAX Fitter & Autodiff Core
+    "ActivePESRefinementConfig",
+    "AirGappedTransportSpool",
+    "BlockDiagonalizationConfig",
+    "BlockDiagonalizationResult",
+    "ConvergenceError",
+    "DLPNOForbiddenError",
+    "FitterError",
+    "InvalidHamiltonianError",
+    "LMFitConfig",
+    "LMFitResult",
+    "LMStepResult",
+    "PESRefinementPayload",
+    "PESRefinementTriggerResult",
+    "SensitivityGuardError",
+    "SobolGuardConfig",
+    "SobolGuardResult",
+    "TransportError",
+    "block_diagonalization_scan",
+    "check_pes_refinement_trigger",
+    "compute_jacobian_autodiff",
+    "evaluate_sobol_sensitivity",
+    "levenberg_marquardt_fit",
+    "levenberg_marquardt_step",
 ]
