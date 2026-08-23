@@ -23,19 +23,24 @@ Validates:
 
 from __future__ import annotations
 
+import json
 import math
+import os
 from pathlib import Path
 from typing import List
 
+import h5py
 import numpy as np
 from pydantic import ValidationError
 import pytest
-import h5py
-from pathlib import Path
+import zarr
+import zmq
 
 from cochem_spycfit.intake.cochem_spycfit_triage import (
     AU_TO_WAVENUMBER_CONVERSION,
+    EckartAxisReorientationResult,
     HarmonicVibrationalResult,
+    IsotopeQuarantineError,
     IsotopeSpec,
     IsotopeTriageResult,
     IsotopologueData,
@@ -50,6 +55,7 @@ from cochem_spycfit.intake.cochem_spycfit_triage import (
     calculate_triage_provenance_hash,
     check_isotope_abundance,
     compute_harmonic_vibrational_frequencies,
+    eckart_axis_reorientation,
     evaluate_isotopologue_abundance,
     get_isotope_properties,
     identify_polyad_blocks,
@@ -59,6 +65,7 @@ from cochem_spycfit.intake.cochem_spycfit_triage import (
     scan_coriolis_resonances,
     scan_darling_dennison_resonances,
     scan_fermi_resonances,
+    scan_resonance_traps,
     trap_resonances,
     triage_spectroscopic_system,
 )
@@ -726,3 +733,243 @@ def test_polyad_blocks_multi_component_partitioning() -> None:
     assert len(blocks) == 2
     assert set(blocks[0].mode_indices) == {0, 1}
     assert set(blocks[1].mode_indices) == {2, 3}
+
+
+# =============================================================================
+# 10. PHASE 2 HITL, HEADLESS DEGRADATION & ISOTOPE QUARANTINE TESTS
+# =============================================================================
+
+
+def test_evaluate_isotopologue_abundance_hitl_approval() -> None:
+    """Tests that Human-in-the-Loop callback can approve sub-threshold isotopologues."""
+    def approval_callback(triage_res: IsotopeTriageResult) -> bool:
+        assert triage_res.is_observable is False
+        assert triage_res.abundance_percent < 0.01
+        return True
+
+    res = evaluate_isotopologue_abundance(
+        [("H", 2), ("H", 2), ("O", 18)],
+        threshold_percent=0.01,
+        hitl_callback=approval_callback,
+    )
+    assert res.is_observable is True
+    assert res.product_class == ProductClass.PRODUCT_C
+    assert res.rejection_reason is None
+    assert res.quarantined is False
+
+
+def test_evaluate_isotopologue_abundance_hitl_rejection() -> None:
+    """Tests that Human-in-the-Loop callback rejection maintains unobservable classification."""
+    def rejection_callback(triage_res: IsotopeTriageResult) -> bool:
+        return False
+
+    res = evaluate_isotopologue_abundance(
+        [("H", 2), ("H", 2), ("O", 18)],
+        threshold_percent=0.01,
+        hitl_callback=rejection_callback,
+    )
+    assert res.is_observable is False
+    assert res.product_class == ProductClass.TRACE
+    assert res.rejection_reason is not None
+    assert res.quarantined is False
+
+
+def test_check_isotope_abundance_headless_auto_quarantine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tests that sub-threshold isotopologue triggers auto-quarantine and raises IsotopeQuarantineError under COCHEM_HEADLESS=1."""
+    monkeypatch.setenv("COCHEM_HEADLESS", "1")
+    quarantine_directory = tmp_path / "quarantine_vault"
+
+    with pytest.raises(IsotopeQuarantineError) as exc_info:
+        check_isotope_abundance(
+            [("H", 2), ("H", 2), ("O", 18)],
+            threshold_percent=0.01,
+            quarantine_dir=quarantine_directory,
+        )
+
+    assert "Auto-quarantined" in str(exc_info.value)
+    assert "COCHEM_HEADLESS" in str(exc_info.value)
+
+    # Verify physical file existence in quarantine directory
+    quarantine_files = list(quarantine_directory.glob("quarantine_*.json"))
+    assert len(quarantine_files) == 1
+    record = json.loads(quarantine_files[0].read_text(encoding="utf-8"))
+    assert record["status"] == "AUTO_QUARANTINED"
+    assert record["quarantined"] is True
+    assert "2H-2H-18O" in record["isotopologue_name"]
+
+
+# =============================================================================
+# 11. PHASE 2 SCAN RESONANCE TRAPS, ZARR & ZERO-MQ IPC TESTS
+# =============================================================================
+
+
+def test_scan_resonance_traps_direct_array() -> None:
+    """Tests scan_resonance_traps on theoretical frequency array."""
+    freqs = np.array([667.0, 667.0, 1333.0, 2349.0], dtype=np.float64)
+    report = scan_resonance_traps(freqs, fermi_tol=30.0, coriolis_tol=20.0)
+
+    assert isinstance(report, ResonanceReport)
+    assert report.total_resonances_count > 0
+    assert report.has_strong_resonances is True
+    assert len(report.polyad_blocks) >= 1
+    assert "Polyad" in report.recommended_hamiltonian
+
+
+def test_scan_resonance_traps_zarr_store_and_attributes(tmp_path: Path) -> None:
+    """Tests scanning theoretical frequencies from a real physical landscape.zarr store."""
+    zarr_path = tmp_path / "landscape.zarr"
+    root = zarr.open_group(str(zarr_path), mode="w")
+    root["theoretical_frequencies"] = np.array(
+        [667.0, 667.0, 1333.0, 2349.0], dtype=np.float64
+    )
+
+    report = scan_resonance_traps(frequencies=zarr_path, zarr_store=zarr_path)
+    assert report.has_strong_resonances is True
+    assert len(report.fermi_resonances) > 0
+
+    # Verify Zarr attributes written back to store
+    root_reopened = zarr.open(str(zarr_path), mode="r")
+    assert root_reopened.attrs["resonance_status"] == "POLYAD_MATRIX_REQUIRED"
+    assert root_reopened.attrs["polyad_block_count"] >= 1
+    assert root_reopened.attrs["total_resonances_count"] > 0
+
+
+def test_scan_resonance_traps_heartbeat_emission() -> None:
+    """Tests that scan_resonance_traps emits diagnostic heartbeats for each mode during execution."""
+    heartbeat_records: List[tuple] = []
+
+    def on_heartbeat(idx: int, total: int, freq: float) -> None:
+        heartbeat_records.append((idx, total, freq))
+
+    freqs = [500.0, 1000.0, 1500.0]
+    report = scan_resonance_traps(freqs, heartbeat_callback=on_heartbeat)
+
+    assert isinstance(report, ResonanceReport)
+    assert len(heartbeat_records) == 3
+    assert heartbeat_records[0] == (1, 3, 500.0)
+    assert heartbeat_records[1] == (2, 3, 1000.0)
+    assert heartbeat_records[2] == (3, 3, 1500.0)
+
+
+def test_scan_resonance_traps_zmq_orchestrator_alert() -> None:
+    """Tests alerting the Orchestrator via ZeroMQ socket upon completing resonance scan."""
+    ctx = zmq.Context.instance()
+    pull_sock = ctx.socket(zmq.PULL)
+    port = pull_sock.bind_to_random_port("tcp://127.0.0.1")
+    endpoint = f"tcp://127.0.0.1:{port}"
+
+    freqs = [667.0, 1333.0]
+    scan_resonance_traps(freqs, zmq_endpoint=endpoint)
+
+    alert_msg = pull_sock.recv_json(flags=0)
+    assert alert_msg["header"] == "COCHEM_ORCHESTRATOR_ALERT"
+    assert alert_msg["event"] == "RESONANCE_SCAN_COMPLETE"
+    assert alert_msg["has_strong_resonances"] is True
+    assert alert_msg["polyad_blocks_count"] == 1
+    pull_sock.close()
+
+
+# =============================================================================
+# 12. PHASE 2 ECKART AXIS REORIENTATION & DIPOLE DERIVATIVE TESTS
+# =============================================================================
+
+
+def test_eckart_axis_reorientation_proper_rotation() -> None:
+    """Tests Eckart axis reorientation and dipole derivative transformation under 2D planar rotation."""
+    I_old = np.diag([1.0, 2.0, 3.0]).astype(np.float64)
+
+    # 20 degree rotation around z-axis
+    theta_rad = math.radians(20.0)
+    cos_t = math.cos(theta_rad)
+    sin_t = math.sin(theta_rad)
+    R_20 = np.array([
+        [cos_t, -sin_t, 0.0],
+        [sin_t, cos_t, 0.0],
+        [0.0, 0.0, 1.0],
+    ], dtype=np.float64)
+
+    I_new = R_20 @ I_old @ R_20.T
+    dipole_derivs = np.array([
+        [1.0, 0.5],
+        [0.0, 2.0],
+        [0.0, 0.0],
+    ], dtype=np.float64)
+
+    res = eckart_axis_reorientation(dipole_derivs, I_old, I_new)
+
+    assert isinstance(res, EckartAxisReorientationResult)
+    assert np.isclose(res.determinant, 1.0, atol=1e-12)
+    assert np.isclose(res.reorientation_angle_deg, 20.0, atol=1e-3)
+
+    R_matrix = np.array(res.rotation_matrix, dtype=np.float64)
+    # Check exact SO(3) orthonormality: R @ R^T = I
+    assert np.allclose(R_matrix @ R_matrix.T, np.eye(3), atol=1e-12)
+
+    # Verify transformed dipole derivatives match R @ D
+    D_trans = np.array(res.transformed_dipole_derivatives, dtype=np.float64)
+    assert D_trans.shape == (3, 2)
+    expected_d = R_matrix @ dipole_derivs
+    assert np.allclose(D_trans, expected_d, atol=1e-12)
+
+
+def test_eckart_axis_reorientation_determinant_swap_correction() -> None:
+    """Tests SVD reflection correction when eigenvector sign ambiguity produces det(R) < 0."""
+    I_old = np.diag([10.0, 20.0, 30.0]).astype(np.float64)
+    # Reflection matrix with det = -1
+    refl = np.diag([1.0, 1.0, -1.0]).astype(np.float64)
+    I_new = refl @ I_old @ refl.T
+
+    dipole_derivs = np.array([[1.0], [2.0], [3.0]], dtype=np.float64)
+    res = eckart_axis_reorientation(dipole_derivs, I_old, I_new)
+
+    assert np.isclose(res.determinant, 1.0, atol=1e-12)
+    R_matrix = np.array(res.rotation_matrix, dtype=np.float64)
+    assert np.allclose(R_matrix @ R_matrix.T, np.eye(3), atol=1e-12)
+
+
+def test_eckart_axis_reorientation_axis_swap_detection() -> None:
+    """Tests automatic detection and re-indexing when isotopic mass shifts swap principal axes order."""
+    I_old = np.diag([1.0, 2.0, 5.0]).astype(np.float64)
+    # Substitution causes Ia to exceed Ib (a/b swap)
+    I_new = np.diag([2.5, 0.8, 5.0]).astype(np.float64)
+
+    dipole_derivs = np.array([[1.1, 0.0], [2.2, 0.0], [3.3, 0.0]], dtype=np.float64)
+    res = eckart_axis_reorientation(dipole_derivs, I_old, I_new)
+
+    assert res.axis_swap_detected is True
+    assert res.axis_permutation == [1, 0, 2]
+    D_trans = np.array(res.transformed_dipole_derivatives, dtype=np.float64)
+    assert D_trans.shape == (3, 2)
+
+
+def test_eckart_axis_reorientation_1d_inputs() -> None:
+    """Tests passing 1D principal moments and 1D dipole vectors."""
+    moments_old = [1.0, 2.0, 3.0]
+    moments_new = [1.0, 2.0, 3.0]
+    dipole_vec = [0.5, -0.5, 1.0]
+
+    res = eckart_axis_reorientation(dipole_vec, moments_old, moments_new)
+    assert isinstance(res, EckartAxisReorientationResult)
+    assert res.reorientation_angle_deg == 0.0
+    assert res.axis_permutation == [0, 1, 2]
+    assert len(res.transformed_dipole_derivatives) == 3
+
+
+def test_eckart_axis_reorientation_schema_extra_fields_forbidden() -> None:
+    """Tests that EckartAxisReorientationResult forbids unrecognized fields."""
+    with pytest.raises(ValidationError):
+        EckartAxisReorientationResult(
+            rotation_matrix=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            determinant=1.0,
+            determinant_swap_detected=False,
+            axis_permutation=[0, 1, 2],
+            axis_swap_detected=False,
+            old_principal_moments=[1.0, 2.0, 3.0],
+            new_principal_moments=[1.0, 2.0, 3.0],
+            transformed_dipole_derivatives=[[1.0], [0.0], [0.0]],
+            reorientation_angle_deg=0.0,
+            unauthorized_field="illegal",  # type: ignore[call-arg]
+        )
+

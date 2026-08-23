@@ -1,1695 +1,47 @@
-Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit\.in-progress\Task5_Prompt1_ingest_phase2.md.
+Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit\.in-progress\Task5_Prompt2_triage_phase2.md.
 Original prompt:
-# Task 5 (Phase 2): Master Ingestion - cochem_spycfit_ingest.py
+# Task 5 (Phase 2): Experimental Triage - cochem_spycfit_triage.py
 
 **Objective:**
-Update `cochem_spycfit_ingest.py` to implement Phase 2 requirements including Pydantic schema validation, regex parsing for legacy formats, cryptographic fingerprinting, and strict quantum logic gates.
+Update `cochem_spycfit_triage.py` to implement Phase 2 requirements including the Isotope Natural Abundance Filter, Headless Degradation, Resonance Trapping, and Eckart Tracking.
 
 **Target File:**
-`D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\intake\cochem_spycfit_ingest.py`
+`D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\intake\cochem_spycfit_triage.py`
 
 **Instructions:**
-You are the `cochem-coder` agent. Implement Phase 2 features in `cochem_spycfit_ingest.py`.
+You are the `cochem-coder` agent. Implement Phase 2 features in `cochem_spycfit_triage.py`.
 It must:
-1. Implement modern intake with Pydantic schema validation requiring `Frequency_MHz`, `Uncertainty`, `Intensity`, `J_upper`, `Ka_upper`, `Kc_upper`, `J_lower`, `Ka_lower`, `Kc_lower`.
-2. Implement legacy Pickett intake using strict positional regex. Translate Fortran double-precision exponential notation (e.g., D-05 to E-05). Failing lines must be appended to `failed_ingest.log` in `platformdirs.user_log_path("CoChem")`.
-3. Compute a SHA-256 hash across all input experimental frequencies immediately upon ingestion and append to the `spectra_fit.zarr` state matrix.
-4. Implement a Pre-Flight Syntax Validator that ensures $J \ge 0, K_a \ge 0, K_c \ge 0$ and $K_a + K_c = J$ or $J+1$. Must raise `CoChemDataException` on failure.
-5. Implement a Pre-Serialization Physics Filter enforcing selection rules ($\Delta J = 0, \pm 1$ and dipole parity constraints).
+1. Implement the Isotope Natural Abundance Filter (< 0.01%) via `mendeleev`. Include a HITL trigger, but enforce Headless Degradation if `COCHEM_HEADLESS=1` is detected (auto-quarantine and raise exception).
+2. Scan theoretical frequencies from `landscape.zarr` for Fermi/Coriolis resonance conditions. Emit asynchronous heartbeats during this scan to prevent HPC timeouts. Alert the Orchestrator via ZeroMQ or Zarr state locks to construct a Polyad matrix.
+3. Detect Axis Reorientation (Eckart Tracking) upon isotopic substitution (determinant swap) and automatically re-index dipole derivative matrices.
 
 **Constraints:**
-- No mocked Pydantic schemas, regex, or hashing. 
-- Implement actual validation logic.
+- No mocks, placeholders, or dummy execution.
+- Read real system environment variables (`os.environ`).
+- Must actually implement the math for Eckart tracking.
 - Do NOT use `pass` statements in your generated code.
 
 **Proposed Snippet Outline:**
 ```python
-import pandas as pd
-import re
-import hashlib
-from pydantic import BaseModel
-from platformdirs import user_log_path
+import os
+from mendeleev import element
+import numpy as np
 import zarr
 
-class SpectroscopySchema(BaseModel):
+def check_isotope_abundance(isotopologue):
     # MUST IMPLEMENT FULL LOGIC HERE - NO PASS STATEMENTS OR STUBS
     raise NotImplementedError("Implementation required.")
 
-def parse_legacy_pickett(lines):
+def scan_resonance_traps(frequencies):
     # MUST IMPLEMENT FULL LOGIC HERE - NO PASS STATEMENTS OR STUBS
     raise NotImplementedError("Implementation required.")
 
-def validate_quantum_numbers(df):
+def eckart_axis_reorientation(dipole_derivatives, old_inertia, new_inertia):
     # MUST IMPLEMENT FULL LOGIC HERE - NO PASS STATEMENTS OR STUBS
     raise NotImplementedError("Implementation required.")
 ```
 
 Modified files content:
-
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\intake\__init__.py ---
-"""CoChem-SpycFit intake subpackage."""
-
-from cochem_spycfit.intake.cochem_spycfit_ingest import (
-    BranchType,
-    CoChemDataException,
-    DipoleType,
-    FileFormat,
-    IngestConfig,
-    IngestResult,
-    Parity,
-    PickettParFile,
-    PickettParameter,
-    SpectroscopySchema,
-    SpectroscopyTransition,
-    ValidationReport,
-    append_to_spectra_fit_zarr,
-    apply_selection_rules,
-    calculate_frequency_fingerprint,
-    classify_transition_parity_and_dipole,
-    enforce_fp64_boundary,
-    fortran_float_converter,
-    parse_csv_spectroscopy,
-    parse_legacy_pickett,
-    parse_pickett_lin,
-    parse_pickett_par,
-    parse_spectroscopy_data,
-    validate_quantum_numbers,
-)
-from cochem_spycfit.intake.cochem_spycfit_triage import (
-    AU_TO_WAVENUMBER_CONVERSION,
-    HarmonicVibrationalResult,
-    IsotopeSpec,
-    IsotopeTriageResult,
-    IsotopologueData,
-    PolyadBlock,
-    ProductClass,
-    ResonanceCondition,
-    ResonanceReport,
-    ResonanceType,
-    TriageConfig,
-    TriageReport,
-    TriageStatus,
-    calculate_triage_provenance_hash,
-    check_isotope_abundance,
-    compute_harmonic_vibrational_frequencies,
-    evaluate_isotopologue_abundance,
-    get_isotope_properties,
-    identify_polyad_blocks,
-    mass_matrix_transformation,
-    parse_isotopologue_input,
-    resolve_mendeleev_database,
-    scan_coriolis_resonances,
-    scan_darling_dennison_resonances,
-    scan_fermi_resonances,
-    trap_resonances,
-    triage_spectroscopic_system,
-)
-from cochem_spycfit.intake.cochem_spycfit_orchestrator import (
-    AMU_TO_KG,
-    ANGSTROM_TO_METER,
-    BOHR_TO_ANGSTROM,
-    EckartFrameError,
-    EckartFrameResult,
-    FitOrchestratorError,
-    HARTREE_TO_JOULE,
-    HeartbeatStatus,
-    IPCMode,
-    LandscapeTensorError,
-    OrchestrationResult,
-    OrchestrationStatus,
-    OrchestratorConfig,
-    PLANCK_CONSTANT_JS,
-    ROTATIONAL_CONSTANT_CONVERSION_FACTOR_MHZ,
-    SPEED_OF_LIGHT_CM_S,
-    TORQIPCError,
-    TORQRequestPayload,
-    TORQResponsePayload,
-    TORQStatus,
-    TORQTimeoutError,
-    TensorEvaluationReport,
-    WallTimeSafetyGuard,
-    WallTimeYieldException,
-    calculate_center_of_mass,
-    calculate_inertia_tensor,
-    calculate_orchestrator_provenance_hash,
-    checkpoint_and_yield_node,
-    compute_eckart_rotation_matrix,
-    diagonalize_inertia_tensor,
-    eckart_frame_correction,
-    evaluate_landscape_tensors,
-    orchestrate_spycfit_system,
-    resolve_tier3_registry_path,
-    route_missing_energy,
-    route_missing_energy_file_drop,
-    route_missing_energy_zmq,
-)
-
-__all__ = [
-    # Ingest
-    "BranchType",
-    "CoChemDataException",
-    "DipoleType",
-    "FileFormat",
-    "IngestConfig",
-    "IngestResult",
-    "Parity",
-    "PickettParFile",
-    "PickettParameter",
-    "SpectroscopySchema",
-    "SpectroscopyTransition",
-    "ValidationReport",
-    "append_to_spectra_fit_zarr",
-    "apply_selection_rules",
-    "calculate_frequency_fingerprint",
-    "classify_transition_parity_and_dipole",
-    "enforce_fp64_boundary",
-    "fortran_float_converter",
-    "parse_csv_spectroscopy",
-    "parse_legacy_pickett",
-    "parse_pickett_lin",
-    "parse_pickett_par",
-    "parse_spectroscopy_data",
-    "validate_quantum_numbers",
-    # Triage
-    "AU_TO_WAVENUMBER_CONVERSION",
-    "HarmonicVibrationalResult",
-    "IsotopeSpec",
-    "IsotopeTriageResult",
-    "IsotopologueData",
-    "PolyadBlock",
-    "ProductClass",
-    "ResonanceCondition",
-    "ResonanceReport",
-    "ResonanceType",
-    "TriageConfig",
-    "TriageReport",
-    "TriageStatus",
-    "calculate_triage_provenance_hash",
-    "check_isotope_abundance",
-    "compute_harmonic_vibrational_frequencies",
-    "evaluate_isotopologue_abundance",
-    "get_isotope_properties",
-    "identify_polyad_blocks",
-    "mass_matrix_transformation",
-    "parse_isotopologue_input",
-    "resolve_mendeleev_database",
-    "scan_coriolis_resonances",
-    "scan_darling_dennison_resonances",
-    "scan_fermi_resonances",
-    "trap_resonances",
-    "triage_spectroscopic_system",
-    # Orchestrator
-    "AMU_TO_KG",
-    "ANGSTROM_TO_METER",
-    "BOHR_TO_ANGSTROM",
-    "EckartFrameError",
-    "EckartFrameResult",
-    "FitOrchestratorError",
-    "HARTREE_TO_JOULE",
-    "HeartbeatStatus",
-    "IPCMode",
-    "LandscapeTensorError",
-    "OrchestrationResult",
-    "OrchestrationStatus",
-    "OrchestratorConfig",
-    "PLANCK_CONSTANT_JS",
-    "ROTATIONAL_CONSTANT_CONVERSION_FACTOR_MHZ",
-    "SPEED_OF_LIGHT_CM_S",
-    "TORQIPCError",
-    "TORQRequestPayload",
-    "TORQResponsePayload",
-    "TORQStatus",
-    "TORQTimeoutError",
-    "TensorEvaluationReport",
-    "WallTimeSafetyGuard",
-    "WallTimeYieldException",
-    "calculate_center_of_mass",
-    "calculate_inertia_tensor",
-    "calculate_orchestrator_provenance_hash",
-    "checkpoint_and_yield_node",
-    "compute_eckart_rotation_matrix",
-    "diagonalize_inertia_tensor",
-    "eckart_frame_correction",
-    "evaluate_landscape_tensors",
-    "orchestrate_spycfit_system",
-    "resolve_tier3_registry_path",
-    "route_missing_energy",
-    "route_missing_energy_file_drop",
-    "route_missing_energy_zmq",
-]
-
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\intake\cochem_spycfit_ingest.py ---
-"""
-CoChem-SpycFit: Stage 1.0 Bipartite Data Intake Parser & Quantum Gatekeeper (Phase 2).
-
-Module: cochem_spycfit/intake/cochem_spycfit_ingest.py
-Role: The Tripartite Data Intake Parser & In-Memory Pre-Serialization Physics Filter.
-
-Capabilities:
-1. Modern Pydantic Schema Validation (SpectroscopySchema & SpectroscopyTransition):
-   Enforces mandatory fields (Frequency_MHz, Uncertainty, Intensity, J_upper, Ka_upper,
-   Kc_upper, J_lower, Ka_lower, Kc_lower) and strict asymmetric top physics.
-2. Positional & Free-Format Regex Ingestion (parse_legacy_pickett):
-   Parses legacy Pickett .lin, .cat, .par files and JPL catalogs, converting Fortran
-   double-precision notation ('D-05', 'D+02', '1.2345-05') to IEEE-754 FP64.
-   Failing lines are appended to failed_ingest.log in platformdirs.user_log_path("CoChem").
-3. Cryptographic Fingerprinting & Zarr State Matrix Appending:
-   Computes SHA-256 hash across all experimental frequencies upon ingestion and persists
-   the state matrix to spectra_fit.zarr.
-4. Pre-Flight Syntax Validator (Quantum Logic Gate):
-   Validates J >= 0, Ka >= 0, Kc >= 0, Ka <= J, Kc <= J, and asymmetric top sum rule
-   Ka + Kc in {J, J+1}. Raises CoChemDataException on strict failure.
-5. Pre-Serialization Physics Filter:
-   Enforces rotational selection rules (Delta J in {-1, 0, 1}, J=0 -> 0 forbidden) and
-   dipole transition parity constraints (a-type, b-type, c-type).
-
-Authoritative Standards:
-- Method_Matrix.md (CoChem-BASE)
-- Task 5 Master Ingestion & Pre-Flight Validation (CoChem-SpycFit SRS)
-- Mendeleev Library Mandate (Dynamic Mass Retrieval)
-"""
-
-from __future__ import annotations
-
-from datetime import datetime, timezone
-from enum import Enum
-import hashlib
-import io
-import json
-import logging
-import os
-from pathlib import Path
-import re
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
-
-import jax
-import numpy as np
-import pandas as pd
-from platformdirs import user_log_path
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-import zarr
-
-# Logging configuration
-logger = logging.getLogger("CoChem-SpycFit.Ingest")
-
-# Ecosystem exception classes with resilient fallback definitions
-try:
-    from cochem_base.exceptions import (
-        CoChemError,
-        CoChemIntegrityError,
-        CoChemPrecisionError,
-        ProvenanceErrorCode,
-    )
-
-    class CoChemDataException(CoChemError, ValueError):
-        """Raised when input spectroscopic data fails validation, syntax checks, or quantum rules."""
-        ...
-except ImportError:
-    class CoChemError(Exception):
-        """Root fallback exception for CoChem."""
-        ...
-
-    class CoChemPrecisionError(RuntimeError):
-        """Raised when JAX or numerical float precision is violated."""
-        ...
-
-    class CoChemIntegrityError(ValueError):
-        """Raised when cryptographic checksum or binary integrity check fails."""
-        ...
-
-    class CoChemDataException(ValueError):
-        """Raised when input spectroscopic data fails validation, syntax checks, or quantum rules."""
-        ...
-
-
-# =============================================================================
-# 1. ENUMS AND DATA STRUCTURES
-# =============================================================================
-
-class FileFormat(str, Enum):
-    """Supported file formats for spectroscopy data ingestion."""
-    CSV = "csv"
-    TSV = "tsv"
-    PARQUET = "parquet"
-    JSON = "json"
-    LIN = "lin"
-    PAR = "par"
-    CAT = "cat"
-    UNKNOWN = "unknown"
-
-
-class BranchType(str, Enum):
-    """Spectroscopic rotational branch designations based on Delta J = J' - J''."""
-    P = "P"  # Delta J = -1
-    Q = "Q"  # Delta J = 0
-    R = "R"  # Delta J = +1
-    INVALID = "INVALID"
-
-
-class DipoleType(str, Enum):
-    """Asymmetric top dipole transition parity classifications."""
-    A = "a"          # a-type: Delta Ka even, Delta Kc odd (ee <-> eo, oe <-> oo)
-    B = "b"          # b-type: Delta Ka odd, Delta Kc odd (ee <-> oo, eo <-> oe)
-    C = "c"          # c-type: Delta Ka odd, Delta Kc even (ee <-> oe, eo <-> oo)
-    FORBIDDEN = "forbidden"
-    UNKNOWN = "unknown"
-
-
-class Parity(str, Enum):
-    """Rotational state parity (Ka mod 2, Kc mod 2)."""
-    EE = "ee"  # Ka even, Kc even
-    EO = "eo"  # Ka even, Kc odd
-    OE = "oe"  # Ka odd,  Kc even
-    OO = "oo"  # Ka odd,  Kc odd
-
-
-# Canonical column names for modern structured Pandas DataFrames
-CANONICAL_COLUMNS: List[str] = [
-    "Frequency_MHz",
-    "Uncertainty",
-    "Intensity",
-    "J_upper",
-    "Ka_upper",
-    "Kc_upper",
-    "J_lower",
-    "Ka_lower",
-    "Kc_lower",
-]
-
-
-# =============================================================================
-# 2. PYDANTIC V2 SCHEMAS
-# =============================================================================
-
-class SpectroscopySchema(BaseModel):
-    """
-    Phase 2 Pydantic schema validation for single spectroscopic transitions.
-
-    Mandatory fields:
-    - Frequency_MHz (float64)
-    - Uncertainty (float64)
-    - Intensity (float64)
-    - J_upper, Ka_upper, Kc_upper (int >= 0)
-    - J_lower, Ka_lower, Kc_lower (int >= 0)
-    """
-    model_config = ConfigDict(
-        extra="forbid",
-        populate_by_name=True,
-    )
-
-    Frequency_MHz: float = Field(
-        ...,
-        alias="frequency_mhz",
-        description="Observed transition frequency in MHz (FP64).",
-    )
-    Uncertainty: float = Field(
-        default=0.01,
-        alias="uncertainty_mhz",
-        description="Measurement uncertainty in MHz (FP64).",
-    )
-    Intensity: float = Field(
-        default=1.0,
-        alias="intensity",
-        description="Observed or catalog intensity (FP64).",
-    )
-    J_upper: int = Field(
-        ...,
-        ge=0,
-        alias="j_upper",
-        description="Upper state total angular momentum quantum number J'.",
-    )
-    Ka_upper: int = Field(
-        ...,
-        ge=0,
-        alias="ka_upper",
-        description="Upper state prolate projection quantum number Ka'.",
-    )
-    Kc_upper: int = Field(
-        ...,
-        ge=0,
-        alias="kc_upper",
-        description="Upper state oblate projection quantum number Kc'.",
-    )
-    J_lower: int = Field(
-        ...,
-        ge=0,
-        alias="j_lower",
-        description="Lower state total angular momentum quantum number J''.",
-    )
-    Ka_lower: int = Field(
-        ...,
-        ge=0,
-        alias="ka_lower",
-        description="Lower state prolate projection quantum number Ka''.",
-    )
-    Kc_lower: int = Field(
-        ...,
-        ge=0,
-        alias="kc_lower",
-        description="Lower state oblate projection quantum number Kc''.",
-    )
-    branch: Optional[BranchType] = Field(default=None, description="Rotational branch (P, Q, R).")
-    dipole_type: Optional[DipoleType] = Field(default=None, description="Dipole transition classification (a, b, c).")
-    delta_j: Optional[int] = Field(default=None, description="Delta J = J' - J''.")
-    delta_ka: Optional[int] = Field(default=None, description="Delta Ka = Ka' - Ka''.")
-    delta_kc: Optional[int] = Field(default=None, description="Delta Kc = Kc' - Kc''.")
-    upper_parity: Optional[Parity] = Field(default=None, description="Upper state parity (ee, eo, oe, oo).")
-    lower_parity: Optional[Parity] = Field(default=None, description="Lower state parity (ee, eo, oe, oo).")
-    valid: bool = Field(default=True, description="Whether transition passed syntax and selection rules.")
-    drop_reason: Optional[str] = Field(default=None, description="Detailed explanation if line was dropped.")
-
-    @model_validator(mode="after")
-    def validate_quantum_physics(self) -> SpectroscopySchema:
-        """Enforces asymmetric rotor quantum bounds and parity sum rules."""
-        # 1. Ka <= J and Kc <= J bounds
-        if self.Ka_upper > self.J_upper:
-            raise ValueError(f"Upper Ka ({self.Ka_upper}) cannot exceed J ({self.J_upper})")
-        if self.Kc_upper > self.J_upper:
-            raise ValueError(f"Upper Kc ({self.Kc_upper}) cannot exceed J ({self.J_upper})")
-        if self.Ka_lower > self.J_lower:
-            raise ValueError(f"Lower Ka ({self.Ka_lower}) cannot exceed J ({self.J_lower})")
-        if self.Kc_lower > self.J_lower:
-            raise ValueError(f"Lower Kc ({self.Kc_lower}) cannot exceed J ({self.J_lower})")
-
-        # 2. Asymmetric top sum rule: Ka + Kc in {J, J+1}
-        sum_up = self.Ka_upper + self.Kc_upper
-        if sum_up != self.J_upper and sum_up != (self.J_upper + 1):
-            raise ValueError(
-                f"Upper state Ka+Kc ({sum_up}) violates asymmetric top sum rule for J={self.J_upper}"
-            )
-        sum_low = self.Ka_lower + self.Kc_lower
-        if sum_low != self.J_lower and sum_low != (self.J_lower + 1):
-            raise ValueError(
-                f"Lower state Ka+Kc ({sum_low}) violates asymmetric top sum rule for J={self.J_lower}"
-            )
-
-        # 3. Auto-populate differences if None
-        if self.delta_j is None:
-            self.delta_j = self.J_upper - self.J_lower
-        if self.delta_ka is None:
-            self.delta_ka = self.Ka_upper - self.Ka_lower
-        if self.delta_kc is None:
-            self.delta_kc = self.Kc_upper - self.Kc_lower
-
-        # 4. Auto-populate parity
-        parity_map = {
-            (0, 0): Parity.EE,
-            (0, 1): Parity.EO,
-            (1, 0): Parity.OE,
-            (1, 1): Parity.OO,
-        }
-        if self.upper_parity is None:
-            self.upper_parity = parity_map[(self.Ka_upper % 2, self.Kc_upper % 2)]
-        if self.lower_parity is None:
-            self.lower_parity = parity_map[(self.Ka_lower % 2, self.Kc_lower % 2)]
-
-        # 5. Auto-populate branch
-        if self.branch is None:
-            if self.delta_j == -1:
-                self.branch = BranchType.P
-            elif self.delta_j == 0:
-                self.branch = BranchType.Q
-            elif self.delta_j == 1:
-                self.branch = BranchType.R
-            else:
-                self.branch = BranchType.INVALID
-
-        # 6. Auto-populate dipole classification
-        if self.dipole_type is None:
-            if (self.J_upper == 0 and self.J_lower == 0) or abs(self.delta_j) > 1:
-                self.dipole_type = DipoleType.FORBIDDEN
-            else:
-                d_ka_even = (abs(self.delta_ka) % 2 == 0)
-                d_kc_even = (abs(self.delta_kc) % 2 == 0)
-                if d_ka_even and not d_kc_even:
-                    self.dipole_type = DipoleType.A
-                elif not d_ka_even and not d_kc_even:
-                    self.dipole_type = DipoleType.B
-                elif not d_ka_even and d_kc_even:
-                    self.dipole_type = DipoleType.C
-                else:
-                    self.dipole_type = DipoleType.FORBIDDEN
-
-        return self
-
-
-# Backwards compatibility alias for SpectroscopyTransition
-SpectroscopyTransition = SpectroscopySchema
-
-
-class PickettParameter(BaseModel):
-    """Single Pickett parameter record (.par / .var)."""
-    model_config = ConfigDict(extra="forbid")
-
-    param_id: int = Field(..., description="Pickett parameter code (e.g. 10000, 20000, 30000, 200).")
-    value: float = Field(..., description="Parameter value in MHz.")
-    uncertainty: float = Field(default=0.0, description="Estimated parameter uncertainty in MHz.")
-    label: str = Field(default="", description="Human-readable parameter label (e.g. 'A', 'B', 'DJ').")
-
-
-class PickettParFile(BaseModel):
-    """Structured representation of a legacy Pickett .par / .var parameter file."""
-    model_config = ConfigDict(extra="forbid")
-
-    title: str = Field(..., description="Header title string from .par / .var file.")
-    npar: int = Field(..., ge=0, description="Number of parameters in file.")
-    nline: int = Field(..., description="Number of fitting lines.")
-    nopt: int = Field(default=0, description="Pickett optimization control integer.")
-    nwarn: int = Field(default=0, description="Pickett warning control integer.")
-    erpar: float = Field(default=1.0, description="Parameter error scale factor.")
-    wtfac: float = Field(default=1.0, description="Weight factor.")
-    scale: float = Field(default=1.0, description="Frequency scale factor.")
-    maxit: int = Field(default=50, description="Maximum iterations.")
-    parameters: List[PickettParameter] = Field(default_factory=list, description="List of parsed parameters.")
-
-
-class IngestConfig(BaseModel):
-    """Configuration options for spectroscopy data ingestion and validation."""
-    model_config = ConfigDict(extra="forbid")
-
-    enforce_fp64: bool = Field(default=True, description="Strictly cast all float columns to np.float64.")
-    validate_syntax: bool = Field(default=True, description="Apply Pre-Flight Syntax Validator quantum bounds.")
-    apply_selection_rules: bool = Field(default=True, description="Apply Pre-Serialization Physics Filter selection rules.")
-    allowed_dipole_types: Optional[Set[str]] = Field(
-        default_factory=lambda: {"a", "b", "c"},
-        description="Allowed dipole transition types (e.g. {'a', 'b', 'c'} or {'b'}).",
-    )
-    drop_invalid_syntax: bool = Field(default=True, description="Drop lines failing quantum syntax validation.")
-    drop_forbidden_transitions: bool = Field(default=True, description="Drop lines violating physics selection rules.")
-    log_warnings: bool = Field(default=True, description="Emit structured log warnings for dropped lines.")
-    failed_log_path: Optional[str] = Field(default=None, description="Optional path to append failed lines log.")
-    default_uncertainty: float = Field(default=0.01, ge=0.0, description="Default uncertainty in MHz if missing.")
-    default_intensity: float = Field(default=1.0, description="Default intensity if missing.")
-    zarr_path: Optional[str] = Field(default=None, description="Optional path to spectra_fit.zarr for state persistence.")
-
-
-class ValidationReport(BaseModel):
-    """Comprehensive diagnostic summary of ingestion, syntax, and physics filtering."""
-    model_config = ConfigDict(extra="forbid")
-
-    total_lines_read: int = Field(..., ge=0, description="Total raw lines or rows parsed from input.")
-    valid_lines_count: int = Field(..., ge=0, description="Number of surviving lines passing all gates.")
-    syntax_dropped_count: int = Field(default=0, ge=0, description="Lines dropped by Pre-Flight Syntax Validator.")
-    physics_dropped_count: int = Field(default=0, ge=0, description="Lines dropped by Pre-Serialization Physics Filter.")
-    sha256_fingerprint: str = Field(..., description="Cryptographic SHA-256 fingerprint of input frequencies.")
-    warnings: List[str] = Field(default_factory=list, description="List of human-readable warnings emitted.")
-    syntax_violations: List[Dict[str, Any]] = Field(default_factory=list, description="Detailed syntax drop records.")
-    physics_violations: List[Dict[str, Any]] = Field(default_factory=list, description="Detailed physics drop records.")
-
-
-class IngestResult(BaseModel):
-    """Container holding sanitized Pandas DataFrame and validation metadata."""
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
-
-    df: Any = Field(..., description="Sanitized Pandas DataFrame with FP64 precision.")
-    report: ValidationReport = Field(..., description="Validation report and statistics.")
-    sha256_fingerprint: str = Field(..., description="SHA-256 cryptographic hash of frequency array.")
-    success: bool = Field(default=True, description="True if ingestion produced valid surviving data.")
-
-
-# =============================================================================
-# 3. FORTRAN NUMBER CONVERTER & FP64 PRECISION LOCK
-# =============================================================================
-
-def fortran_float_converter(val: Union[str, float, int]) -> float:
-    """
-    Safely converts a string containing Fortran scientific notation to a Python float64.
-
-    Handles:
-    - '1.2345D-05' -> 1.2345e-5
-    - '1.2345D+02' -> 1.2345e+02
-    - '1.2345d-05' -> 1.2345e-5
-    - '1.2345E-05' -> 1.2345e-5
-    - '12345.6789' -> 12345.6789
-    - '1.2345-05'  -> 1.2345e-5 (implicit exponent notation in Fortran)
-
-    Args:
-        val: Input string, integer, or float.
-
-    Returns:
-        Converted value as float.
-
-    Raises:
-        ValueError: If the string cannot be parsed into a valid float.
-    """
-    if isinstance(val, (int, float)):
-        return float(val)
-
-    s = str(val).strip()
-    if not s:
-        raise ValueError("Cannot convert empty string to float")
-
-    s_clean = s.replace("D", "e").replace("d", "e").replace("E", "e")
-
-    implicit_exp_pattern = re.compile(r"^([+-]?\d+\.?\d*)([+-]\d{2,3})$")
-    match = implicit_exp_pattern.match(s_clean)
-    if match and "e" not in s_clean:
-        s_clean = f"{match.group(1)}e{match.group(2)}"
-
-    try:
-        return float(s_clean)
-    except ValueError as exc:
-        raise ValueError(f"Failed to parse Fortran double precision float from {val!r}: {exc}") from exc
-
-
-def enforce_fp64_boundary(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Enforces JAX FP64 precision across the Pandas ingestion boundary.
-
-    1. Executes jax.config.update('jax_enable_x64', True) and sets JAX_ENABLE_X64='True'.
-    2. Explicitly casts all floating point columns to numpy.float64.
-    3. Explicitly casts all quantum number integer columns to numpy.int64.
-
-    Args:
-        df: Input Pandas DataFrame.
-
-    Returns:
-        DataFrame with strictly enforced float64 and int64 datatypes.
-    """
-    os.environ["JAX_ENABLE_X64"] = "True"
-    try:
-        jax.config.update("jax_enable_x64", True)
-    except Exception as e:
-        logger.debug(f"JAX FP64 config update notice: {e}")
-
-    df_out = df.copy()
-
-    float_cols = ["Frequency_MHz", "Uncertainty", "Intensity"]
-    int_cols = ["J_upper", "Ka_upper", "Kc_upper", "J_lower", "Ka_lower", "Kc_lower", "Delta_J", "Delta_Ka", "Delta_Kc"]
-
-    for col in df_out.columns:
-        if col in float_cols or (col not in int_cols and pd.api.types.is_float_dtype(df_out[col])):
-            df_out[col] = df_out[col].astype(np.float64)
-
-    for col in int_cols:
-        if col in df_out.columns:
-            df_out[col] = pd.to_numeric(df_out[col], errors="coerce").fillna(0).round().astype(np.int64)
-
-    return df_out
-
-
-# =============================================================================
-# 4. CRYPTOGRAPHIC FREQUENCY FINGERPRINTING & ZARR PERSISTENCE
-# =============================================================================
-
-def calculate_frequency_fingerprint(
-    frequencies: Union[np.ndarray, pd.Series, Sequence[float], bytes, str],
-) -> str:
-    """
-    Calculates an immutable SHA-256 cryptographic fingerprint of experimental frequencies.
-
-    Ensures that downstream Bayesian fitting state tensors (spectra_fit.zarr / spectra_fit.h5)
-    can be rigorously traced back to the exact untampered experimental upload.
-
-    Args:
-        frequencies: Array, Series, Sequence of numerical frequencies, or raw string/bytes.
-
-    Returns:
-        64-character hexadecimal SHA-256 digest string.
-    """
-    if isinstance(frequencies, bytes):
-        return hashlib.sha256(frequencies).hexdigest()
-
-    if isinstance(frequencies, str):
-        return hashlib.sha256(frequencies.encode("utf-8")).hexdigest()
-
-    arr = np.asarray(frequencies, dtype=np.float64)
-    if arr.size == 0:
-        return hashlib.sha256(b"EMPTY_ARRAY").hexdigest()
-
-    sorted_arr = np.sort(arr)
-    ascii_payload = "\n".join(f"{f:.6f}" for f in sorted_arr).encode("utf-8")
-    return hashlib.sha256(ascii_payload).hexdigest()
-
-
-def append_to_spectra_fit_zarr(
-    zarr_path: Union[str, Path],
-    frequencies: Union[np.ndarray, pd.Series, Sequence[float]],
-    sha256_hash: Optional[str] = None,
-    group_name: str = "state_matrix",
-    metadata: Optional[Dict[str, Any]] = None,
-) -> Any:
-    """
-    Appends experimental frequencies and cryptographic SHA-256 fingerprint to spectra_fit.zarr.
-
-    Args:
-        zarr_path: Path to the .zarr store (directory or zip store).
-        frequencies: Array or Series of ingested frequencies.
-        sha256_hash: Optional precomputed SHA-256 hash. If None, calculated dynamically.
-        group_name: Subgroup name in zarr root (default 'state_matrix').
-        metadata: Optional dictionary of supplementary provenance attributes.
-
-    Returns:
-        The zarr.Group object holding the state matrix and metadata attributes.
-    """
-    freq_arr = np.asarray(frequencies, dtype=np.float64)
-    fingerprint = sha256_hash or calculate_frequency_fingerprint(freq_arr)
-
-    path_obj = Path(zarr_path)
-    path_obj.parent.mkdir(parents=True, exist_ok=True)
-
-    root = zarr.open_group(str(path_obj), mode="a")
-    group = root.require_group(group_name)
-
-    # In Zarr 2 and 3, direct key assignment safely creates or updates the array
-    group["frequencies"] = freq_arr
-
-    group.attrs["sha256_fingerprint"] = fingerprint
-    group.attrs["frequency_count"] = int(freq_arr.size)
-    group.attrs["updated_at"] = datetime.now(timezone.utc).isoformat()
-    if metadata:
-        for k, v in metadata.items():
-            group.attrs[k] = v
-
-    return group
-
-
-# =============================================================================
-# 5. PRE-FLIGHT SYNTAX VALIDATOR (QUANTUM LOGIC GATE)
-# =============================================================================
-
-def validate_quantum_numbers(
-    df: pd.DataFrame,
-    drop_invalid: bool = True,
-    raise_on_error: bool = False,
-    log_warnings: bool = True,
-) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
-    """
-    Pre-Flight Syntax Validator (Quantum Logic Gate).
-
-    Mathematically intercepts and rejects impossible asymmetric rotor state assignments
-    prior to Hamiltonian matrix generation.
-
-    Enforces:
-    1. Positive definite bounds: J >= 0, Ka >= 0, Kc >= 0 for both upper and lower states.
-    2. Vector bounds: Ka <= J and Kc <= J for both states.
-    3. Asymmetric top sum rule (Rotational Parity):
-       For valid asymmetric rotor eigenstates, Ka + Kc must equal J or J + 1.
-       - Upper state: Ka' + Kc' in {J', J' + 1}
-       - Lower state: Ka'' + Kc'' in {J'', J'' + 1}
-
-    Failure Protocol:
-    Invalid lines are diagnosed. If raise_on_error is True, raises CoChemDataException.
-    Otherwise, invalid lines are logged with structured diagnostics and dropped.
-
-    Args:
-        df: Input DataFrame with quantum number columns (J_upper, Ka_upper, Kc_upper, etc.).
-        drop_invalid: If True, drops failing rows. If False, marks them in a 'syntax_valid' column.
-        raise_on_error: If True, raises CoChemDataException immediately upon detecting syntax violations.
-        log_warnings: If True, emits logger.warning for each dropped row.
-
-    Returns:
-        Tuple of (sanitized_df, list_of_syntax_violations).
-
-    Raises:
-        CoChemDataException: If raise_on_error is True and any row fails syntax validation.
-    """
-    if df.empty:
-        return df.copy(), []
-
-    qn_cols = ["J_upper", "Ka_upper", "Kc_upper", "J_lower", "Ka_lower", "Kc_lower"]
-    for col in qn_cols:
-        if col not in df.columns:
-            raise CoChemDataException(f"Missing required quantum number column '{col}' for syntax validation.")
-
-    violations: List[Dict[str, Any]] = []
-    valid_mask = np.ones(len(df), dtype=bool)
-
-    j_up = df["J_upper"].to_numpy(dtype=np.int64)
-    ka_up = df["Ka_upper"].to_numpy(dtype=np.int64)
-    kc_up = df["Kc_upper"].to_numpy(dtype=np.int64)
-    j_low = df["J_lower"].to_numpy(dtype=np.int64)
-    ka_low = df["Ka_lower"].to_numpy(dtype=np.int64)
-    kc_low = df["Kc_lower"].to_numpy(dtype=np.int64)
-
-    for idx in range(len(df)):
-        reasons: List[str] = []
-        ju, kau, kcu = j_up[idx], ka_up[idx], kc_up[idx]
-        jl, kal, kcl = j_low[idx], ka_low[idx], kc_low[idx]
-
-        if ju < 0 or kau < 0 or kcu < 0:
-            reasons.append(f"Negative upper quantum number: J'={ju}, Ka'={kau}, Kc'={kcu}")
-        if jl < 0 or kal < 0 or kcl < 0:
-            reasons.append(f"Negative lower quantum number: J''={jl}, Ka''={kal}, Kc''={kcl}")
-
-        if kau > ju:
-            reasons.append(f"Upper Ka' ({kau}) exceeds J' ({ju})")
-        if kcu > ju:
-            reasons.append(f"Upper Kc' ({kcu}) exceeds J' ({ju})")
-        if kal > jl:
-            reasons.append(f"Lower Ka'' ({kal}) exceeds J'' ({jl})")
-        if kcl > jl:
-            reasons.append(f"Lower Kc'' ({kcl}) exceeds J'' ({jl})")
-
-        sum_up = kau + kcu
-        if sum_up != ju and sum_up != (ju + 1):
-            reasons.append(
-                f"Syntax Ghost Line: Upper state Ka'+Kc' ({kau}+{kcu}={sum_up}) "
-                f"violates asymmetric top sum rule for J'={ju} (expected {ju} or {ju + 1})"
-            )
-
-        sum_low = kal + kcl
-        if sum_low != jl and sum_low != (jl + 1):
-            reasons.append(
-                f"Syntax Ghost Line: Lower state Ka''+Kc'' ({kal}+{kcl}={sum_low}) "
-                f"violates asymmetric top sum rule for J''={jl} (expected {jl} or {jl + 1})"
-            )
-
-        if reasons:
-            valid_mask[idx] = False
-            row_idx = df.index[idx]
-            diag = {
-                "row_index": int(row_idx),
-                "reasons": reasons,
-                "J_upper": int(ju),
-                "Ka_upper": int(kau),
-                "Kc_upper": int(kcu),
-                "J_lower": int(jl),
-                "Ka_lower": int(kal),
-                "Kc_lower": int(kcl),
-            }
-            violations.append(diag)
-            if log_warnings:
-                logger.warning(
-                    f"[SYNTAX GHOST LINE] Dropping row {row_idx}: {'; '.join(reasons)}"
-                )
-
-    if violations and raise_on_error:
-        raise CoChemDataException(
-            f"Pre-Flight Syntax Validator encountered {len(violations)} quantum number violations: {violations}"
-        )
-
-    if drop_invalid:
-        sanitized_df = df[valid_mask].copy().reset_index(drop=True)
-    else:
-        sanitized_df = df.copy()
-        sanitized_df["syntax_valid"] = valid_mask
-
-    return sanitized_df, violations
-
-
-# =============================================================================
-# 6. PRE-SERIALIZATION PHYSICS FILTER (SELECTION RULES)
-# =============================================================================
-
-def classify_transition_parity_and_dipole(
-    j_up: int,
-    ka_up: int,
-    kc_up: int,
-    j_low: int,
-    ka_low: int,
-    kc_low: int,
-) -> Tuple[BranchType, DipoleType, Parity, Parity, int, int, int]:
-    """
-    Classifies a rotational transition's branch (P, Q, R), state parities, and dipole type (a, b, c).
-
-    Asymmetric Top Selection Rules:
-    - Delta J in {-1, 0, +1} (P: -1, Q: 0, R: +1). J=0 -> 0 is strictly forbidden.
-    - Parity of state: (Ka mod 2, Kc mod 2) in {ee, eo, oe, oo}.
-    - a-type (along a-axis, mu_a != 0): Delta Ka even, Delta Kc odd (ee <-> eo, oe <-> oo).
-    - b-type (along b-axis, mu_b != 0): Delta Ka odd, Delta Kc odd (ee <-> oo, eo <-> oe).
-    - c-type (along c-axis, mu_c != 0): Delta Ka odd, Delta Kc even (ee <-> oe, eo <-> oo).
-
-    Returns:
-        Tuple of (branch, dipole_type, upper_parity, lower_parity, delta_j, delta_ka, delta_kc).
-    """
-    delta_j = j_up - j_low
-    delta_ka = ka_up - ka_low
-    delta_kc = kc_up - kc_low
-
-    if delta_j == -1:
-        branch = BranchType.P
-    elif delta_j == 0:
-        branch = BranchType.Q
-    elif delta_j == 1:
-        branch = BranchType.R
-    else:
-        branch = BranchType.INVALID
-
-    parity_map = {
-        (0, 0): Parity.EE,
-        (0, 1): Parity.EO,
-        (1, 0): Parity.OE,
-        (1, 1): Parity.OO,
-    }
-    up_parity = parity_map[(ka_up % 2, kc_up % 2)]
-    low_parity = parity_map[(ka_low % 2, kc_low % 2)]
-
-    if j_up == 0 and j_low == 0:
-        dipole_type = DipoleType.FORBIDDEN
-        return branch, dipole_type, up_parity, low_parity, delta_j, delta_ka, delta_kc
-
-    if abs(delta_j) > 1:
-        dipole_type = DipoleType.FORBIDDEN
-        return branch, dipole_type, up_parity, low_parity, delta_j, delta_ka, delta_kc
-
-    d_ka_even = (abs(delta_ka) % 2 == 0)
-    d_kc_even = (abs(delta_kc) % 2 == 0)
-
-    if d_ka_even and not d_kc_even:
-        dipole_type = DipoleType.A
-    elif not d_ka_even and not d_kc_even:
-        dipole_type = DipoleType.B
-    elif not d_ka_even and d_kc_even:
-        dipole_type = DipoleType.C
-    else:
-        dipole_type = DipoleType.FORBIDDEN
-
-    return branch, dipole_type, up_parity, low_parity, delta_j, delta_ka, delta_kc
-
-
-def apply_selection_rules(
-    df: pd.DataFrame,
-    allowed_dipole_types: Optional[Set[str]] = None,
-    drop_forbidden: bool = True,
-    raise_on_error: bool = False,
-    log_warnings: bool = True,
-) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
-    """
-    In-Memory Pre-Serialization Physics Filter (Selection Rules).
-
-    Applies rigid quantum selection rules in-memory before serialization:
-    1. Enforces Delta J in {-1, 0, +1} and excludes J = 0 -> 0.
-    2. Enforces active dipole transition parity constraints (a-type, b-type, c-type).
-    3. Strips out forbidden transitions to prevent wasted compute and I/O.
-
-    Args:
-        df: Input DataFrame with validated quantum numbers.
-        allowed_dipole_types: Set of allowed dipole types (e.g. {'a', 'b', 'c'} or {'b'}).
-        drop_forbidden: If True, removes forbidden lines from returned DataFrame.
-        raise_on_error: If True, raises CoChemDataException when forbidden transitions occur.
-        log_warnings: If True, logs warning messages for each forbidden line.
-
-    Returns:
-        Tuple of (filtered_df, list_of_physics_violations).
-
-    Raises:
-        CoChemDataException: If raise_on_error is True and forbidden transitions are found.
-    """
-    if df.empty:
-        return df.copy(), []
-
-    allowed_types = {t.lower() for t in allowed_dipole_types} if allowed_dipole_types else {"a", "b", "c"}
-
-    violations: List[Dict[str, Any]] = []
-    valid_mask = np.ones(len(df), dtype=bool)
-
-    branches: List[str] = []
-    dipoles: List[str] = []
-    d_j_list: List[int] = []
-    d_ka_list: List[int] = []
-    d_kc_list: List[int] = []
-    up_parities: List[str] = []
-    low_parities: List[str] = []
-
-    j_up = df["J_upper"].to_numpy(dtype=np.int64)
-    ka_up = df["Ka_upper"].to_numpy(dtype=np.int64)
-    kc_up = df["Kc_upper"].to_numpy(dtype=np.int64)
-    j_low = df["J_lower"].to_numpy(dtype=np.int64)
-    ka_low = df["Ka_lower"].to_numpy(dtype=np.int64)
-    kc_low = df["Kc_lower"].to_numpy(dtype=np.int64)
-
-    for idx in range(len(df)):
-        ju, kau, kcu = j_up[idx], ka_up[idx], kc_up[idx]
-        jl, kal, kcl = j_low[idx], ka_low[idx], kc_low[idx]
-
-        branch, dipole, up_par, low_par, dj, dka, dkc = classify_transition_parity_and_dipole(
-            ju, kau, kcu, jl, kal, kcl
-        )
-
-        branches.append(branch.value)
-        dipoles.append(dipole.value)
-        d_j_list.append(dj)
-        d_ka_list.append(dka)
-        d_kc_list.append(dkc)
-        up_parities.append(up_par.value)
-        low_parities.append(low_par.value)
-
-        reasons: List[str] = []
-        if ju == 0 and jl == 0:
-            reasons.append("Dipole-forbidden J=0 -> 0 transition")
-        elif abs(dj) > 1:
-            reasons.append(f"Forbidden Delta J = {dj} (|Delta J| > 1)")
-        elif dipole == DipoleType.FORBIDDEN:
-            reasons.append(f"Dipole-forbidden parity transition ({up_par.value} <-> {low_par.value})")
-        elif dipole.value not in allowed_types:
-            reasons.append(
-                f"Transition dipole type '{dipole.value}' not in allowed set {sorted(allowed_types)}"
-            )
-
-        if reasons:
-            valid_mask[idx] = False
-            row_idx = df.index[idx]
-            diag = {
-                "row_index": int(row_idx),
-                "reasons": reasons,
-                "branch": branch.value,
-                "dipole_type": dipole.value,
-                "delta_j": int(dj),
-                "delta_ka": int(dka),
-                "delta_kc": int(dkc),
-                "upper_parity": up_par.value,
-                "lower_parity": low_par.value,
-            }
-            violations.append(diag)
-            if log_warnings:
-                logger.warning(
-                    f"[PHYSICS FILTER] Dropping forbidden transition at row {row_idx}: {'; '.join(reasons)}"
-                )
-
-    if violations and raise_on_error:
-        raise CoChemDataException(
-            f"Pre-Serialization Physics Filter found {len(violations)} forbidden transitions: {violations}"
-        )
-
-    df_annotated = df.copy()
-    df_annotated["Branch"] = branches
-    df_annotated["Dipole_Type"] = dipoles
-    df_annotated["Delta_J"] = d_j_list
-    df_annotated["Delta_Ka"] = d_ka_list
-    df_annotated["Delta_Kc"] = d_kc_list
-    df_annotated["Upper_Parity"] = up_parities
-    df_annotated["Lower_Parity"] = low_parities
-
-    if drop_forbidden:
-        filtered_df = df_annotated[valid_mask].copy().reset_index(drop=True)
-    else:
-        filtered_df = df_annotated
-        filtered_df["physics_valid"] = valid_mask
-
-    return filtered_df, violations
-
-
-# =============================================================================
-# 7. PARSERS: PICKETT LIN, PAR, AND MODERN CSV/STRUCTURED
-# =============================================================================
-
-def parse_legacy_pickett(
-    lines_or_path: Union[List[str], str, Path, bytes, io.StringIO],
-    config: Optional[IngestConfig] = None,
-) -> Tuple[pd.DataFrame, List[str]]:
-    """
-    Parses legacy Pickett .lin / .cat files using strict positional and regex parsing.
-
-    Translates Fortran double-precision exponential notation ('D-05', 'D+02', '1.2345-05' -> FP64).
-    Failing lines are appended to failed_ingest.log located at platformdirs.user_log_path("CoChem").
-
-    Args:
-        lines_or_path: File path, list of line strings, single string content, bytes, or StringIO.
-        config: Optional IngestConfig for defaults and custom log path.
-
-    Returns:
-        Tuple of (parsed_df, list_of_failed_raw_lines).
-    """
-    cfg = config or IngestConfig()
-    lines: List[str] = []
-
-    if isinstance(lines_or_path, list):
-        lines = lines_or_path
-    elif isinstance(lines_or_path, Path):
-        if not lines_or_path.is_file():
-            raise FileNotFoundError(f"Pickett file not found: {lines_or_path}")
-        with open(str(lines_or_path), "r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-    elif isinstance(lines_or_path, str):
-        if "\n" not in lines_or_path and os.path.exists(lines_or_path):
-            with open(lines_or_path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
-        elif "\n" not in lines_or_path and (
-            lines_or_path.endswith((".lin", ".cat", ".par", ".var")) or "/" in lines_or_path or "\\" in lines_or_path
-        ):
-            raise FileNotFoundError(f"Pickett file not found: {lines_or_path}")
-        else:
-            lines = lines_or_path.splitlines()
-    elif isinstance(lines_or_path, bytes):
-        lines = lines_or_path.decode("utf-8", errors="replace").splitlines()
-    elif isinstance(lines_or_path, io.StringIO):
-        lines = lines_or_path.getvalue().splitlines()
-    else:
-        raise ValueError(f"Unsupported content input type: {type(lines_or_path)}")
-
-    parsed_records: List[Dict[str, Any]] = []
-    failed_lines: List[str] = []
-
-    free_pattern = re.compile(
-        r"^\s*([+-]?\d+)\s+([+-]?\d+)\s+([+-]?\d+)(?:\s+[+-]?\d+){0,3}\s+"
-        r"([+-]?\d+)\s+([+-]?\d+)\s+([+-]?\d+)(?:\s+[+-]?\d+){0,3}\s+"
-        r"([+-]?\d+(?:\.\d*)?(?:[dDeE][+-]?\d+)?)\s+"
-        r"([+-]?\d+(?:\.\d*)?(?:[dDeE][+-]?\d+)?)"
-        r"(?:\s+([+-]?\d+(?:\.\d*)?(?:[dDeE][+-]?\d+)?))?"
-    )
-
-    jpl_cat_pattern = re.compile(
-        r"^\s*([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+"
-        r"([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+"
-        r"([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+"
-        r"([+-]?\d+)\s+"
-        r"([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+"
-        r"([+-]?\d+)\s+"
-        r"([+-]?\d+)\s+"
-        r"(\d+)\s+"
-        r"([+-]?\d+)\s+([+-]?\d+)\s+([+-]?\d+)(?:\s+[+-]?\d+){0,3}\s+"
-        r"([+-]?\d+)\s+([+-]?\d+)\s+([+-]?\d+)"
-    )
-
-    for line_no, raw_line in enumerate(lines, 1):
-        line = raw_line.strip()
-        if not line or line.startswith("#") or line.startswith("!"):
-            continue
-
-        matched = False
-
-        cat_match = jpl_cat_pattern.match(line)
-        if cat_match:
-            try:
-                freq = fortran_float_converter(cat_match.group(1))
-                unc = fortran_float_converter(cat_match.group(2))
-                intensity = fortran_float_converter(cat_match.group(3))
-                ju = int(cat_match.group(9))
-                kau = int(cat_match.group(10))
-                kcu = int(cat_match.group(11))
-                jl = int(cat_match.group(12))
-                kal = int(cat_match.group(13))
-                kcl = int(cat_match.group(14))
-
-                parsed_records.append({
-                    "Frequency_MHz": np.float64(freq),
-                    "Uncertainty": np.float64(unc),
-                    "Intensity": np.float64(intensity),
-                    "J_upper": int(ju),
-                    "Ka_upper": int(kau),
-                    "Kc_upper": int(kcu),
-                    "J_lower": int(jl),
-                    "Ka_lower": int(kal),
-                    "Kc_lower": int(kcl),
-                })
-                matched = True
-            except Exception as e:
-                logger.debug(f"Catalog match parse failed at line {line_no}: {e}")
-
-        if not matched:
-            free_match = free_pattern.match(line)
-            if free_match:
-                try:
-                    ju = int(free_match.group(1))
-                    kau = int(free_match.group(2))
-                    kcu = int(free_match.group(3))
-                    jl = int(free_match.group(4))
-                    kal = int(free_match.group(5))
-                    kcl = int(free_match.group(6))
-                    freq = fortran_float_converter(free_match.group(7))
-                    unc = fortran_float_converter(free_match.group(8))
-                    raw_int = free_match.group(9)
-                    intensity = fortran_float_converter(raw_int) if raw_int else cfg.default_intensity
-
-                    parsed_records.append({
-                        "Frequency_MHz": np.float64(freq),
-                        "Uncertainty": np.float64(unc),
-                        "Intensity": np.float64(intensity),
-                        "J_upper": int(ju),
-                        "Ka_upper": int(kau),
-                        "Kc_upper": int(kcu),
-                        "J_lower": int(jl),
-                        "Ka_lower": int(kal),
-                        "Kc_lower": int(kcl),
-                    })
-                    matched = True
-                except Exception as e:
-                    logger.debug(f"Pickett line regex parse failed at line {line_no}: {e}")
-
-        if not matched:
-            if len(raw_line) >= 40:
-                try:
-                    part_ju = raw_line[0:3].strip()
-                    part_kau = raw_line[3:6].strip()
-                    part_kcu = raw_line[6:9].strip()
-                    part_jl = raw_line[18:21].strip()
-                    part_kal = raw_line[21:24].strip()
-                    part_kcl = raw_line[24:27].strip()
-                    part_freq = raw_line[36:49].strip()
-                    part_unc = raw_line[49:57].strip()
-                    part_int = raw_line[57:65].strip() if len(raw_line) >= 65 else ""
-
-                    if part_ju and part_jl and part_freq:
-                        ju = int(part_ju)
-                        kau = int(part_kau) if part_kau else 0
-                        kcu = int(part_kcu) if part_kcu else 0
-                        jl = int(part_jl)
-                        kal = int(part_kal) if part_kal else 0
-                        kcl = int(part_kcl) if part_kcl else 0
-                        freq = fortran_float_converter(part_freq)
-                        unc = fortran_float_converter(part_unc) if part_unc else cfg.default_uncertainty
-                        intensity = fortran_float_converter(part_int) if part_int else cfg.default_intensity
-
-                        parsed_records.append({
-                            "Frequency_MHz": np.float64(freq),
-                            "Uncertainty": np.float64(unc),
-                            "Intensity": np.float64(intensity),
-                            "J_upper": int(ju),
-                            "Ka_upper": int(kau),
-                            "Kc_upper": int(kcu),
-                            "J_lower": int(jl),
-                            "Ka_lower": int(kal),
-                            "Kc_lower": int(kcl),
-                        })
-                        matched = True
-                except Exception as e:
-                    logger.debug(f"Fixed-width positional parse failed at line {line_no}: {e}")
-
-        if not matched:
-            failed_lines.append(raw_line)
-            if cfg.log_warnings:
-                logger.warning(f"[INGEST PARSE FAILURE] Line {line_no} failed regex parsing: {raw_line.strip()!r}")
-
-    if failed_lines:
-        log_dest: Path
-        if cfg.failed_log_path:
-            log_dest = Path(cfg.failed_log_path)
-        else:
-            log_dest = user_log_path("CoChem") / "failed_ingest.log"
-
-        try:
-            log_dest.parent.mkdir(parents=True, exist_ok=True)
-            with open(log_dest, "a", encoding="utf-8") as f:
-                for fl in failed_lines:
-                    f.write(f"{fl.rstrip()}\n")
-        except Exception as e:
-            logger.debug(f"Could not write to log path {log_dest}: {e}")
-
-    if not parsed_records:
-        df_res = pd.DataFrame(columns=CANONICAL_COLUMNS)
-    else:
-        df_res = pd.DataFrame(parsed_records)
-
-    return enforce_fp64_boundary(df_res), failed_lines
-
-
-parse_pickett_lin = parse_legacy_pickett
-
-
-def parse_pickett_par(
-    content_or_path: Union[str, Path, bytes, io.StringIO],
-) -> PickettParFile:
-    """
-    Parses a legacy Pickett parameter file (.par / .var).
-
-    Structure:
-    Line 1: Title
-    Line 2: Control line (npar, nline, nopt, nwarn, erpar, wtfac, scale, maxit)
-    Subsequent lines: Parameters (code, value, uncertainty, label)
-
-    Args:
-        content_or_path: File path, string content, bytes, or StringIO.
-
-    Returns:
-        Structured PickettParFile instance.
-    """
-    lines: List[str] = []
-    if isinstance(content_or_path, Path):
-        if not content_or_path.is_file():
-            raise FileNotFoundError(f"Pickett .par/.var file not found: {content_or_path}")
-        with open(str(content_or_path), "r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-    elif isinstance(content_or_path, str):
-        if "\n" not in content_or_path and os.path.exists(content_or_path):
-            with open(content_or_path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
-        elif "\n" not in content_or_path and (
-            content_or_path.endswith((".par", ".var", ".lin", ".cat")) or "/" in content_or_path or "\\" in content_or_path
-        ):
-            raise FileNotFoundError(f"Pickett .par/.var file not found: {content_or_path}")
-        else:
-            lines = content_or_path.splitlines()
-    elif isinstance(content_or_path, bytes):
-        lines = content_or_path.decode("utf-8", errors="replace").splitlines()
-    elif isinstance(content_or_path, io.StringIO):
-        lines = content_or_path.getvalue().splitlines()
-    else:
-        raise ValueError(f"Unsupported content type: {type(content_or_path)}")
-
-    non_empty = [l.rstrip() for l in lines if l.strip()]
-    if len(non_empty) < 2:
-        raise ValueError("Pickett .par/.var file must have at least a title and a control line.")
-
-    title = non_empty[0].strip()
-    control_line = non_empty[1].strip()
-
-    ctrl_parts = control_line.split()
-    npar = int(ctrl_parts[0]) if len(ctrl_parts) > 0 else 0
-    nline = int(ctrl_parts[1]) if len(ctrl_parts) > 1 else 0
-    nopt = int(ctrl_parts[2]) if len(ctrl_parts) > 2 else 0
-    nwarn = int(ctrl_parts[3]) if len(ctrl_parts) > 3 else 0
-    erpar = fortran_float_converter(ctrl_parts[4]) if len(ctrl_parts) > 4 else 1.0
-    wtfac = fortran_float_converter(ctrl_parts[5]) if len(ctrl_parts) > 5 else 1.0
-    scale = fortran_float_converter(ctrl_parts[6]) if len(ctrl_parts) > 6 else 1.0
-    maxit = int(ctrl_parts[7]) if len(ctrl_parts) > 7 else 50
-
-    parameters: List[PickettParameter] = []
-    param_line_pattern = re.compile(
-        r"^\s*(\d+)\s+([+-]?\d+(?:\.\d*)?(?:[dDeE][+-]?\d+)?)\s+([+-]?\d+(?:\.\d*)?(?:[dDeE][+-]?\d+)?)(?:\s*(?:/|!)\s*(.*))?"
-    )
-
-    for p_line in non_empty[2:]:
-        match = param_line_pattern.match(p_line)
-        if match:
-            pid = int(match.group(1))
-            val = fortran_float_converter(match.group(2))
-            unc = fortran_float_converter(match.group(3))
-            lbl = (match.group(4) or "").strip()
-            parameters.append(PickettParameter(param_id=pid, value=val, uncertainty=unc, label=lbl))
-
-    return PickettParFile(
-        title=title,
-        npar=len(parameters),
-        nline=nline,
-        nopt=nopt,
-        nwarn=nwarn,
-        erpar=erpar,
-        wtfac=wtfac,
-        scale=scale,
-        maxit=maxit,
-        parameters=parameters,
-    )
-
-
-def parse_csv_spectroscopy(
-    content_or_path: Union[str, Path, bytes, io.StringIO],
-    config: Optional[IngestConfig] = None,
-) -> pd.DataFrame:
-    """
-    Parses modern structured spectroscopy files (.csv, .tsv, .parquet, .json).
-
-    Standardizes column name variations to canonical naming convention:
-    ['Frequency_MHz', 'Uncertainty', 'Intensity', 'J_upper', 'Ka_upper', 'Kc_upper',
-     'J_lower', 'Ka_lower', 'Kc_lower'].
-
-    Args:
-        content_or_path: File path, string content, bytes, or StringIO.
-        config: IngestConfig options.
-
-    Returns:
-        Standardized Pandas DataFrame with FP64 precision.
-    """
-    cfg = config or IngestConfig()
-
-    if isinstance(content_or_path, (str, Path)) and str(content_or_path).endswith(".parquet"):
-        if not os.path.exists(str(content_or_path)):
-            raise FileNotFoundError(f"Parquet file not found: {content_or_path}")
-        df_raw = pd.read_parquet(str(content_or_path))
-    elif isinstance(content_or_path, (str, Path)) and str(content_or_path).endswith(".json"):
-        if not os.path.exists(str(content_or_path)):
-            raise FileNotFoundError(f"JSON file not found: {content_or_path}")
-        df_raw = pd.read_json(str(content_or_path))
-    elif isinstance(content_or_path, io.StringIO):
-        df_raw = pd.read_csv(content_or_path, sep=None, engine="python")
-    elif isinstance(content_or_path, bytes):
-        df_raw = pd.read_csv(io.BytesIO(content_or_path), sep=None, engine="python")
-    elif isinstance(content_or_path, Path):
-        if not content_or_path.is_file():
-            raise FileNotFoundError(f"Spectroscopy file not found: {content_or_path}")
-        df_raw = pd.read_csv(str(content_or_path), sep=None, engine="python")
-    elif isinstance(content_or_path, str):
-        if "\n" not in content_or_path and os.path.exists(content_or_path):
-            df_raw = pd.read_csv(content_or_path, sep=None, engine="python")
-        elif "\n" not in content_or_path and (
-            content_or_path.endswith((".csv", ".tsv", ".txt")) or "/" in content_or_path or "\\" in content_or_path
-        ):
-            raise FileNotFoundError(f"Spectroscopy file not found: {content_or_path}")
-        else:
-            df_raw = pd.read_csv(io.StringIO(content_or_path), sep=None, engine="python")
-    else:
-        raise ValueError(f"Unsupported content type: {type(content_or_path)}")
-
-    col_map: Dict[str, str] = {
-        "frequency_mhz": "Frequency_MHz",
-        "frequency": "Frequency_MHz",
-        "freq_mhz": "Frequency_MHz",
-        "freq": "Frequency_MHz",
-        "nu_mhz": "Frequency_MHz",
-        "nu": "Frequency_MHz",
-        "f_mhz": "Frequency_MHz",
-        "f": "Frequency_MHz",
-        "uncertainty": "Uncertainty",
-        "uncertainty_mhz": "Uncertainty",
-        "unc": "Uncertainty",
-        "unc_mhz": "Uncertainty",
-        "err": "Uncertainty",
-        "error": "Uncertainty",
-        "sigma": "Uncertainty",
-        "intensity": "Intensity",
-        "int": "Intensity",
-        "logint": "Intensity",
-        "weight": "Intensity",
-        "wt": "Intensity",
-        "s_mu2": "Intensity",
-        "j_upper": "J_upper",
-        "j_prime": "J_upper",
-        "j'": "J_upper",
-        "j1": "J_upper",
-        "j_up": "J_upper",
-        "ju": "J_upper",
-        "ka_upper": "Ka_upper",
-        "ka_prime": "Ka_upper",
-        "ka'": "Ka_upper",
-        "ka1": "Ka_upper",
-        "ka_up": "Ka_upper",
-        "kau": "Ka_upper",
-        "kc_upper": "Kc_upper",
-        "kc_prime": "Kc_upper",
-        "kc'": "Kc_upper",
-        "kc1": "Kc_upper",
-        "kc_up": "Kc_upper",
-        "kcu": "Kc_upper",
-        "j_lower": "J_lower",
-        "j_double_prime": "J_lower",
-        "j''": "J_lower",
-        "j2": "J_lower",
-        "j_low": "J_lower",
-        "jl": "J_lower",
-        "ka_lower": "Ka_lower",
-        "ka_double_prime": "Ka_lower",
-        "ka''": "Ka_lower",
-        "ka2": "Ka_lower",
-        "ka_low": "Ka_lower",
-        "kal": "Ka_lower",
-        "kc_lower": "Kc_lower",
-        "kc_double_prime": "Kc_lower",
-        "kc''": "Kc_lower",
-        "kc2": "Kc_lower",
-        "kc_low": "Kc_lower",
-        "kcl": "Kc_lower",
-    }
-
-    rename_dict: Dict[str, str] = {}
-    for c in df_raw.columns:
-        c_clean = str(c).strip().lower()
-        if c_clean in col_map:
-            rename_dict[c] = col_map[c_clean]
-
-    df_renamed = df_raw.rename(columns=rename_dict)
-
-    required_core = ["Frequency_MHz", "J_upper", "Ka_upper", "Kc_upper", "J_lower", "Ka_lower", "Kc_lower"]
-    missing = [c for c in required_core if c not in df_renamed.columns]
-    if missing:
-        raise CoChemDataException(
-            f"CSV spectroscopy data missing mandatory columns: {missing}. Present: {list(df_renamed.columns)}"
-        )
-
-    if "Uncertainty" not in df_renamed.columns:
-        df_renamed["Uncertainty"] = cfg.default_uncertainty
-    if "Intensity" not in df_renamed.columns:
-        df_renamed["Intensity"] = cfg.default_intensity
-
-    for col in ["Frequency_MHz", "Uncertainty", "Intensity"]:
-        if df_renamed[col].dtype == object:
-            df_renamed[col] = df_renamed[col].apply(fortran_float_converter)
-
-    return enforce_fp64_boundary(df_renamed[CANONICAL_COLUMNS])
-
-
-# =============================================================================
-# 8. MASTER UNIFIED INGESTION ENGINE
-# =============================================================================
-
-def parse_spectroscopy_data(
-    file_path_or_content: Union[str, Path, bytes, io.StringIO],
-    format_hint: Optional[str] = None,
-    config: Optional[IngestConfig] = None,
-    zarr_path: Optional[Union[str, Path]] = None,
-) -> IngestResult:
-    """
-    Master Ingestion Engine & Gatekeeper (cochem_spycfit_ingest).
-
-    Orchestrates:
-    1. Automatic format detection (.lin, .par, .cat, .csv, .parquet, .json).
-    2. Bidirectional parsing of legacy Pickett lines and modern tabular structures.
-    3. JAX FP64 precision boundary enforcement (float64).
-    4. Cryptographic SHA-256 frequency fingerprinting.
-    5. Persistence to spectra_fit.zarr if zarr_path is configured.
-    6. Pre-Flight Syntax Validator (Quantum Logic Gate) for quantum number bounds.
-    7. In-memory Pre-Serialization Physics Filter (Selection Rules).
-    8. Construction of comprehensive ValidationReport and IngestResult.
-
-    Args:
-        file_path_or_content: File path, string content, bytes, or StringIO.
-        format_hint: Optional explicit format override ('lin', 'cat', 'csv', 'parquet', 'json').
-        config: Optional IngestConfig configuration options.
-        zarr_path: Optional path to spectra_fit.zarr to append the state matrix.
-
-    Returns:
-        IngestResult containing sanitized DataFrame, ValidationReport, and SHA-256 fingerprint.
-    """
-    cfg = config or IngestConfig()
-    warnings_list: List[str] = []
-
-    effective_zarr_path = zarr_path or cfg.zarr_path
-
-    fmt = (format_hint or "").lower().strip()
-    if not fmt:
-        if isinstance(file_path_or_content, Path):
-            suffix = file_path_or_content.suffix.lower().replace(".", "")
-            if suffix in ["lin", "cat", "par", "var", "csv", "tsv", "parquet", "json"]:
-                fmt = suffix
-        elif isinstance(file_path_or_content, str) and "\n" not in file_path_or_content:
-            try:
-                p = Path(file_path_or_content)
-                suffix = p.suffix.lower().replace(".", "")
-                if suffix in ["lin", "cat", "par", "var", "csv", "tsv", "parquet", "json"]:
-                    fmt = suffix
-            except Exception as exc:
-                logger.debug(f"Suffix resolution failed for {file_path_or_content}: {exc}")
-
-    if fmt in ["lin", "cat"]:
-        raw_df, failed_lines = parse_legacy_pickett(file_path_or_content, config=cfg)
-        if failed_lines:
-            warnings_list.append(f"{len(failed_lines)} raw line(s) failed regex parsing and were skipped.")
-    elif fmt in ["par", "var"]:
-        par_file = parse_pickett_par(file_path_or_content)
-        par_records = [
-            {"param_id": p.param_id, "value": p.value, "uncertainty": p.uncertainty, "label": p.label}
-            for p in par_file.parameters
-        ]
-        df_par = pd.DataFrame(par_records)
-        fp = calculate_frequency_fingerprint([p.value for p in par_file.parameters])
-        if effective_zarr_path:
-            append_to_spectra_fit_zarr(
-                zarr_path=effective_zarr_path,
-                frequencies=[p.value for p in par_file.parameters],
-                sha256_hash=fp,
-                group_name="pickett_parameters",
-            )
-        report = ValidationReport(
-            total_lines_read=len(par_file.parameters),
-            valid_lines_count=len(par_file.parameters),
-            syntax_dropped_count=0,
-            physics_dropped_count=0,
-            sha256_fingerprint=fp,
-            warnings=[],
-            syntax_violations=[],
-            physics_violations=[],
-        )
-        return IngestResult(df=df_par, report=report, sha256_fingerprint=fp, success=True)
-    elif fmt in ["parquet", "json", "csv", "tsv"]:
-        raw_df = parse_csv_spectroscopy(file_path_or_content, config=cfg)
-    else:
-        try:
-            raw_df = parse_csv_spectroscopy(file_path_or_content, config=cfg)
-        except Exception:
-            raw_df, failed_lines = parse_legacy_pickett(file_path_or_content, config=cfg)
-            if failed_lines:
-                warnings_list.append(f"{len(failed_lines)} raw line(s) failed regex parsing.")
-
-    total_read = len(raw_df)
-
-    fingerprint = calculate_frequency_fingerprint(raw_df["Frequency_MHz"])
-
-    if effective_zarr_path:
-        append_to_spectra_fit_zarr(
-            zarr_path=effective_zarr_path,
-            frequencies=raw_df["Frequency_MHz"],
-            sha256_hash=fingerprint,
-            group_name="state_matrix",
-        )
-
-    if cfg.validate_syntax:
-        syntax_df, syntax_violations = validate_quantum_numbers(
-            raw_df,
-            drop_invalid=cfg.drop_invalid_syntax,
-            raise_on_error=False,
-            log_warnings=cfg.log_warnings,
-        )
-        syntax_dropped = len(syntax_violations) if cfg.drop_invalid_syntax else 0
-        if syntax_dropped > 0:
-            warnings_list.append(f"Pre-Flight Syntax Validator dropped {syntax_dropped} unphysical quantum assignment(s).")
-    else:
-        syntax_df = raw_df
-        syntax_violations = []
-        syntax_dropped = 0
-
-    if cfg.apply_selection_rules:
-        physics_df, physics_violations = apply_selection_rules(
-            syntax_df,
-            allowed_dipole_types=cfg.allowed_dipole_types,
-            drop_forbidden=cfg.drop_forbidden_transitions,
-            raise_on_error=False,
-            log_warnings=cfg.log_warnings,
-        )
-        physics_dropped = len(physics_violations) if cfg.drop_forbidden_transitions else 0
-        if physics_dropped > 0:
-            warnings_list.append(f"Pre-Serialization Physics Filter dropped {physics_dropped} forbidden transition(s).")
-    else:
-        physics_df = syntax_df
-        physics_violations = []
-        physics_dropped = 0
-
-    final_df = enforce_fp64_boundary(physics_df)
-
-    report = ValidationReport(
-        total_lines_read=total_read,
-        valid_lines_count=len(final_df),
-        syntax_dropped_count=syntax_dropped,
-        physics_dropped_count=physics_dropped,
-        sha256_fingerprint=fingerprint,
-        warnings=warnings_list,
-        syntax_violations=syntax_violations,
-        physics_violations=physics_violations,
-    )
-
-    return IngestResult(
-        df=final_df,
-        report=report,
-        sha256_fingerprint=fingerprint,
-        success=(len(final_df) > 0 or total_read == 0),
-    )
-
-
-__all__ = [
-    "FileFormat",
-    "BranchType",
-    "DipoleType",
-    "Parity",
-    "CANONICAL_COLUMNS",
-    "SpectroscopySchema",
-    "SpectroscopyTransition",
-    "PickettParameter",
-    "PickettParFile",
-    "IngestConfig",
-    "ValidationReport",
-    "IngestResult",
-    "CoChemDataException",
-    "fortran_float_converter",
-    "enforce_fp64_boundary",
-    "calculate_frequency_fingerprint",
-    "append_to_spectra_fit_zarr",
-    "validate_quantum_numbers",
-    "classify_transition_parity_and_dipole",
-    "apply_selection_rules",
-    "parse_legacy_pickett",
-    "parse_pickett_lin",
-    "parse_pickett_par",
-    "parse_csv_spectroscopy",
-    "parse_spectroscopy_data",
-]
 
 --- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\intake\__init__.py ---
 """CoChem-SpycFit intake subpackage."""
@@ -1722,7 +74,9 @@ from cochem_spycfit.intake.cochem_spycfit_ingest import (
 )
 from cochem_spycfit.intake.cochem_spycfit_triage import (
     AU_TO_WAVENUMBER_CONVERSION,
+    EckartAxisReorientationResult,
     HarmonicVibrationalResult,
+    IsotopeQuarantineError,
     IsotopeSpec,
     IsotopeTriageResult,
     IsotopologueData,
@@ -1737,6 +91,7 @@ from cochem_spycfit.intake.cochem_spycfit_triage import (
     calculate_triage_provenance_hash,
     check_isotope_abundance,
     compute_harmonic_vibrational_frequencies,
+    eckart_axis_reorientation,
     evaluate_isotopologue_abundance,
     get_isotope_properties,
     identify_polyad_blocks,
@@ -1746,6 +101,7 @@ from cochem_spycfit.intake.cochem_spycfit_triage import (
     scan_coriolis_resonances,
     scan_darling_dennison_resonances,
     scan_fermi_resonances,
+    scan_resonance_traps,
     trap_resonances,
     triage_spectroscopic_system,
 )
@@ -1817,7 +173,9 @@ __all__ = [
     "validate_quantum_numbers",
     # Triage
     "AU_TO_WAVENUMBER_CONVERSION",
+    "EckartAxisReorientationResult",
     "HarmonicVibrationalResult",
+    "IsotopeQuarantineError",
     "IsotopeSpec",
     "IsotopeTriageResult",
     "IsotopologueData",
@@ -1832,6 +190,7 @@ __all__ = [
     "calculate_triage_provenance_hash",
     "check_isotope_abundance",
     "compute_harmonic_vibrational_frequencies",
+    "eckart_axis_reorientation",
     "evaluate_isotopologue_abundance",
     "get_isotope_properties",
     "identify_polyad_blocks",
@@ -1841,6 +200,7 @@ __all__ = [
     "scan_coriolis_resonances",
     "scan_darling_dennison_resonances",
     "scan_fermi_resonances",
+    "scan_resonance_traps",
     "trap_resonances",
     "triage_spectroscopic_system",
     # Orchestrator
@@ -1883,2967 +243,2931 @@ __all__ = [
     "route_missing_energy_zmq",
 ]
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\intake\cochem_spycfit_ingest.py ---
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\intake\cochem_spycfit_triage.py ---
 """
-CoChem-SpycFit: Stage 1.0 Bipartite Data Intake Parser & Quantum Gatekeeper (Phase 2).
+CoChem-SpycFit: Stage 1.0 Physical & Isotopic Resonance Filter.
 
-Module: cochem_spycfit/intake/cochem_spycfit_ingest.py
-Role: The Tripartite Data Intake Parser & In-Memory Pre-Serialization Physics Filter.
+Module: cochem_spycfit/intake/cochem_spycfit_triage.py
+Role: Physical & Isotopic Resonance Filter and Mass Matrix Transformation Engine.
 
 Capabilities:
-1. Modern Pydantic Schema Validation (SpectroscopySchema & SpectroscopyTransition):
-   Enforces mandatory fields (Frequency_MHz, Uncertainty, Intensity, J_upper, Ka_upper,
-   Kc_upper, J_lower, Ka_lower, Kc_lower) and strict asymmetric top physics.
-2. Positional & Free-Format Regex Ingestion (parse_legacy_pickett):
-   Parses legacy Pickett .lin, .cat, .par files and JPL catalogs, converting Fortran
-   double-precision notation ('D-05', 'D+02', '1.2345-05') to IEEE-754 FP64.
-   Failing lines are appended to failed_ingest.log in platformdirs.user_log_path("CoChem").
-3. Cryptographic Fingerprinting & Zarr State Matrix Appending:
-   Computes SHA-256 hash across all experimental frequencies upon ingestion and persists
-   the state matrix to spectra_fit.zarr.
-4. Pre-Flight Syntax Validator (Quantum Logic Gate):
-   Validates J >= 0, Ka >= 0, Kc >= 0, Ka <= J, Kc <= J, and asymmetric top sum rule
-   Ka + Kc in {J, J+1}. Raises CoChemDataException on strict failure.
-5. Pre-Serialization Physics Filter:
-   Enforces rotational selection rules (Delta J in {-1, 0, 1}, J=0 -> 0 forbidden) and
-   dipole transition parity constraints (a-type, b-type, c-type).
+1. Mendeleev SQLite Local Resolution & Air-Gap Verification:
+   - Resolves the local Mendeleev SQLite database (elements.db) to guarantee offline execution.
+   - Verifies SQLite magic binary header and queries isotopic properties without network access.
+2. Natural Abundance Filter & Isotopic Triage:
+   - Evaluates isotopologue natural abundance product from isotopic constituent abundances.
+   - Categorizes molecular systems into Method Matrix v4 Product Classes:
+     * Product A: Parent isotopologue (most abundant, de novo)
+     * Product B: Singly-substituted isotopologues (semi-experimental template / observable)
+     * Product C: Multi-substituted difference targets
+     * Trace: Rare sub-threshold isotopologues (< 0.01% abundance) flagged for rejection/warning.
+3. Method Matrix v4 Mass Matrix Transformation:
+   - Re-weights Cartesian Hessian matrices via M^(-1/2) F_cart M^(-1/2) in strict FP64 precision.
+   - Solves the mass-weighted secular equation to obtain harmonic vibrational wavenumbers (cm^-1),
+     distinguishing translation/rotation zero modes, genuine vibrational modes, and imaginary saddle modes.
+4. Resonance & Polyad Trap:
+   - Scans harmonic vibrational frequencies for resonance conditions:
+     * Fermi Type I: omega_i ~ 2 * omega_j
+     * Fermi Type II: omega_i ~ omega_j + omega_k
+     * Coriolis Coupling: omega_i ~ omega_j (near-degenerate mode pairs)
+     * Darling-Dennison: 2 * omega_i ~ 2 * omega_j
+   - Clusters interacting modes into coupled Polyad blocks for effective Hamiltonian construction.
+5. Unified Spectroscopic Triage Pipeline:
+   - Executes comprehensive multi-stage spectroscopic intake validation.
+   - Generates deterministic SHA-256 provenance hashes for auditable execution records.
+6. Pydantic v2 Schemas:
+   - Strict data validation models with extra-field forbidding.
 
 Authoritative Standards:
-- Method_Matrix.md (CoChem-BASE)
-- Task 5 Master Ingestion & Pre-Flight Validation (CoChem-SpycFit SRS)
-- Mendeleev Library Mandate (Dynamic Mass Retrieval)
+- Method_Matrix.md (CoChem-BASE Version 4, August 2026)
+- Task 2 File Inventory & Deliverable Capabilities Manifest
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from enum import Enum
 import hashlib
-import io
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import re
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
+import datetime
+from itertools import permutations
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
-import jax
 import numpy as np
-import pandas as pd
-from platformdirs import user_log_path
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 import zarr
+import zmq
 
 # Logging configuration
-logger = logging.getLogger("CoChem-SpycFit.Ingest")
+logger = logging.getLogger("CoChem-SpycFit.Triage")
 
 # Ecosystem exception classes with resilient fallback definitions
 try:
     from cochem_base.exceptions import (
-        CoChemError,
         CoChemIntegrityError,
         CoChemPrecisionError,
-        ProvenanceErrorCode,
+        IsotopeQuarantineError,
     )
-
-    class CoChemDataException(CoChemError, ValueError):
-        """Raised when input spectroscopic data fails validation, syntax checks, or quantum rules."""
-        ...
 except ImportError:
-    class CoChemError(Exception):
-        """Root fallback exception for CoChem."""
+
+    class CoChemPrecisionError(RuntimeError):  # type: ignore[no-redef]
+        """Raised when numerical float precision is violated."""
+
         ...
 
-    class CoChemPrecisionError(RuntimeError):
-        """Raised when JAX or numerical float precision is violated."""
-        ...
-
-    class CoChemIntegrityError(ValueError):
+    class CoChemIntegrityError(ValueError):  # type: ignore[no-redef]
         """Raised when cryptographic checksum or binary integrity check fails."""
+
         ...
 
-    class CoChemDataException(ValueError):
-        """Raised when input spectroscopic data fails validation, syntax checks, or quantum rules."""
+    class IsotopeQuarantineError(RuntimeError):  # type: ignore[no-redef]
+        """Raised when an isotopologue fails natural abundance triage in headless mode (auto-quarantine)."""
+
         ...
 
 
 # =============================================================================
-# 1. ENUMS AND DATA STRUCTURES
+# 1. PHYSICAL CONSTANTS AND UNIT CONVERSION FACTORS
 # =============================================================================
 
-class FileFormat(str, Enum):
-    """Supported file formats for spectroscopy data ingestion."""
-    CSV = "csv"
-    TSV = "tsv"
-    PARQUET = "parquet"
-    JSON = "json"
-    LIN = "lin"
-    PAR = "par"
-    CAT = "cat"
-    UNKNOWN = "unknown"
+# Standard IUPAC/CODATA physical constants (SI and Atomic Units)
+HARTREE_TO_JOULE: float = 4.3597447222071e-18  # 1 E_h in Joules (FP64)
+BOHR_RADIUS_METER: float = 0.529177210903e-10  # 1 a_0 in meters (FP64)
+AMU_TO_KG: float = 1.66053906660e-27  # 1 u in kg (FP64)
+SPEED_OF_LIGHT_CM_S: float = 29979245800.0  # Speed of light c in cm/s (FP64)
+PLANCK_CONSTANT_JS: float = 6.62607015e-34  # Planck constant h in J*s (FP64)
+EV_TO_JOULE: float = 1.602176634e-19  # 1 eV in Joules (FP64)
+ANGSTROM_TO_METER: float = 1.0e-10  # 1 Angstrom in meters (FP64)
 
-
-class BranchType(str, Enum):
-    """Spectroscopic rotational branch designations based on Delta J = J' - J''."""
-    P = "P"  # Delta J = -1
-    Q = "Q"  # Delta J = 0
-    R = "R"  # Delta J = +1
-    INVALID = "INVALID"
-
-
-class DipoleType(str, Enum):
-    """Asymmetric top dipole transition parity classifications."""
-    A = "a"          # a-type: Delta Ka even, Delta Kc odd (ee <-> eo, oe <-> oo)
-    B = "b"          # b-type: Delta Ka odd, Delta Kc odd (ee <-> oo, eo <-> oe)
-    C = "c"          # c-type: Delta Ka odd, Delta Kc even (ee <-> oe, eo <-> oo)
-    FORBIDDEN = "forbidden"
-    UNKNOWN = "unknown"
-
-
-class Parity(str, Enum):
-    """Rotational state parity (Ka mod 2, Kc mod 2)."""
-    EE = "ee"  # Ka even, Kc even
-    EO = "eo"  # Ka even, Kc odd
-    OE = "oe"  # Ka odd,  Kc even
-    OO = "oo"  # Ka odd,  Kc odd
-
-
-# Canonical column names for modern structured Pandas DataFrames
-CANONICAL_COLUMNS: List[str] = [
-    "Frequency_MHz",
-    "Uncertainty",
-    "Intensity",
-    "J_upper",
-    "Ka_upper",
-    "Kc_upper",
-    "J_lower",
-    "Ka_lower",
-    "Kc_lower",
-]
+# Analytical conversion factor from sqrt(Hartree / (bohr^2 * u)) to wavenumber (cm^-1):
+# conv = (1 / (2 * pi * c_cm)) * sqrt(E_h / (a_0^2 * u))
+# conv = 5140.487143611564 cm^-1
+AU_TO_WAVENUMBER_CONVERSION: float = 5140.487143611564
 
 
 # =============================================================================
-# 2. PYDANTIC V2 SCHEMAS
+# 2. ENUMS
 # =============================================================================
 
-class SpectroscopySchema(BaseModel):
-    """
-    Phase 2 Pydantic schema validation for single spectroscopic transitions.
 
-    Mandatory fields:
-    - Frequency_MHz (float64)
-    - Uncertainty (float64)
-    - Intensity (float64)
-    - J_upper, Ka_upper, Kc_upper (int >= 0)
-    - J_lower, Ka_lower, Kc_lower (int >= 0)
-    """
-    model_config = ConfigDict(
-        extra="forbid",
-        populate_by_name=True,
+class ResonanceType(str, Enum):
+    """Vibrational and rovibrational resonance classifications."""
+
+    FERMI_TYPE_I = (
+        "Fermi_Type_I"  # Fundamental couples to overtone: omega_i ~ 2 * omega_j
     )
+    FERMI_TYPE_II = "Fermi_Type_II"  # Fundamental couples to combination band: omega_i ~ omega_j + omega_k
+    DARLING_DENNISON = (
+        "Darling_Dennison"  # Overtones/combinations couple: 2 * omega_i ~ 2 * omega_j
+    )
+    CORIOLIS = "Coriolis"  # Rovibrational Coriolis coupling: omega_i ~ omega_j
 
-    Frequency_MHz: float = Field(
+
+class ProductClass(str, Enum):
+    """Method Matrix v4 Spectroscopic Product Classifications."""
+
+    PRODUCT_A = "Product A"  # Absolute de novo prediction (parent isotopologue)
+    PRODUCT_B = (
+        "Product B"  # Semi-experimental / template-anchored (singly-substituted)
+    )
+    PRODUCT_C = "Product C"  # Difference targets (shifts, conformers, poly-substituted)
+    TRACE = "Trace"  # Rare/sub-threshold isotopologues (< 0.01% natural abundance)
+
+
+class TriageStatus(str, Enum):
+    """Triage execution status."""
+
+    PASSED = "PASSED"
+    WARNING_RESONANCE = "WARNING_RESONANCE"
+    REJECTED_RARE_ISOTOPE = "REJECTED_RARE_ISOTOPE"
+    REJECTED_IMAGINARY_FREQUENCY = "REJECTED_IMAGINARY_FREQUENCY"
+    ERROR = "ERROR"
+
+
+# =============================================================================
+# 3. PYDANTIC V2 SCHEMAS
+# =============================================================================
+
+
+class IsotopeSpec(BaseModel):
+    """Validated atomic isotope specification."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = Field(
+        ..., description="Chemical element symbol (e.g. 'C', 'H', 'O')."
+    )
+    mass_number: int = Field(
+        ..., gt=0, description="Mass number A (number of nucleons)."
+    )
+    atomic_number: int = Field(
+        ..., gt=0, description="Atomic number Z (number of protons)."
+    )
+    mass_amu: float = Field(
         ...,
-        alias="frequency_mhz",
-        description="Observed transition frequency in MHz (FP64).",
+        gt=0.0,
+        description="Atomic isotopic mass in unified atomic mass units u (FP64).",
     )
-    Uncertainty: float = Field(
+    abundance_percent: float = Field(
+        ...,
+        ge=0.0,
+        le=100.0,
+        description="Natural isotopic abundance percentage (0.0 to 100.0).",
+    )
+    nuclear_spin: Optional[str] = Field(
+        default=None,
+        description="Nuclear spin quantum number string (e.g. '1/2', '1').",
+    )
+    is_stable: bool = Field(default=True, description="Whether isotope is stable.")
+
+
+class IsotopologueData(BaseModel):
+    """Collection of constituent isotopes defining an isotopologue."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    formula: Optional[str] = Field(
+        default=None, description="Chemical formula or label."
+    )
+    name: Optional[str] = Field(default=None, description="Descriptive system name.")
+    isotopes: List[IsotopeSpec] = Field(
+        ..., min_length=1, description="Ordered list of constituent atomic isotopes."
+    )
+    custom_masses: Optional[List[float]] = Field(
+        default=None, description="Optional override masses in amu (FP64)."
+    )
+
+
+class IsotopeTriageResult(BaseModel):
+    """Output report from isotopic natural abundance analysis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    isotopologue_name: str = Field(
+        ..., description="Canonical formula or label of the isotopologue."
+    )
+    total_mass_amu: float = Field(
+        ..., gt=0.0, description="Total molecular mass in amu (FP64)."
+    )
+    abundance_percent: float = Field(
+        ..., ge=0.0, description="Product natural abundance percentage (FP64)."
+    )
+    abundance_fraction: float = Field(
+        ...,
+        ge=0.0,
+        description="Product natural abundance fraction (0.0 to 1.0) (FP64).",
+    )
+    is_observable: bool = Field(
+        ..., description="True if abundance satisfies the triage threshold."
+    )
+    product_class: ProductClass = Field(
+        ..., description="Method Matrix v4 Product classification."
+    )
+    substitution_count: int = Field(
+        ..., ge=0, description="Number of isotopic substitutions relative to parent."
+    )
+    parent_formula: str = Field(..., description="Formula of the parent isotopologue.")
+    isotope_details: List[IsotopeSpec] = Field(
+        ..., description="Constituent isotope properties."
+    )
+    rejection_reason: Optional[str] = Field(
+        default=None, description="Reason for rejection if sub-threshold."
+    )
+    quarantined: bool = Field(
+        default=False, description="Whether isotopologue was auto-quarantined."
+    )
+    quarantine_path: Optional[str] = Field(
+        default=None, description="Filesystem path to quarantine record if quarantined."
+    )
+
+
+class EckartAxisReorientationResult(BaseModel):
+    """Result of Eckart axis reorientation and dipole derivative transformation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rotation_matrix: List[List[float]] = Field(
+        ...,
+        description="3x3 proper SO(3) Eckart rotation matrix (FP64, det(R) = +1).",
+    )
+    determinant: float = Field(
+        ..., description="Determinant of the rotation matrix (must be +1.0)."
+    )
+    determinant_swap_detected: bool = Field(
+        ...,
+        description="True if raw eigenvector determinant was negative (< 0) before reflection correction.",
+    )
+    axis_permutation: List[int] = Field(
+        ...,
+        description="Permutation index mapping [old_a, old_b, old_c] -> new axis indices.",
+    )
+    axis_swap_detected: bool = Field(
+        ..., description="True if principal axes switched order (e.g. a/b swap)."
+    )
+    old_principal_moments: List[float] = Field(
+        ...,
+        description="Principal moments of inertia for reference system in amu*Angstrom^2 (FP64).",
+    )
+    new_principal_moments: List[float] = Field(
+        ...,
+        description="Principal moments of inertia for substituted system in amu*Angstrom^2 (FP64).",
+    )
+    transformed_dipole_derivatives: List[List[float]] = Field(
+        ...,
+        description="Transformed and re-indexed dipole derivative matrix (FP64).",
+    )
+    reorientation_angle_deg: float = Field(
+        ..., description="Effective Eckart rotation angle in degrees (FP64)."
+    )
+
+
+class HarmonicVibrationalResult(BaseModel):
+    """Harmonic vibrational analysis output from mass-weighted Cartesian Hessian."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    frequencies_cm1: List[float] = Field(
+        ..., description="All computed harmonic frequencies in cm^-1 (FP64)."
+    )
+    vibrational_frequencies_cm1: List[float] = Field(
+        ..., description="Genuine vibrational normal mode frequencies in cm^-1 (FP64)."
+    )
+    imaginary_frequencies_count: int = Field(
+        ..., ge=0, description="Number of imaginary frequencies (saddle points)."
+    )
+    zero_modes_count: int = Field(
+        ..., ge=0, description="Number of translational and rotational zero modes."
+    )
+    eigenvalues: List[float] = Field(
+        ..., description="Secular equation eigenvalues (FP64)."
+    )
+    mass_weighted_hessian_shape: Tuple[int, int] = Field(
+        ..., description="Dimensions of the mass-weighted Hessian."
+    )
+    reduced_masses_amu: Optional[List[float]] = Field(
+        default=None, description="Mode reduced masses in amu (FP64)."
+    )
+    normal_modes: Optional[List[List[float]]] = Field(
+        default=None, description="Normal mode displacement vectors."
+    )
+
+
+class ResonanceCondition(BaseModel):
+    """Detected resonance interaction between normal modes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    resonance_type: ResonanceType = Field(
+        ..., description="Classification of resonance interaction."
+    )
+    mode_indices: List[int] = Field(
+        ..., description="Indices of interacting vibrational normal modes (0-indexed)."
+    )
+    frequencies_cm1: List[float] = Field(
+        ..., description="Harmonic frequencies of the involved modes in cm^-1."
+    )
+    energy_difference_cm1: float = Field(
+        ..., ge=0.0, description="Energy detuning |Delta E| in cm^-1 (FP64)."
+    )
+    description: str = Field(
+        ..., description="Spectroscopic description of the resonance condition."
+    )
+    severity: str = Field(
+        ...,
+        description="Interaction strength classification: 'STRONG', 'MODERATE', or 'WEAK'.",
+    )
+
+
+class PolyadBlock(BaseModel):
+    """Coupled vibrational subspace (Polyad) requiring multi-state diagonalization."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    block_id: int = Field(..., ge=0, description="Unique polyad block index.")
+    mode_indices: List[int] = Field(
+        ..., description="List of mutually coupled mode indices."
+    )
+    frequencies_cm1: List[float] = Field(
+        ..., description="Frequencies of the modes within this block."
+    )
+    resonance_types: List[ResonanceType] = Field(
+        ..., description="Types of resonance couplings present."
+    )
+    dimension: int = Field(
+        ..., ge=2, description="Dimension of the interacting polyad state subspace."
+    )
+    frequency_span_cm1: float = Field(
+        ..., ge=0.0, description="Max frequency spread across modes in cm^-1."
+    )
+    recommended_treatment: str = Field(
+        ...,
+        description="Theoretical treatment recommendation (e.g. Polyad Hamiltonian).",
+    )
+
+
+class ResonanceReport(BaseModel):
+    """Comprehensive resonance scan and polyad partition report."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    total_resonances_count: int = Field(
+        ..., ge=0, description="Total number of detected resonance conditions."
+    )
+    fermi_resonances: List[ResonanceCondition] = Field(
+        default_factory=list, description="Detected Fermi resonances."
+    )
+    coriolis_resonances: List[ResonanceCondition] = Field(
+        default_factory=list, description="Detected Coriolis resonances."
+    )
+    darling_dennison_resonances: List[ResonanceCondition] = Field(
+        default_factory=list, description="Detected Darling-Dennison resonances."
+    )
+    polyad_blocks: List[PolyadBlock] = Field(
+        default_factory=list, description="Constructed Polyad blocks."
+    )
+    has_strong_resonances: bool = Field(
+        ..., description="True if any strong resonance condition is active."
+    )
+    recommended_hamiltonian: str = Field(
+        ..., description="Recommended Hamiltonian model for downstream VPT2/fitting."
+    )
+
+
+class TriageConfig(BaseModel):
+    """Configuration options for spectroscopic intake triage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    abundance_threshold_percent: float = Field(
         default=0.01,
-        alias="uncertainty_mhz",
-        description="Measurement uncertainty in MHz (FP64).",
+        ge=0.0,
+        description="Natural abundance cut-off percentage (e.g. 0.01% = 1e-4).",
     )
-    Intensity: float = Field(
-        default=1.0,
-        alias="intensity",
-        description="Observed or catalog intensity (FP64).",
+    fermi_type_1_threshold_cm1: float = Field(
+        default=30.0,
+        ge=0.0,
+        description="Max energy detuning for Fermi Type I resonance in cm^-1.",
     )
-    J_upper: int = Field(
-        ...,
-        ge=0,
-        alias="j_upper",
-        description="Upper state total angular momentum quantum number J'.",
+    fermi_type_2_threshold_cm1: float = Field(
+        default=30.0,
+        ge=0.0,
+        description="Max energy detuning for Fermi Type II resonance in cm^-1.",
     )
-    Ka_upper: int = Field(
-        ...,
-        ge=0,
-        alias="ka_upper",
-        description="Upper state prolate projection quantum number Ka'.",
+    coriolis_threshold_cm1: float = Field(
+        default=20.0,
+        ge=0.0,
+        description="Max frequency difference for Coriolis resonance in cm^-1.",
     )
-    Kc_upper: int = Field(
-        ...,
-        ge=0,
-        alias="kc_upper",
-        description="Upper state oblate projection quantum number Kc'.",
+    darling_dennison_threshold_cm1: float = Field(
+        default=30.0,
+        ge=0.0,
+        description="Max energy detuning for Darling-Dennison resonance in cm^-1.",
     )
-    J_lower: int = Field(
-        ...,
-        ge=0,
-        alias="j_lower",
-        description="Lower state total angular momentum quantum number J''.",
+    zero_frequency_threshold_cm1: float = Field(
+        default=30.0,
+        ge=0.0,
+        description="Threshold below which modes are treated as translation/rotation zeros.",
     )
-    Ka_lower: int = Field(
-        ...,
-        ge=0,
-        alias="ka_lower",
-        description="Lower state prolate projection quantum number Ka''.",
+    hessian_units: str = Field(
+        default="hartree_bohr2",
+        description="Units of input Cartesian Hessian ('hartree_bohr2', 'si', 'ev_angstrom2').",
     )
-    Kc_lower: int = Field(
-        ...,
-        ge=0,
-        alias="kc_lower",
-        description="Lower state oblate projection quantum number Kc''.",
+    mendeleev_db_path: Optional[str] = Field(
+        default=None,
+        description="Optional custom path to local Mendeleev SQLite database.",
     )
-    branch: Optional[BranchType] = Field(default=None, description="Rotational branch (P, Q, R).")
-    dipole_type: Optional[DipoleType] = Field(default=None, description="Dipole transition classification (a, b, c).")
-    delta_j: Optional[int] = Field(default=None, description="Delta J = J' - J''.")
-    delta_ka: Optional[int] = Field(default=None, description="Delta Ka = Ka' - Ka''.")
-    delta_kc: Optional[int] = Field(default=None, description="Delta Kc = Kc' - Kc''.")
-    upper_parity: Optional[Parity] = Field(default=None, description="Upper state parity (ee, eo, oe, oo).")
-    lower_parity: Optional[Parity] = Field(default=None, description="Lower state parity (ee, eo, oe, oo).")
-    valid: bool = Field(default=True, description="Whether transition passed syntax and selection rules.")
-    drop_reason: Optional[str] = Field(default=None, description="Detailed explanation if line was dropped.")
+    allow_imaginary_frequencies: bool = Field(
+        default=False,
+        description="Whether to permit imaginary frequencies (transition states) without error.",
+    )
 
-    @model_validator(mode="after")
-    def validate_quantum_physics(self) -> SpectroscopySchema:
-        """Enforces asymmetric rotor quantum bounds and parity sum rules."""
-        # 1. Ka <= J and Kc <= J bounds
-        if self.Ka_upper > self.J_upper:
-            raise ValueError(f"Upper Ka ({self.Ka_upper}) cannot exceed J ({self.J_upper})")
-        if self.Kc_upper > self.J_upper:
-            raise ValueError(f"Upper Kc ({self.Kc_upper}) cannot exceed J ({self.J_upper})")
-        if self.Ka_lower > self.J_lower:
-            raise ValueError(f"Lower Ka ({self.Ka_lower}) cannot exceed J ({self.J_lower})")
-        if self.Kc_lower > self.J_lower:
-            raise ValueError(f"Lower Kc ({self.Kc_lower}) cannot exceed J ({self.J_lower})")
 
-        # 2. Asymmetric top sum rule: Ka + Kc in {J, J+1}
-        sum_up = self.Ka_upper + self.Kc_upper
-        if sum_up != self.J_upper and sum_up != (self.J_upper + 1):
+class TriageReport(BaseModel):
+    """Master audit and triage report for a molecular spectroscopic candidate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    config: TriageConfig = Field(
+        ..., description="Configuration used for this triage run."
+    )
+    status: TriageStatus = Field(..., description="Overall triage execution status.")
+    passed: bool = Field(
+        ...,
+        description="Whether system passed all triage gates for downstream processing.",
+    )
+    product_class: ProductClass = Field(
+        ..., description="Method Matrix v4 Product classification."
+    )
+    isotopologue_triage: Optional[IsotopeTriageResult] = Field(
+        default=None, description="Isotopic natural abundance triage."
+    )
+    vibrational_triage: Optional[HarmonicVibrationalResult] = Field(
+        default=None, description="Harmonic vibrational analysis result."
+    )
+    resonance_triage: Optional[ResonanceReport] = Field(
+        default=None, description="Resonance and polyad analysis report."
+    )
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="Informational warnings emitted during triage.",
+    )
+    summary: str = Field(..., description="Human-readable summary of triage decisions.")
+    sha256_provenance: str = Field(
+        ...,
+        description="Cryptographic SHA-256 hash digest of input parameters and outputs.",
+    )
+
+
+# =============================================================================
+# 4. MENDELEEV DATABASE RESOLUTION AND AIR-GAP VERIFICATION
+# =============================================================================
+
+
+def resolve_mendeleev_database(custom_path: Optional[Union[str, Path]] = None) -> Path:
+    """
+    Resolves the absolute path to the local Mendeleev SQLite database (elements.db).
+    Verifies that the database file exists locally, has non-zero size, and begins with
+    the valid SQLite format 3 binary header, guaranteeing air-gapped offline operation.
+
+    Args:
+        custom_path: Optional user-supplied path to elements.db.
+
+    Returns:
+        Path: Absolute resolved path to verified elements.db.
+
+    Raises:
+        FileNotFoundError: If the database file does not exist on disk.
+        ValueError: If the file is not a valid SQLite database.
+    """
+    resolved: Optional[Path] = None
+
+    if custom_path is not None:
+        p = Path(custom_path).resolve()
+        if not p.is_file():
+            raise FileNotFoundError(f"Specified Mendeleev database path not found: {p}")
+        resolved = p
+    else:
+        # Check environment variables
+        env_path = os.environ.get("COCHEM_MENDELEEV_DB") or os.environ.get(
+            "MENDELEEV_DATABASE_PATH"
+        )
+        if env_path:
+            p = Path(env_path).resolve()
+            if p.is_file():
+                resolved = p
+
+    if resolved is None:
+        try:
+            import mendeleev.db
+
+            dbpath_str = mendeleev.db.get_package_dbpath()
+            p = Path(dbpath_str).resolve()
+            if p.is_file():
+                resolved = p
+        except Exception as exc:
+            logger.debug(f"Failed to query mendeleev.db.get_package_dbpath(): {exc}")
+
+    if resolved is None or not resolved.is_file():
+        raise FileNotFoundError(
+            "Could not resolve local Mendeleev SQLite database (elements.db)."
+        )
+
+    # Air-gap binary verification: check file size and SQLite header
+    file_size = resolved.stat().st_size
+    if file_size < 100000:
+        raise ValueError(
+            f"Mendeleev database file at {resolved} is corrupted or incomplete ({file_size} bytes)."
+        )
+
+    with open(resolved, "rb") as f:
+        magic_bytes = f.read(16)
+
+    if not magic_bytes.startswith(b"SQLite format 3\x00"):
+        raise ValueError(f"File at {resolved} is not a valid SQLite 3 database.")
+
+    logger.debug(
+        f"Resolved air-gapped Mendeleev SQLite database: {resolved} ({file_size} bytes)"
+    )
+    return resolved
+
+
+def get_isotope_properties(
+    symbol: str,
+    mass_number: Optional[int] = None,
+    db_path: Optional[Union[str, Path]] = None,
+) -> IsotopeSpec:
+    """
+    Queries local Mendeleev database to retrieve atomic and isotopic properties in FP64 precision.
+
+    Args:
+        symbol: Chemical element symbol (e.g. 'C', 'H', 'O', 'Cl').
+        mass_number: Nucleon number A. If None, resolves to the most naturally abundant stable isotope.
+        db_path: Optional custom path to elements.db.
+
+    Returns:
+        IsotopeSpec: Validated Pydantic model containing isotope physics.
+
+    Raises:
+        ValueError: If element symbol or mass number is not found.
+    """
+    resolve_mendeleev_database(db_path)
+
+    from mendeleev import element
+
+    clean_symbol = symbol.strip().capitalize()
+    try:
+        elem = element(clean_symbol)
+    except Exception as exc:
+        raise ValueError(
+            f"Unknown chemical element symbol '{clean_symbol}': {exc}"
+        ) from exc
+
+    atomic_number = int(elem.atomic_number)
+
+    if mass_number is not None:
+        target_a = int(mass_number)
+        matching = [iso for iso in elem.isotopes if iso.mass_number == target_a]
+        if not matching:
             raise ValueError(
-                f"Upper state Ka+Kc ({sum_up}) violates asymmetric top sum rule for J={self.J_upper}"
+                f"Isotope '{clean_symbol}-{target_a}' not found in Mendeleev database."
             )
-        sum_low = self.Ka_lower + self.Kc_lower
-        if sum_low != self.J_lower and sum_low != (self.J_lower + 1):
-            raise ValueError(
-                f"Lower state Ka+Kc ({sum_low}) violates asymmetric top sum rule for J={self.J_lower}"
+        selected_iso = matching[0]
+    else:
+        # Resolve to most abundant isotope
+        valid_isotopes = [iso for iso in elem.isotopes if iso.abundance is not None]
+        if valid_isotopes:
+            selected_iso = max(
+                valid_isotopes, key=lambda iso: float(iso.abundance or 0.0)
             )
+        else:
+            # Fallback to first isotope if no abundances recorded
+            selected_iso = elem.isotopes[0]
 
-        # 3. Auto-populate differences if None
-        if self.delta_j is None:
-            self.delta_j = self.J_upper - self.J_lower
-        if self.delta_ka is None:
-            self.delta_ka = self.Ka_upper - self.Ka_lower
-        if self.delta_kc is None:
-            self.delta_kc = self.Kc_upper - self.Kc_lower
+    # Extract mass and abundance in FP64
+    iso_mass = (
+        float(selected_iso.mass)
+        if selected_iso.mass is not None
+        else float(elem.atomic_weight or selected_iso.mass_number)
+    )
+    iso_abundance = (
+        float(selected_iso.abundance) if selected_iso.abundance is not None else 0.0
+    )
+    spin_str = str(selected_iso.spin) if selected_iso.spin is not None else None
+    is_stable = not bool(getattr(selected_iso, "is_radioactive", False))
 
-        # 4. Auto-populate parity
-        parity_map = {
-            (0, 0): Parity.EE,
-            (0, 1): Parity.EO,
-            (1, 0): Parity.OE,
-            (1, 1): Parity.OO,
-        }
-        if self.upper_parity is None:
-            self.upper_parity = parity_map[(self.Ka_upper % 2, self.Kc_upper % 2)]
-        if self.lower_parity is None:
-            self.lower_parity = parity_map[(self.Ka_lower % 2, self.Kc_lower % 2)]
+    return IsotopeSpec(
+        symbol=clean_symbol,
+        mass_number=int(selected_iso.mass_number),
+        atomic_number=atomic_number,
+        mass_amu=np.float64(iso_mass),
+        abundance_percent=np.float64(iso_abundance),
+        nuclear_spin=spin_str,
+        is_stable=is_stable,
+    )
 
-        # 5. Auto-populate branch
-        if self.branch is None:
-            if self.delta_j == -1:
-                self.branch = BranchType.P
-            elif self.delta_j == 0:
-                self.branch = BranchType.Q
-            elif self.delta_j == 1:
-                self.branch = BranchType.R
-            else:
-                self.branch = BranchType.INVALID
 
-        # 6. Auto-populate dipole classification
-        if self.dipole_type is None:
-            if (self.J_upper == 0 and self.J_lower == 0) or abs(self.delta_j) > 1:
-                self.dipole_type = DipoleType.FORBIDDEN
-            else:
-                d_ka_even = (abs(self.delta_ka) % 2 == 0)
-                d_kc_even = (abs(self.delta_kc) % 2 == 0)
-                if d_ka_even and not d_kc_even:
-                    self.dipole_type = DipoleType.A
-                elif not d_ka_even and not d_kc_even:
-                    self.dipole_type = DipoleType.B
-                elif not d_ka_even and d_kc_even:
-                    self.dipole_type = DipoleType.C
+# =============================================================================
+# 5. NATURAL ABUNDANCE FILTER AND ISOTOPIC TRIAGE
+# =============================================================================
+
+
+def parse_isotopologue_input(
+    isotopologue: Union[
+        IsotopologueData,
+        Sequence[Union[Tuple[str, int], Dict[str, Any], IsotopeSpec, str]],
+        Dict[str, Any],
+        str,
+    ],
+    db_path: Optional[Union[str, Path]] = None,
+) -> List[IsotopeSpec]:
+    """
+    Parses diverse isotopologue representations into a standard list of IsotopeSpec models.
+
+    Supported formats:
+    - IsotopologueData Pydantic model
+    - Single dict: {"symbol": "C", "mass_number": 12} or {"isotopes": [...]}
+    - List of tuples: [("C", 12), ("O", 16), ("O", 16)]
+    - List of dicts: [{"symbol": "C", "mass_number": 12}, ...]
+    - List of IsotopeSpec models
+    - String with hyphenated isotopes: "13C-1H-35Cl" or formula "12C16O2"
+    """
+    if isinstance(isotopologue, IsotopologueData):
+        return list(isotopologue.isotopes)
+
+    if isinstance(isotopologue, dict):
+        if "isotopes" in isotopologue and isinstance(isotopologue["isotopes"], list):
+            return parse_isotopologue_input(isotopologue["isotopes"], db_path=db_path)
+        sym_dict = str(isotopologue.get("symbol") or isotopologue.get("element") or "")
+        a_dict = isotopologue.get("mass_number") or isotopologue.get("a")
+        if sym_dict:
+            mass_num: Optional[int] = int(a_dict) if a_dict is not None else None
+            return [get_isotope_properties(sym_dict, mass_num, db_path=db_path)]
+        raise ValueError(f"Unrecognized isotope dictionary format: {isotopologue}")
+
+    specs: List[IsotopeSpec] = []
+
+    if isinstance(isotopologue, str):
+        text = isotopologue.strip()
+        # Case 1: Hyphen-separated isotope tokens, e.g. "13C-1H-35Cl"
+        if "-" in text:
+            tokens = [t.strip() for t in text.split("-") if t.strip()]
+            for tok in tokens:
+                match = re.match(r"^(\d+)?([A-Za-z]+)(\d+)?$", tok)
+                if match:
+                    prefix_a, sym, suffix_a = match.groups()
+                    mass_no = (
+                        int(prefix_a)
+                        if prefix_a
+                        else (int(suffix_a) if suffix_a else None)
+                    )
+                    specs.append(get_isotope_properties(sym, mass_no, db_path=db_path))
                 else:
-                    self.dipole_type = DipoleType.FORBIDDEN
-
-        return self
-
-
-# Backwards compatibility alias for SpectroscopyTransition
-SpectroscopyTransition = SpectroscopySchema
-
-
-class PickettParameter(BaseModel):
-    """Single Pickett parameter record (.par / .var)."""
-    model_config = ConfigDict(extra="forbid")
-
-    param_id: int = Field(..., description="Pickett parameter code (e.g. 10000, 20000, 30000, 200).")
-    value: float = Field(..., description="Parameter value in MHz.")
-    uncertainty: float = Field(default=0.0, description="Estimated parameter uncertainty in MHz.")
-    label: str = Field(default="", description="Human-readable parameter label (e.g. 'A', 'B', 'DJ').")
-
-
-class PickettParFile(BaseModel):
-    """Structured representation of a legacy Pickett .par / .var parameter file."""
-    model_config = ConfigDict(extra="forbid")
-
-    title: str = Field(..., description="Header title string from .par / .var file.")
-    npar: int = Field(..., ge=0, description="Number of parameters in file.")
-    nline: int = Field(..., description="Number of fitting lines.")
-    nopt: int = Field(default=0, description="Pickett optimization control integer.")
-    nwarn: int = Field(default=0, description="Pickett warning control integer.")
-    erpar: float = Field(default=1.0, description="Parameter error scale factor.")
-    wtfac: float = Field(default=1.0, description="Weight factor.")
-    scale: float = Field(default=1.0, description="Frequency scale factor.")
-    maxit: int = Field(default=50, description="Maximum iterations.")
-    parameters: List[PickettParameter] = Field(default_factory=list, description="List of parsed parameters.")
-
-
-class IngestConfig(BaseModel):
-    """Configuration options for spectroscopy data ingestion and validation."""
-    model_config = ConfigDict(extra="forbid")
-
-    enforce_fp64: bool = Field(default=True, description="Strictly cast all float columns to np.float64.")
-    validate_syntax: bool = Field(default=True, description="Apply Pre-Flight Syntax Validator quantum bounds.")
-    apply_selection_rules: bool = Field(default=True, description="Apply Pre-Serialization Physics Filter selection rules.")
-    allowed_dipole_types: Optional[Set[str]] = Field(
-        default_factory=lambda: {"a", "b", "c"},
-        description="Allowed dipole transition types (e.g. {'a', 'b', 'c'} or {'b'}).",
-    )
-    drop_invalid_syntax: bool = Field(default=True, description="Drop lines failing quantum syntax validation.")
-    drop_forbidden_transitions: bool = Field(default=True, description="Drop lines violating physics selection rules.")
-    log_warnings: bool = Field(default=True, description="Emit structured log warnings for dropped lines.")
-    failed_log_path: Optional[str] = Field(default=None, description="Optional path to append failed lines log.")
-    default_uncertainty: float = Field(default=0.01, ge=0.0, description="Default uncertainty in MHz if missing.")
-    default_intensity: float = Field(default=1.0, description="Default intensity if missing.")
-    zarr_path: Optional[str] = Field(default=None, description="Optional path to spectra_fit.zarr for state persistence.")
-
-
-class ValidationReport(BaseModel):
-    """Comprehensive diagnostic summary of ingestion, syntax, and physics filtering."""
-    model_config = ConfigDict(extra="forbid")
-
-    total_lines_read: int = Field(..., ge=0, description="Total raw lines or rows parsed from input.")
-    valid_lines_count: int = Field(..., ge=0, description="Number of surviving lines passing all gates.")
-    syntax_dropped_count: int = Field(default=0, ge=0, description="Lines dropped by Pre-Flight Syntax Validator.")
-    physics_dropped_count: int = Field(default=0, ge=0, description="Lines dropped by Pre-Serialization Physics Filter.")
-    sha256_fingerprint: str = Field(..., description="Cryptographic SHA-256 fingerprint of input frequencies.")
-    warnings: List[str] = Field(default_factory=list, description="List of human-readable warnings emitted.")
-    syntax_violations: List[Dict[str, Any]] = Field(default_factory=list, description="Detailed syntax drop records.")
-    physics_violations: List[Dict[str, Any]] = Field(default_factory=list, description="Detailed physics drop records.")
-
-
-class IngestResult(BaseModel):
-    """Container holding sanitized Pandas DataFrame and validation metadata."""
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
-
-    df: Any = Field(..., description="Sanitized Pandas DataFrame with FP64 precision.")
-    report: ValidationReport = Field(..., description="Validation report and statistics.")
-    sha256_fingerprint: str = Field(..., description="SHA-256 cryptographic hash of frequency array.")
-    success: bool = Field(default=True, description="True if ingestion produced valid surviving data.")
-
-
-# =============================================================================
-# 3. FORTRAN NUMBER CONVERTER & FP64 PRECISION LOCK
-# =============================================================================
-
-def fortran_float_converter(val: Union[str, float, int]) -> float:
-    """
-    Safely converts a string containing Fortran scientific notation to a Python float64.
-
-    Handles:
-    - '1.2345D-05' -> 1.2345e-5
-    - '1.2345D+02' -> 1.2345e+02
-    - '1.2345d-05' -> 1.2345e-5
-    - '1.2345E-05' -> 1.2345e-5
-    - '12345.6789' -> 12345.6789
-    - '1.2345-05'  -> 1.2345e-5 (implicit exponent notation in Fortran)
-
-    Args:
-        val: Input string, integer, or float.
-
-    Returns:
-        Converted value as float.
-
-    Raises:
-        ValueError: If the string cannot be parsed into a valid float.
-    """
-    if isinstance(val, (int, float)):
-        return float(val)
-
-    s = str(val).strip()
-    if not s:
-        raise ValueError("Cannot convert empty string to float")
-
-    s_clean = s.replace("D", "e").replace("d", "e").replace("E", "e")
-
-    implicit_exp_pattern = re.compile(r"^([+-]?\d+\.?\d*)([+-]\d{2,3})$")
-    match = implicit_exp_pattern.match(s_clean)
-    if match and "e" not in s_clean:
-        s_clean = f"{match.group(1)}e{match.group(2)}"
-
-    try:
-        return float(s_clean)
-    except ValueError as exc:
-        raise ValueError(f"Failed to parse Fortran double precision float from {val!r}: {exc}") from exc
-
-
-def enforce_fp64_boundary(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Enforces JAX FP64 precision across the Pandas ingestion boundary.
-
-    1. Executes jax.config.update('jax_enable_x64', True) and sets JAX_ENABLE_X64='True'.
-    2. Explicitly casts all floating point columns to numpy.float64.
-    3. Explicitly casts all quantum number integer columns to numpy.int64.
-
-    Args:
-        df: Input Pandas DataFrame.
-
-    Returns:
-        DataFrame with strictly enforced float64 and int64 datatypes.
-    """
-    os.environ["JAX_ENABLE_X64"] = "True"
-    try:
-        jax.config.update("jax_enable_x64", True)
-    except Exception as e:
-        logger.debug(f"JAX FP64 config update notice: {e}")
-
-    df_out = df.copy()
-
-    float_cols = ["Frequency_MHz", "Uncertainty", "Intensity"]
-    int_cols = ["J_upper", "Ka_upper", "Kc_upper", "J_lower", "Ka_lower", "Kc_lower", "Delta_J", "Delta_Ka", "Delta_Kc"]
-
-    for col in df_out.columns:
-        if col in float_cols or (col not in int_cols and pd.api.types.is_float_dtype(df_out[col])):
-            df_out[col] = df_out[col].astype(np.float64)
-
-    for col in int_cols:
-        if col in df_out.columns:
-            df_out[col] = pd.to_numeric(df_out[col], errors="coerce").fillna(0).round().astype(np.int64)
-
-    return df_out
-
-
-# =============================================================================
-# 4. CRYPTOGRAPHIC FREQUENCY FINGERPRINTING & ZARR PERSISTENCE
-# =============================================================================
-
-def calculate_frequency_fingerprint(
-    frequencies: Union[np.ndarray, pd.Series, Sequence[float], bytes, str],
-) -> str:
-    """
-    Calculates an immutable SHA-256 cryptographic fingerprint of experimental frequencies.
-
-    Ensures that downstream Bayesian fitting state tensors (spectra_fit.zarr / spectra_fit.h5)
-    can be rigorously traced back to the exact untampered experimental upload.
-
-    Args:
-        frequencies: Array, Series, Sequence of numerical frequencies, or raw string/bytes.
-
-    Returns:
-        64-character hexadecimal SHA-256 digest string.
-    """
-    if isinstance(frequencies, bytes):
-        return hashlib.sha256(frequencies).hexdigest()
-
-    if isinstance(frequencies, str):
-        return hashlib.sha256(frequencies.encode("utf-8")).hexdigest()
-
-    arr = np.asarray(frequencies, dtype=np.float64)
-    if arr.size == 0:
-        return hashlib.sha256(b"EMPTY_ARRAY").hexdigest()
-
-    sorted_arr = np.sort(arr)
-    ascii_payload = "\n".join(f"{f:.6f}" for f in sorted_arr).encode("utf-8")
-    return hashlib.sha256(ascii_payload).hexdigest()
-
-
-def append_to_spectra_fit_zarr(
-    zarr_path: Union[str, Path],
-    frequencies: Union[np.ndarray, pd.Series, Sequence[float]],
-    sha256_hash: Optional[str] = None,
-    group_name: str = "state_matrix",
-    metadata: Optional[Dict[str, Any]] = None,
-) -> Any:
-    """
-    Appends experimental frequencies and cryptographic SHA-256 fingerprint to spectra_fit.zarr.
-
-    Args:
-        zarr_path: Path to the .zarr store (directory or zip store).
-        frequencies: Array or Series of ingested frequencies.
-        sha256_hash: Optional precomputed SHA-256 hash. If None, calculated dynamically.
-        group_name: Subgroup name in zarr root (default 'state_matrix').
-        metadata: Optional dictionary of supplementary provenance attributes.
-
-    Returns:
-        The zarr.Group object holding the state matrix and metadata attributes.
-    """
-    freq_arr = np.asarray(frequencies, dtype=np.float64)
-    fingerprint = sha256_hash or calculate_frequency_fingerprint(freq_arr)
-
-    path_obj = Path(zarr_path)
-    path_obj.parent.mkdir(parents=True, exist_ok=True)
-
-    root = zarr.open_group(str(path_obj), mode="a")
-    group = root.require_group(group_name)
-
-    # In Zarr 2 and 3, direct key assignment safely creates or updates the array
-    group["frequencies"] = freq_arr
-
-    group.attrs["sha256_fingerprint"] = fingerprint
-    group.attrs["frequency_count"] = int(freq_arr.size)
-    group.attrs["updated_at"] = datetime.now(timezone.utc).isoformat()
-    if metadata:
-        for k, v in metadata.items():
-            group.attrs[k] = v
-
-    return group
-
-
-# =============================================================================
-# 5. PRE-FLIGHT SYNTAX VALIDATOR (QUANTUM LOGIC GATE)
-# =============================================================================
-
-def validate_quantum_numbers(
-    df: pd.DataFrame,
-    drop_invalid: bool = True,
-    raise_on_error: bool = False,
-    log_warnings: bool = True,
-) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
-    """
-    Pre-Flight Syntax Validator (Quantum Logic Gate).
-
-    Mathematically intercepts and rejects impossible asymmetric rotor state assignments
-    prior to Hamiltonian matrix generation.
-
-    Enforces:
-    1. Positive definite bounds: J >= 0, Ka >= 0, Kc >= 0 for both upper and lower states.
-    2. Vector bounds: Ka <= J and Kc <= J for both states.
-    3. Asymmetric top sum rule (Rotational Parity):
-       For valid asymmetric rotor eigenstates, Ka + Kc must equal J or J + 1.
-       - Upper state: Ka' + Kc' in {J', J' + 1}
-       - Lower state: Ka'' + Kc'' in {J'', J'' + 1}
-
-    Failure Protocol:
-    Invalid lines are diagnosed. If raise_on_error is True, raises CoChemDataException.
-    Otherwise, invalid lines are logged with structured diagnostics and dropped.
-
-    Args:
-        df: Input DataFrame with quantum number columns (J_upper, Ka_upper, Kc_upper, etc.).
-        drop_invalid: If True, drops failing rows. If False, marks them in a 'syntax_valid' column.
-        raise_on_error: If True, raises CoChemDataException immediately upon detecting syntax violations.
-        log_warnings: If True, emits logger.warning for each dropped row.
-
-    Returns:
-        Tuple of (sanitized_df, list_of_syntax_violations).
-
-    Raises:
-        CoChemDataException: If raise_on_error is True and any row fails syntax validation.
-    """
-    if df.empty:
-        return df.copy(), []
-
-    qn_cols = ["J_upper", "Ka_upper", "Kc_upper", "J_lower", "Ka_lower", "Kc_lower"]
-    for col in qn_cols:
-        if col not in df.columns:
-            raise CoChemDataException(f"Missing required quantum number column '{col}' for syntax validation.")
-
-    violations: List[Dict[str, Any]] = []
-    valid_mask = np.ones(len(df), dtype=bool)
-
-    j_up = df["J_upper"].to_numpy(dtype=np.int64)
-    ka_up = df["Ka_upper"].to_numpy(dtype=np.int64)
-    kc_up = df["Kc_upper"].to_numpy(dtype=np.int64)
-    j_low = df["J_lower"].to_numpy(dtype=np.int64)
-    ka_low = df["Ka_lower"].to_numpy(dtype=np.int64)
-    kc_low = df["Kc_lower"].to_numpy(dtype=np.int64)
-
-    for idx in range(len(df)):
-        reasons: List[str] = []
-        ju, kau, kcu = j_up[idx], ka_up[idx], kc_up[idx]
-        jl, kal, kcl = j_low[idx], ka_low[idx], kc_low[idx]
-
-        if ju < 0 or kau < 0 or kcu < 0:
-            reasons.append(f"Negative upper quantum number: J'={ju}, Ka'={kau}, Kc'={kcu}")
-        if jl < 0 or kal < 0 or kcl < 0:
-            reasons.append(f"Negative lower quantum number: J''={jl}, Ka''={kal}, Kc''={kcl}")
-
-        if kau > ju:
-            reasons.append(f"Upper Ka' ({kau}) exceeds J' ({ju})")
-        if kcu > ju:
-            reasons.append(f"Upper Kc' ({kcu}) exceeds J' ({ju})")
-        if kal > jl:
-            reasons.append(f"Lower Ka'' ({kal}) exceeds J'' ({jl})")
-        if kcl > jl:
-            reasons.append(f"Lower Kc'' ({kcl}) exceeds J'' ({jl})")
-
-        sum_up = kau + kcu
-        if sum_up != ju and sum_up != (ju + 1):
-            reasons.append(
-                f"Syntax Ghost Line: Upper state Ka'+Kc' ({kau}+{kcu}={sum_up}) "
-                f"violates asymmetric top sum rule for J'={ju} (expected {ju} or {ju + 1})"
-            )
-
-        sum_low = kal + kcl
-        if sum_low != jl and sum_low != (jl + 1):
-            reasons.append(
-                f"Syntax Ghost Line: Lower state Ka''+Kc'' ({kal}+{kcl}={sum_low}) "
-                f"violates asymmetric top sum rule for J''={jl} (expected {jl} or {jl + 1})"
-            )
-
-        if reasons:
-            valid_mask[idx] = False
-            row_idx = df.index[idx]
-            diag = {
-                "row_index": int(row_idx),
-                "reasons": reasons,
-                "J_upper": int(ju),
-                "Ka_upper": int(kau),
-                "Kc_upper": int(kcu),
-                "J_lower": int(jl),
-                "Ka_lower": int(kal),
-                "Kc_lower": int(kcl),
-            }
-            violations.append(diag)
-            if log_warnings:
-                logger.warning(
-                    f"[SYNTAX GHOST LINE] Dropping row {row_idx}: {'; '.join(reasons)}"
+                    raise ValueError(
+                        f"Cannot parse isotope token '{tok}' from string '{text}'."
+                    )
+            return specs
+
+        # Case 2: Space-separated tokens, e.g. "12C 16O2"
+        if " " in text:
+            tokens = [t.strip() for t in text.split() if t.strip()]
+            for tok in tokens:
+                specs.extend(parse_isotopologue_input(tok, db_path=db_path))
+            return specs
+
+        # Case 3: Parenthesized isotope formula, e.g. "(12C)(16O)2"
+        if "(" in text:
+            pattern = re.compile(r"(?:\((\d+)?([A-Za-z]+)\)|([A-Z][a-z]*))(\d*)")
+            matches = pattern.findall(text)
+            if not matches:
+                raise ValueError(
+                    f"Unrecognized parenthesized isotopologue formula: '{text}'."
                 )
+            for prefix_a, sym1, sym2, count_str in matches:
+                sym = sym1 or sym2
+                if not sym:
+                    continue
+                mass_no = int(prefix_a) if prefix_a else None
+                count = int(count_str) if count_str else 1
+                iso_prop = get_isotope_properties(sym, mass_no, db_path=db_path)
+                for _ in range(count):
+                    specs.append(iso_prop)
+            return specs
 
-    if violations and raise_on_error:
-        raise CoChemDataException(
-            f"Pre-Flight Syntax Validator encountered {len(violations)} quantum number violations: {violations}"
-        )
+        # Case 4: Standard chemical formula (e.g. "H2O", "CO2") or single token "13C"
+        pattern = re.compile(r"(\d+)?([A-Z][a-z]*)(\d*)")
+        matches = pattern.findall(text)
+        if not matches:
+            raise ValueError(f"Unrecognized isotopologue formula string: '{text}'.")
+        for prefix_a, sym, count_str in matches:
+            if not sym:
+                continue
+            mass_no = int(prefix_a) if prefix_a else None
+            count = int(count_str) if count_str else 1
+            iso_prop = get_isotope_properties(sym, mass_no, db_path=db_path)
+            for _ in range(count):
+                specs.append(iso_prop)
+        return specs
 
-    if drop_invalid:
-        sanitized_df = df[valid_mask].copy().reset_index(drop=True)
-    else:
-        sanitized_df = df.copy()
-        sanitized_df["syntax_valid"] = valid_mask
-
-    return sanitized_df, violations
-
-
-# =============================================================================
-# 6. PRE-SERIALIZATION PHYSICS FILTER (SELECTION RULES)
-# =============================================================================
-
-def classify_transition_parity_and_dipole(
-    j_up: int,
-    ka_up: int,
-    kc_up: int,
-    j_low: int,
-    ka_low: int,
-    kc_low: int,
-) -> Tuple[BranchType, DipoleType, Parity, Parity, int, int, int]:
-    """
-    Classifies a rotational transition's branch (P, Q, R), state parities, and dipole type (a, b, c).
-
-    Asymmetric Top Selection Rules:
-    - Delta J in {-1, 0, +1} (P: -1, Q: 0, R: +1). J=0 -> 0 is strictly forbidden.
-    - Parity of state: (Ka mod 2, Kc mod 2) in {ee, eo, oe, oo}.
-    - a-type (along a-axis, mu_a != 0): Delta Ka even, Delta Kc odd (ee <-> eo, oe <-> oo).
-    - b-type (along b-axis, mu_b != 0): Delta Ka odd, Delta Kc odd (ee <-> oo, eo <-> oe).
-    - c-type (along c-axis, mu_c != 0): Delta Ka odd, Delta Kc even (ee <-> oe, eo <-> oo).
-
-    Returns:
-        Tuple of (branch, dipole_type, upper_parity, lower_parity, delta_j, delta_ka, delta_kc).
-    """
-    delta_j = j_up - j_low
-    delta_ka = ka_up - ka_low
-    delta_kc = kc_up - kc_low
-
-    if delta_j == -1:
-        branch = BranchType.P
-    elif delta_j == 0:
-        branch = BranchType.Q
-    elif delta_j == 1:
-        branch = BranchType.R
-    else:
-        branch = BranchType.INVALID
-
-    parity_map = {
-        (0, 0): Parity.EE,
-        (0, 1): Parity.EO,
-        (1, 0): Parity.OE,
-        (1, 1): Parity.OO,
-    }
-    up_parity = parity_map[(ka_up % 2, kc_up % 2)]
-    low_parity = parity_map[(ka_low % 2, kc_low % 2)]
-
-    if j_up == 0 and j_low == 0:
-        dipole_type = DipoleType.FORBIDDEN
-        return branch, dipole_type, up_parity, low_parity, delta_j, delta_ka, delta_kc
-
-    if abs(delta_j) > 1:
-        dipole_type = DipoleType.FORBIDDEN
-        return branch, dipole_type, up_parity, low_parity, delta_j, delta_ka, delta_kc
-
-    d_ka_even = (abs(delta_ka) % 2 == 0)
-    d_kc_even = (abs(delta_kc) % 2 == 0)
-
-    if d_ka_even and not d_kc_even:
-        dipole_type = DipoleType.A
-    elif not d_ka_even and not d_kc_even:
-        dipole_type = DipoleType.B
-    elif not d_ka_even and d_kc_even:
-        dipole_type = DipoleType.C
-    else:
-        dipole_type = DipoleType.FORBIDDEN
-
-    return branch, dipole_type, up_parity, low_parity, delta_j, delta_ka, delta_kc
-
-
-def apply_selection_rules(
-    df: pd.DataFrame,
-    allowed_dipole_types: Optional[Set[str]] = None,
-    drop_forbidden: bool = True,
-    raise_on_error: bool = False,
-    log_warnings: bool = True,
-) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
-    """
-    In-Memory Pre-Serialization Physics Filter (Selection Rules).
-
-    Applies rigid quantum selection rules in-memory before serialization:
-    1. Enforces Delta J in {-1, 0, +1} and excludes J = 0 -> 0.
-    2. Enforces active dipole transition parity constraints (a-type, b-type, c-type).
-    3. Strips out forbidden transitions to prevent wasted compute and I/O.
-
-    Args:
-        df: Input DataFrame with validated quantum numbers.
-        allowed_dipole_types: Set of allowed dipole types (e.g. {'a', 'b', 'c'} or {'b'}).
-        drop_forbidden: If True, removes forbidden lines from returned DataFrame.
-        raise_on_error: If True, raises CoChemDataException when forbidden transitions occur.
-        log_warnings: If True, logs warning messages for each forbidden line.
-
-    Returns:
-        Tuple of (filtered_df, list_of_physics_violations).
-
-    Raises:
-        CoChemDataException: If raise_on_error is True and forbidden transitions are found.
-    """
-    if df.empty:
-        return df.copy(), []
-
-    allowed_types = {t.lower() for t in allowed_dipole_types} if allowed_dipole_types else {"a", "b", "c"}
-
-    violations: List[Dict[str, Any]] = []
-    valid_mask = np.ones(len(df), dtype=bool)
-
-    branches: List[str] = []
-    dipoles: List[str] = []
-    d_j_list: List[int] = []
-    d_ka_list: List[int] = []
-    d_kc_list: List[int] = []
-    up_parities: List[str] = []
-    low_parities: List[str] = []
-
-    j_up = df["J_upper"].to_numpy(dtype=np.int64)
-    ka_up = df["Ka_upper"].to_numpy(dtype=np.int64)
-    kc_up = df["Kc_upper"].to_numpy(dtype=np.int64)
-    j_low = df["J_lower"].to_numpy(dtype=np.int64)
-    ka_low = df["Ka_lower"].to_numpy(dtype=np.int64)
-    kc_low = df["Kc_lower"].to_numpy(dtype=np.int64)
-
-    for idx in range(len(df)):
-        ju, kau, kcu = j_up[idx], ka_up[idx], kc_up[idx]
-        jl, kal, kcl = j_low[idx], ka_low[idx], kc_low[idx]
-
-        branch, dipole, up_par, low_par, dj, dka, dkc = classify_transition_parity_and_dipole(
-            ju, kau, kcu, jl, kal, kcl
-        )
-
-        branches.append(branch.value)
-        dipoles.append(dipole.value)
-        d_j_list.append(dj)
-        d_ka_list.append(dka)
-        d_kc_list.append(dkc)
-        up_parities.append(up_par.value)
-        low_parities.append(low_par.value)
-
-        reasons: List[str] = []
-        if ju == 0 and jl == 0:
-            reasons.append("Dipole-forbidden J=0 -> 0 transition")
-        elif abs(dj) > 1:
-            reasons.append(f"Forbidden Delta J = {dj} (|Delta J| > 1)")
-        elif dipole == DipoleType.FORBIDDEN:
-            reasons.append(f"Dipole-forbidden parity transition ({up_par.value} <-> {low_par.value})")
-        elif dipole.value not in allowed_types:
-            reasons.append(
-                f"Transition dipole type '{dipole.value}' not in allowed set {sorted(allowed_types)}"
-            )
-
-        if reasons:
-            valid_mask[idx] = False
-            row_idx = df.index[idx]
-            diag = {
-                "row_index": int(row_idx),
-                "reasons": reasons,
-                "branch": branch.value,
-                "dipole_type": dipole.value,
-                "delta_j": int(dj),
-                "delta_ka": int(dka),
-                "delta_kc": int(dkc),
-                "upper_parity": up_par.value,
-                "lower_parity": low_par.value,
-            }
-            violations.append(diag)
-            if log_warnings:
-                logger.warning(
-                    f"[PHYSICS FILTER] Dropping forbidden transition at row {row_idx}: {'; '.join(reasons)}"
-                )
-
-    if violations and raise_on_error:
-        raise CoChemDataException(
-            f"Pre-Serialization Physics Filter found {len(violations)} forbidden transitions: {violations}"
-        )
-
-    df_annotated = df.copy()
-    df_annotated["Branch"] = branches
-    df_annotated["Dipole_Type"] = dipoles
-    df_annotated["Delta_J"] = d_j_list
-    df_annotated["Delta_Ka"] = d_ka_list
-    df_annotated["Delta_Kc"] = d_kc_list
-    df_annotated["Upper_Parity"] = up_parities
-    df_annotated["Lower_Parity"] = low_parities
-
-    if drop_forbidden:
-        filtered_df = df_annotated[valid_mask].copy().reset_index(drop=True)
-    else:
-        filtered_df = df_annotated
-        filtered_df["physics_valid"] = valid_mask
-
-    return filtered_df, violations
-
-
-# =============================================================================
-# 7. PARSERS: PICKETT LIN, PAR, AND MODERN CSV/STRUCTURED
-# =============================================================================
-
-def parse_legacy_pickett(
-    lines_or_path: Union[List[str], str, Path, bytes, io.StringIO],
-    config: Optional[IngestConfig] = None,
-) -> Tuple[pd.DataFrame, List[str]]:
-    """
-    Parses legacy Pickett .lin / .cat files using strict positional and regex parsing.
-
-    Translates Fortran double-precision exponential notation ('D-05', 'D+02', '1.2345-05' -> FP64).
-    Failing lines are appended to failed_ingest.log located at platformdirs.user_log_path("CoChem").
-
-    Args:
-        lines_or_path: File path, list of line strings, single string content, bytes, or StringIO.
-        config: Optional IngestConfig for defaults and custom log path.
-
-    Returns:
-        Tuple of (parsed_df, list_of_failed_raw_lines).
-    """
-    cfg = config or IngestConfig()
-    lines: List[str] = []
-
-    if isinstance(lines_or_path, list):
-        lines = lines_or_path
-    elif isinstance(lines_or_path, Path):
-        if not lines_or_path.is_file():
-            raise FileNotFoundError(f"Pickett file not found: {lines_or_path}")
-        with open(str(lines_or_path), "r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-    elif isinstance(lines_or_path, str):
-        if "\n" not in lines_or_path and os.path.exists(lines_or_path):
-            with open(lines_or_path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
-        elif "\n" not in lines_or_path and (
-            lines_or_path.endswith((".lin", ".cat", ".par", ".var")) or "/" in lines_or_path or "\\" in lines_or_path
-        ):
-            raise FileNotFoundError(f"Pickett file not found: {lines_or_path}")
+    # Sequence of elements/tuples/dicts
+    for item in isotopologue:
+        if isinstance(item, IsotopeSpec):
+            specs.append(item)
+        elif isinstance(item, tuple) and len(item) == 2:
+            t_sym, t_a = item
+            specs.append(get_isotope_properties(str(t_sym), int(t_a), db_path=db_path))
+        elif isinstance(item, dict):
+            d_sym = str(item.get("symbol") or item.get("element") or "")
+            d_a = item.get("mass_number") or item.get("a")
+            d_mass_no: Optional[int] = int(d_a) if d_a is not None else None
+            specs.append(get_isotope_properties(d_sym, d_mass_no, db_path=db_path))
+        elif isinstance(item, str):
+            specs.extend(parse_isotopologue_input(item, db_path=db_path))
         else:
-            lines = lines_or_path.splitlines()
-    elif isinstance(lines_or_path, bytes):
-        lines = lines_or_path.decode("utf-8", errors="replace").splitlines()
-    elif isinstance(lines_or_path, io.StringIO):
-        lines = lines_or_path.getvalue().splitlines()
+            raise ValueError(f"Unsupported isotope specification object: {item}")
+
+    return specs
+
+
+def evaluate_isotopologue_abundance(
+    isotopes: Sequence[Union[IsotopeSpec, Tuple[str, int], Dict[str, Any], str]],
+    threshold_percent: float = 0.01,
+    db_path: Optional[Union[str, Path]] = None,
+    hitl_callback: Optional[Callable[[IsotopeTriageResult], bool]] = None,
+    quarantine_dir: Optional[Union[str, Path]] = None,
+) -> IsotopeTriageResult:
+    """
+    Evaluates the natural abundance product of an isotopologue and categorizes it into
+    Method Matrix v4 Product Classes (Product A, B, C, or Trace).
+
+    Supports:
+    - HITL (Human-in-the-Loop) callback approval for sub-threshold isotopologues.
+    - Headless degradation: If COCHEM_HEADLESS=1 (or 'true') is detected in os.environ and abundance
+      is below threshold, auto-quarantines the record to disk and raises IsotopeQuarantineError.
+
+    Args:
+        isotopes: Constituent atomic isotope definitions.
+        threshold_percent: Abundance threshold cut-off percentage (default 0.01% = 1e-4).
+        db_path: Optional path to Mendeleev SQLite database.
+        hitl_callback: Optional callback receiving IsotopeTriageResult and returning bool approval.
+        quarantine_dir: Optional destination directory for auto-quarantine JSON records.
+
+    Returns:
+        IsotopeTriageResult: Structured triage classification.
+
+    Raises:
+        IsotopeQuarantineError: When sub-threshold isotopologue is auto-quarantined under COCHEM_HEADLESS=1.
+    """
+    specs: List[IsotopeSpec] = []
+    for item in isotopes:
+        if isinstance(item, IsotopeSpec):
+            specs.append(item)
+        else:
+            parsed = parse_isotopologue_input([item], db_path=db_path)
+            specs.extend(parsed)
+
+    if not specs:
+        raise ValueError("Cannot evaluate empty isotopologue specification.")
+
+    # Calculate molecular mass and abundance product in FP64
+    total_mass = np.float64(sum(s.mass_amu for s in specs))
+
+    # Product of fractional abundances: prod(abundance_percent / 100)
+    abundance_fraction = np.float64(1.0)
+    for s in specs:
+        fraction_i = np.float64(s.abundance_percent) / np.float64(100.0)
+        abundance_fraction *= fraction_i
+
+    abundance_percent = np.float64(abundance_fraction * 100.0)
+
+    # Determine parent isotopologue and count substitutions
+    substitution_count = 0
+    parent_symbols: List[str] = []
+    current_symbols: List[str] = []
+
+    for s in specs:
+        current_symbols.append(f"{s.mass_number}{s.symbol}")
+        parent_iso = get_isotope_properties(s.symbol, None, db_path=db_path)
+        parent_symbols.append(f"{parent_iso.mass_number}{parent_iso.symbol}")
+        if s.mass_number != parent_iso.mass_number:
+            substitution_count += 1
+
+    isotopologue_name = "-".join(current_symbols)
+    parent_formula = "-".join(parent_symbols)
+
+    # Classification according to Method Matrix v4 standards:
+    # Product A: Parent isotopologue (0 substitutions)
+    # Product B: Singly-substituted isotopologue (1 substitution)
+    # Product C: Multiply-substituted difference target (>= 2 substitutions)
+    # Trace: Natural abundance below threshold_percent
+    is_observable = bool(abundance_percent >= threshold_percent)
+    rejection_reason: Optional[str] = None
+    quarantined = False
+    quar_path_str: Optional[str] = None
+
+    if not is_observable:
+        prod_class = ProductClass.TRACE
+        rejection_reason = (
+            f"Natural abundance {abundance_percent:.6e}% is below threshold {threshold_percent:.4f}%."
+        )
+
+        is_headless = os.environ.get("COCHEM_HEADLESS", "").strip().lower() in ("1", "true", "yes")
+        if is_headless:
+            quarantined = True
+            q_dir = Path(quarantine_dir or os.environ.get("COCHEM_QUARANTINE_DIR") or (Path.cwd() / ".cochem_quarantine"))
+            q_dir.mkdir(parents=True, exist_ok=True)
+            quar_file = q_dir / f"quarantine_{isotopologue_name}_{int(abs(hash(isotopologue_name)) % 10000000)}.json"
+            quar_data = {
+                "isotopologue_name": isotopologue_name,
+                "total_mass_amu": float(total_mass),
+                "abundance_percent": float(abundance_percent),
+                "abundance_fraction": float(abundance_fraction),
+                "threshold_percent": float(threshold_percent),
+                "rejection_reason": rejection_reason,
+                "parent_formula": parent_formula,
+                "status": "AUTO_QUARANTINED",
+                "quarantined": True,
+            }
+            quar_file.write_text(json.dumps(quar_data, indent=2), encoding="utf-8")
+            quar_path_str = str(quar_file)
+            logger.warning(
+                f"[HEADLESS AUTO-QUARANTINE] Isotopologue '{isotopologue_name}' abundance {abundance_percent:.6e}% "
+                f"quarantined to {quar_path_str}"
+            )
+            raise IsotopeQuarantineError(
+                f"Isotopologue '{isotopologue_name}' abundance {abundance_percent:.6e}% is below threshold "
+                f"{threshold_percent:.4f}%. Auto-quarantined to {quar_path_str} under COCHEM_HEADLESS mode."
+            )
+        elif hitl_callback is not None:
+            pre_result = IsotopeTriageResult(
+                isotopologue_name=isotopologue_name,
+                total_mass_amu=total_mass,
+                abundance_percent=abundance_percent,
+                abundance_fraction=abundance_fraction,
+                is_observable=False,
+                product_class=ProductClass.TRACE,
+                substitution_count=substitution_count,
+                parent_formula=parent_formula,
+                isotope_details=specs,
+                rejection_reason=rejection_reason,
+                quarantined=False,
+                quarantine_path=None,
+            )
+            approved = hitl_callback(pre_result)
+            if approved:
+                is_observable = True
+                rejection_reason = None
+                if substitution_count == 0:
+                    prod_class = ProductClass.PRODUCT_A
+                elif substitution_count == 1:
+                    prod_class = ProductClass.PRODUCT_B
+                else:
+                    prod_class = ProductClass.PRODUCT_C
+                logger.info(
+                    f"[HITL APPROVAL] Isotopologue '{isotopologue_name}' approved via human-in-the-loop callback."
+                )
+            else:
+                logger.info(
+                    f"[HITL REJECTION] Isotopologue '{isotopologue_name}' rejected via human-in-the-loop callback."
+                )
     else:
-        raise ValueError(f"Unsupported content input type: {type(lines_or_path)}")
+        if substitution_count == 0:
+            prod_class = ProductClass.PRODUCT_A
+        elif substitution_count == 1:
+            prod_class = ProductClass.PRODUCT_B
+        else:
+            prod_class = ProductClass.PRODUCT_C
 
-    parsed_records: List[Dict[str, Any]] = []
-    failed_lines: List[str] = []
-
-    free_pattern = re.compile(
-        r"^\s*([+-]?\d+)\s+([+-]?\d+)\s+([+-]?\d+)(?:\s+[+-]?\d+){0,3}\s+"
-        r"([+-]?\d+)\s+([+-]?\d+)\s+([+-]?\d+)(?:\s+[+-]?\d+){0,3}\s+"
-        r"([+-]?\d+(?:\.\d*)?(?:[dDeE][+-]?\d+)?)\s+"
-        r"([+-]?\d+(?:\.\d*)?(?:[dDeE][+-]?\d+)?)"
-        r"(?:\s+([+-]?\d+(?:\.\d*)?(?:[dDeE][+-]?\d+)?))?"
+    return IsotopeTriageResult(
+        isotopologue_name=isotopologue_name,
+        total_mass_amu=total_mass,
+        abundance_percent=abundance_percent,
+        abundance_fraction=abundance_fraction,
+        is_observable=is_observable,
+        product_class=prod_class,
+        substitution_count=substitution_count,
+        parent_formula=parent_formula,
+        isotope_details=specs,
+        rejection_reason=rejection_reason,
+        quarantined=quarantined,
+        quarantine_path=quar_path_str,
     )
 
-    jpl_cat_pattern = re.compile(
-        r"^\s*([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+"
-        r"([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+"
-        r"([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+"
-        r"([+-]?\d+)\s+"
-        r"([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+"
-        r"([+-]?\d+)\s+"
-        r"([+-]?\d+)\s+"
-        r"(\d+)\s+"
-        r"([+-]?\d+)\s+([+-]?\d+)\s+([+-]?\d+)(?:\s+[+-]?\d+){0,3}\s+"
-        r"([+-]?\d+)\s+([+-]?\d+)\s+([+-]?\d+)"
+
+def check_isotope_abundance(
+    isotopologue_data: Union[
+        IsotopologueData,
+        Sequence[Union[Tuple[str, int], Dict[str, Any], IsotopeSpec, str]],
+        str,
+        Dict[str, Any],
+    ],
+    threshold_percent: float = 0.01,
+    db_path: Optional[Union[str, Path]] = None,
+    hitl_callback: Optional[Callable[[IsotopeTriageResult], bool]] = None,
+    quarantine_dir: Optional[Union[str, Path]] = None,
+) -> IsotopeTriageResult:
+    """
+    High-level entry point to evaluate natural abundance and triage rare isotopologues.
+    Supports Human-in-the-Loop (HITL) callback and COCHEM_HEADLESS auto-quarantine.
+    """
+    specs = parse_isotopologue_input(isotopologue_data, db_path=db_path)
+    return evaluate_isotopologue_abundance(
+        specs,
+        threshold_percent=threshold_percent,
+        db_path=db_path,
+        hitl_callback=hitl_callback,
+        quarantine_dir=quarantine_dir,
     )
 
-    for line_no, raw_line in enumerate(lines, 1):
-        line = raw_line.strip()
-        if not line or line.startswith("#") or line.startswith("!"):
+
+# =============================================================================
+# 6. METHOD MATRIX V4 MASS MATRIX TRANSFORMATION (M^(-1/2) F_cart M^(-1/2))
+# =============================================================================
+
+
+def mass_matrix_transformation(
+    F_cart: Union[np.ndarray, Sequence[Sequence[float]]],
+    masses: Union[Sequence[float], np.ndarray],
+) -> np.ndarray:
+    """
+    Implements the Method Matrix v4 Mass Matrix Transformation:
+    H_mw = M^(-1/2) * F_cart * M^(-1/2)
+
+    Re-weights the Cartesian force constant Hessian matrix by atomic/coordinate masses
+    in strict FP64 precision.
+
+    Args:
+        F_cart: Square Cartesian Hessian matrix of shape (3N, 3N) or (D, D).
+        masses: Array of atomic masses (length N, broadcast to 3N) or coordinate masses (length 3N).
+
+    Returns:
+        np.ndarray: Mass-weighted Hessian matrix H_mw of dtype np.float64.
+
+    Raises:
+        ValueError: On dimension mismatch or non-square matrix.
+        CoChemPrecisionError: If input cannot be converted to FP64.
+    """
+    f_arr = np.asarray(F_cart, dtype=np.float64)
+    if f_arr.ndim != 2 or f_arr.shape[0] != f_arr.shape[1]:
+        raise ValueError(
+            f"Cartesian Hessian F_cart must be a 2D square matrix, got shape {f_arr.shape}."
+        )
+
+    dim = f_arr.shape[0]
+    m_arr = np.asarray(masses, dtype=np.float64).flatten()
+
+    if m_arr.size == dim:
+        coord_masses = m_arr
+    elif m_arr.size * 3 == dim:
+        # Atomic masses provided (length N) -> expand 3 times for (x, y, z) coordinates
+        coord_masses = np.repeat(m_arr, 3)
+    else:
+        raise ValueError(
+            f"Mass vector size ({m_arr.size}) is incompatible with Hessian dimension ({dim}). "
+            f"Expected either {dim} coordinate masses or {dim // 3} atomic masses."
+        )
+
+    if np.any(coord_masses <= 0.0):
+        raise ValueError("All atomic/coordinate masses must be strictly positive.")
+
+    # Enforce strict symmetry on input Cartesian Hessian: F = 0.5 * (F + F^T)
+    f_sym = 0.5 * (f_arr + f_arr.T)
+
+    # Compute inverse square root mass vector M^(-1/2) in FP64
+    inv_sqrt_mass = 1.0 / np.sqrt(coord_masses)
+
+    # Mass-weighted transformation: H_mw = M^(-1/2) F_cart M^(-1/2)
+    # Element-wise: H_mw[i, j] = F[i, j] / sqrt(M_i * M_j)
+    h_mw = f_sym * np.outer(inv_sqrt_mass, inv_sqrt_mass)
+
+    return np.asarray(h_mw, dtype=np.float64)
+
+
+def compute_harmonic_vibrational_frequencies(
+    F_cart: Union[np.ndarray, Sequence[Sequence[float]]],
+    masses: Union[Sequence[float], np.ndarray],
+    units: str = "hartree_bohr2",
+    zero_threshold_cm1: float = 30.0,
+) -> HarmonicVibrationalResult:
+    """
+    Computes harmonic vibrational frequencies (cm^-1) and normal modes by diagonalizing
+    the mass-weighted Cartesian Hessian matrix in strict FP64 precision.
+
+    Conversion units:
+    - 'hartree_bohr2': F_cart in Hartree / bohr^2, masses in unified atomic mass units u.
+                       Frequency factor = 5140.487143611564 cm^-1.
+    - 'si': F_cart in N/m (J/m^2), masses in kg.
+            Frequency factor = 1 / (2 * pi * c_cm) cm^-1.
+    - 'ev_angstrom2': F_cart in eV / Angstrom^2, masses in u.
+
+    Args:
+        F_cart: Cartesian Hessian matrix.
+        masses: Atomic or coordinate masses.
+        units: Unit convention for input Hessian ('hartree_bohr2', 'si', 'ev_angstrom2').
+        zero_threshold_cm1: Threshold below which modes are considered translation/rotation zeros.
+
+    Returns:
+        HarmonicVibrationalResult: Complete vibrational spectrum report.
+    """
+    h_mw = mass_matrix_transformation(F_cart, masses)
+    dim = h_mw.shape[0]
+
+    # Diagonalize symmetric mass-weighted Hessian matrix (FP64)
+    eigenvalues, eigenvectors = np.linalg.eigh(h_mw)
+
+    # Determine conversion factor from eigenvalue to wavenumber (cm^-1)
+    if units.lower() in ["hartree_bohr2", "hartree/bohr^2", "au"]:
+        # lambda in Hartree / (bohr^2 * u)
+        # freq_cm1 = sign(lambda) * sqrt(|lambda|) * AU_TO_WAVENUMBER_CONVERSION
+        scale_factor = AU_TO_WAVENUMBER_CONVERSION
+    elif units.lower() in ["si", "n/m", "j/m2"]:
+        # lambda in s^-2 (N / (m * kg))
+        scale_factor = 1.0 / (2.0 * math.pi * SPEED_OF_LIGHT_CM_S)
+    elif units.lower() in ["ev_angstrom2", "ev/a^2"]:
+        # Convert eV/Angstrom^2/u -> Hartree/bohr^2/u
+        ev_to_hartree = EV_TO_JOULE / HARTREE_TO_JOULE
+        angstrom_to_bohr = ANGSTROM_TO_METER / BOHR_RADIUS_METER
+        unit_scale = math.sqrt(ev_to_hartree / (angstrom_to_bohr**2))
+        scale_factor = AU_TO_WAVENUMBER_CONVERSION * unit_scale
+    else:
+        raise ValueError(
+            f"Unsupported Hessian unit system '{units}'. Supported: 'hartree_bohr2', 'si', 'ev_angstrom2'."
+        )
+
+    frequencies_cm1: List[float] = []
+    vibrational_frequencies_cm1: List[float] = []
+    imaginary_count = 0
+    zero_count = 0
+
+    for val in eigenvalues:
+        if val < -1e-8:
+            # Imaginary frequency mode (saddle point)
+            imag_freq = -float(scale_factor * math.sqrt(abs(val)))
+            frequencies_cm1.append(imag_freq)
+            imaginary_count += 1
+        elif abs(val) <= 1e-8:
+            frequencies_cm1.append(0.0)
+            zero_count += 1
+        else:
+            freq = float(scale_factor * math.sqrt(val))
+            frequencies_cm1.append(freq)
+            if freq < zero_threshold_cm1:
+                zero_count += 1
+            else:
+                vibrational_frequencies_cm1.append(freq)
+
+    # Sort genuine vibrational frequencies in ascending order
+    vibrational_frequencies_cm1.sort()
+
+    # Calculate reduced masses for normal modes
+    m_arr = np.asarray(masses, dtype=np.float64).flatten()
+    coord_masses = m_arr if m_arr.size == dim else np.repeat(m_arr, 3)
+    inv_sqrt_m = 1.0 / np.sqrt(coord_masses)
+
+    reduced_masses: List[float] = []
+    normal_mode_displacements: List[List[float]] = []
+
+    for k in range(dim):
+        # Mass-weighted eigenvector L_k
+        l_k = eigenvectors[:, k]
+        # Cartesian displacement Q_cart = M^(-1/2) * L_k
+        q_cart = l_k * inv_sqrt_m
+        norm_q = float(np.linalg.norm(q_cart))
+        if norm_q > 1e-12:
+            q_cart_norm = q_cart / norm_q
+            # Reduced mass mu_k = sum_i(m_i * q_cart_norm_i^2) = 1 / sum_i(L_ik^2 / m_i) = 1 / norm_q^2
+            mu_k_val: float = float(np.sum(coord_masses * (q_cart_norm**2)))
+        else:
+            q_cart_norm = q_cart
+            mu_k_val = 1.0
+
+        reduced_masses.append(float(mu_k_val))
+        normal_mode_displacements.append([float(x) for x in q_cart_norm])
+
+    return HarmonicVibrationalResult(
+        frequencies_cm1=[float(f) for f in frequencies_cm1],
+        vibrational_frequencies_cm1=vibrational_frequencies_cm1,
+        imaginary_frequencies_count=imaginary_count,
+        zero_modes_count=zero_count,
+        eigenvalues=[float(v) for v in eigenvalues],
+        mass_weighted_hessian_shape=(dim, dim),
+        reduced_masses_amu=reduced_masses,
+        normal_modes=normal_mode_displacements,
+    )
+
+
+# =============================================================================
+# 7. RESONANCE & POLYAD TRAP
+# =============================================================================
+
+
+def scan_fermi_resonances(
+    frequencies: Sequence[float],
+    type1_tol: float = 30.0,
+    type2_tol: float = 30.0,
+) -> List[ResonanceCondition]:
+    """
+    Scans harmonic vibrational frequencies for Fermi resonance conditions:
+    - Fermi Type I: omega_i ~ 2 * omega_j
+    - Fermi Type II (triad): omega_i ~ omega_j + omega_k
+
+    Args:
+        frequencies: List of fundamental vibrational frequencies in cm^-1.
+        type1_tol: Max energy detuning |omega_i - 2*omega_j| in cm^-1.
+        type2_tol: Max energy detuning |omega_i - (omega_j + omega_k)| in cm^-1.
+
+    Returns:
+        List[ResonanceCondition]: Detected Fermi resonance interactions.
+    """
+    valid_freqs = [(idx, float(f)) for idx, f in enumerate(frequencies) if f > 0.0]
+    resonances: List[ResonanceCondition] = []
+
+    # 1. Fermi Type I Scan: omega_i ~ 2 * omega_j
+    for i, w_i in valid_freqs:
+        for j, w_j in valid_freqs:
+            if i == j:
+                continue
+            detuning = abs(w_i - 2.0 * w_j)
+            if detuning <= type1_tol:
+                severity = (
+                    "STRONG"
+                    if detuning <= 10.0
+                    else ("MODERATE" if detuning <= 20.0 else "WEAK")
+                )
+                desc = (
+                    f"Fermi Type I: Mode {i} ({w_i:.1f} cm^-1) couples to overtone 2*nu_{j} "
+                    f"({2.0 * w_j:.1f} cm^-1), |Delta E| = {detuning:.2f} cm^-1"
+                )
+                resonances.append(
+                    ResonanceCondition(
+                        resonance_type=ResonanceType.FERMI_TYPE_I,
+                        mode_indices=[i, j],
+                        frequencies_cm1=[w_i, w_j],
+                        energy_difference_cm1=float(detuning),
+                        description=desc,
+                        severity=severity,
+                    )
+                )
+
+    # 2. Fermi Type II Scan: omega_i ~ omega_j + omega_k (with j < k)
+    n = len(valid_freqs)
+    for idx_i, (i, w_i) in enumerate(valid_freqs):
+        for idx_j in range(n):
+            for idx_k in range(idx_j + 1, n):
+                j, w_j = valid_freqs[idx_j]
+                k, w_k = valid_freqs[idx_k]
+                if i in (j, k):
+                    continue
+                combination = w_j + w_k
+                detuning = abs(w_i - combination)
+                if detuning <= type2_tol:
+                    severity = (
+                        "STRONG"
+                        if detuning <= 10.0
+                        else ("MODERATE" if detuning <= 20.0 else "WEAK")
+                    )
+                    desc = (
+                        f"Fermi Type II: Mode {i} ({w_i:.1f} cm^-1) couples to combination band "
+                        f"nu_{j}+nu_{k} ({combination:.1f} cm^-1), |Delta E| = {detuning:.2f} cm^-1"
+                    )
+                    resonances.append(
+                        ResonanceCondition(
+                            resonance_type=ResonanceType.FERMI_TYPE_II,
+                            mode_indices=[i, j, k],
+                            frequencies_cm1=[w_i, w_j, w_k],
+                            energy_difference_cm1=float(detuning),
+                            description=desc,
+                            severity=severity,
+                        )
+                    )
+
+    return resonances
+
+
+def scan_coriolis_resonances(
+    frequencies: Sequence[float],
+    coriolis_tol: float = 20.0,
+) -> List[ResonanceCondition]:
+    """
+    Scans harmonic vibrational frequencies for Coriolis resonance conditions between
+    nearly degenerate fundamental modes (omega_i ~ omega_j).
+
+    Args:
+        frequencies: List of fundamental vibrational frequencies in cm^-1.
+        coriolis_tol: Max frequency difference |omega_i - omega_j| in cm^-1.
+
+    Returns:
+        List[ResonanceCondition]: Detected Coriolis resonance interactions.
+    """
+    valid_freqs = [(idx, float(f)) for idx, f in enumerate(frequencies) if f > 0.0]
+    resonances: List[ResonanceCondition] = []
+    n = len(valid_freqs)
+
+    for idx_i in range(n):
+        for idx_j in range(idx_i + 1, n):
+            i, w_i = valid_freqs[idx_i]
+            j, w_j = valid_freqs[idx_j]
+            diff = abs(w_i - w_j)
+            if diff <= coriolis_tol:
+                severity = (
+                    "STRONG"
+                    if diff <= 5.0
+                    else ("MODERATE" if diff <= 10.0 else "WEAK")
+                )
+                desc = (
+                    f"Coriolis Resonance: Mode {i} ({w_i:.1f} cm^-1) and Mode {j} ({w_j:.1f} cm^-1) "
+                    f"are near-degenerate, |Delta E| = {diff:.2f} cm^-1"
+                )
+                resonances.append(
+                    ResonanceCondition(
+                        resonance_type=ResonanceType.CORIOLIS,
+                        mode_indices=[i, j],
+                        frequencies_cm1=[w_i, w_j],
+                        energy_difference_cm1=float(diff),
+                        description=desc,
+                        severity=severity,
+                    )
+                )
+
+    return resonances
+
+
+def scan_darling_dennison_resonances(
+    frequencies: Sequence[float],
+    dd_tol: float = 30.0,
+) -> List[ResonanceCondition]:
+    """
+    Scans overtone states for Darling-Dennison resonance conditions (2*omega_i ~ 2*omega_j).
+
+    Args:
+        frequencies: List of fundamental vibrational frequencies in cm^-1.
+        dd_tol: Max energy detuning |2*omega_i - 2*omega_j| in cm^-1.
+
+    Returns:
+        List[ResonanceCondition]: Detected Darling-Dennison resonance interactions.
+    """
+    valid_freqs = [(idx, float(f)) for idx, f in enumerate(frequencies) if f > 0.0]
+    resonances: List[ResonanceCondition] = []
+    n = len(valid_freqs)
+
+    for idx_i in range(n):
+        for idx_j in range(idx_i + 1, n):
+            i, w_i = valid_freqs[idx_i]
+            j, w_j = valid_freqs[idx_j]
+            diff = abs(2.0 * w_i - 2.0 * w_j)
+            if diff <= dd_tol:
+                severity = (
+                    "STRONG"
+                    if diff <= 10.0
+                    else ("MODERATE" if diff <= 20.0 else "WEAK")
+                )
+                desc = (
+                    f"Darling-Dennison Resonance: Overtone 2*nu_{i} ({2.0 * w_i:.1f} cm^-1) and "
+                    f"2*nu_{j} ({2.0 * w_j:.1f} cm^-1), |Delta E| = {diff:.2f} cm^-1"
+                )
+                resonances.append(
+                    ResonanceCondition(
+                        resonance_type=ResonanceType.DARLING_DENNISON,
+                        mode_indices=[i, j],
+                        frequencies_cm1=[w_i, w_j],
+                        energy_difference_cm1=float(diff),
+                        description=desc,
+                        severity=severity,
+                    )
+                )
+
+    return resonances
+
+
+def identify_polyad_blocks(
+    resonances: Sequence[ResonanceCondition],
+    frequencies: Sequence[float],
+) -> List[PolyadBlock]:
+    """
+    Clusters mutually resonant vibrational modes into coupled Polyad blocks using
+    connected component graph partitioning.
+
+    Args:
+        resonances: All detected resonance interactions.
+        frequencies: Normal mode frequencies in cm^-1.
+
+    Returns:
+        List[PolyadBlock]: Partitioned coupled polyad blocks.
+    """
+    if not resonances:
+        return []
+
+    # Build adjacency list across interacting mode indices
+    adjacency: Dict[int, Set[int]] = {}
+    mode_resonance_types: Dict[int, Set[ResonanceType]] = {}
+
+    for r in resonances:
+        for m in r.mode_indices:
+            if m not in adjacency:
+                adjacency[m] = set()
+                mode_resonance_types[m] = set()
+            mode_resonance_types[m].add(r.resonance_type)
+            for other_m in r.mode_indices:
+                if m != other_m:
+                    adjacency[m].add(other_m)
+
+    # Find connected components via breadth-first search
+    visited: Set[int] = set()
+    components: List[List[int]] = []
+
+    for node in sorted(adjacency.keys()):
+        if node in visited:
             continue
+        comp = []
+        queue = [node]
+        visited.add(node)
+        while queue:
+            curr = queue.pop(0)
+            comp.append(curr)
+            for neighbor in adjacency.get(curr, set()):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+        components.append(sorted(comp))
 
-        matched = False
+    # Construct PolyadBlock models
+    polyad_blocks: List[PolyadBlock] = []
+    freq_list = list(frequencies)
 
-        cat_match = jpl_cat_pattern.match(line)
-        if cat_match:
-            try:
-                freq = fortran_float_converter(cat_match.group(1))
-                unc = fortran_float_converter(cat_match.group(2))
-                intensity = fortran_float_converter(cat_match.group(3))
-                ju = int(cat_match.group(9))
-                kau = int(cat_match.group(10))
-                kcu = int(cat_match.group(11))
-                jl = int(cat_match.group(12))
-                kal = int(cat_match.group(13))
-                kcl = int(cat_match.group(14))
+    for block_idx, comp in enumerate(components):
+        block_freqs = [freq_list[m] for m in comp if m < len(freq_list)]
+        span = float(max(block_freqs) - min(block_freqs)) if block_freqs else 0.0
 
-                parsed_records.append({
-                    "Frequency_MHz": np.float64(freq),
-                    "Uncertainty": np.float64(unc),
-                    "Intensity": np.float64(intensity),
-                    "J_upper": int(ju),
-                    "Ka_upper": int(kau),
-                    "Kc_upper": int(kcu),
-                    "J_lower": int(jl),
-                    "Ka_lower": int(kal),
-                    "Kc_lower": int(kcl),
-                })
-                matched = True
-            except (ValueError, TypeError, IndexError) as e:
-                logger.debug(f"Catalog match parse failed at line {line_no}: {e}")
+        # Collect resonance types active within this component
+        types_in_block: Set[ResonanceType] = set()
+        for r in resonances:
+            if any(m in comp for m in r.mode_indices):
+                types_in_block.add(r.resonance_type)
 
-        if not matched:
-            free_match = free_pattern.match(line)
-            if free_match:
-                try:
-                    ju = int(free_match.group(1))
-                    kau = int(free_match.group(2))
-                    kcu = int(free_match.group(3))
-                    jl = int(free_match.group(4))
-                    kal = int(free_match.group(5))
-                    kcl = int(free_match.group(6))
-                    freq = fortran_float_converter(free_match.group(7))
-                    unc = fortran_float_converter(free_match.group(8))
-                    raw_int = free_match.group(9)
-                    intensity = fortran_float_converter(raw_int) if raw_int else cfg.default_intensity
-
-                    parsed_records.append({
-                        "Frequency_MHz": np.float64(freq),
-                        "Uncertainty": np.float64(unc),
-                        "Intensity": np.float64(intensity),
-                        "J_upper": int(ju),
-                        "Ka_upper": int(kau),
-                        "Kc_upper": int(kcu),
-                        "J_lower": int(jl),
-                        "Ka_lower": int(kal),
-                        "Kc_lower": int(kcl),
-                    })
-                    matched = True
-                except (ValueError, TypeError, IndexError) as e:
-                    logger.debug(f"Pickett line regex parse failed at line {line_no}: {e}")
-
-        if not matched:
-            if len(raw_line) >= 40:
-                try:
-                    part_ju = raw_line[0:3].strip()
-                    part_kau = raw_line[3:6].strip()
-                    part_kcu = raw_line[6:9].strip()
-                    part_jl = raw_line[18:21].strip()
-                    part_kal = raw_line[21:24].strip()
-                    part_kcl = raw_line[24:27].strip()
-                    part_freq = raw_line[36:49].strip()
-                    part_unc = raw_line[49:57].strip()
-                    part_int = raw_line[57:65].strip() if len(raw_line) >= 65 else ""
-
-                    if part_ju and part_jl and part_freq:
-                        ju = int(part_ju)
-                        kau = int(part_kau) if part_kau else 0
-                        kcu = int(part_kcu) if part_kcu else 0
-                        jl = int(part_jl)
-                        kal = int(part_kal) if part_kal else 0
-                        kcl = int(part_kcl) if part_kcl else 0
-                        freq = fortran_float_converter(part_freq)
-                        unc = fortran_float_converter(part_unc) if part_unc else cfg.default_uncertainty
-                        intensity = fortran_float_converter(part_int) if part_int else cfg.default_intensity
-
-                        parsed_records.append({
-                            "Frequency_MHz": np.float64(freq),
-                            "Uncertainty": np.float64(unc),
-                            "Intensity": np.float64(intensity),
-                            "J_upper": int(ju),
-                            "Ka_upper": int(kau),
-                            "Kc_upper": int(kcu),
-                            "J_lower": int(jl),
-                            "Ka_lower": int(kal),
-                            "Kc_lower": int(kcl),
-                        })
-                        matched = True
-                except (ValueError, TypeError, IndexError) as e:
-                    logger.debug(f"Fixed-width positional parse failed at line {line_no}: {e}")
-
-        if not matched:
-            failed_lines.append(raw_line)
-            if cfg.log_warnings:
-                logger.warning(f"[INGEST PARSE FAILURE] Line {line_no} failed regex parsing: {raw_line.strip()!r}")
-
-    if failed_lines:
-        log_dest: Path
-        if cfg.failed_log_path:
-            log_dest = Path(cfg.failed_log_path)
-        else:
-            log_dest = user_log_path("CoChem") / "failed_ingest.log"
-
-        try:
-            log_dest.parent.mkdir(parents=True, exist_ok=True)
-            with open(log_dest, "a", encoding="utf-8") as f:
-                for fl in failed_lines:
-                    f.write(f"{fl.rstrip()}\n")
-        except OSError as e:
-            logger.debug(f"Could not write to log path {log_dest}: {e}")
-
-    if not parsed_records:
-        df_res = pd.DataFrame(columns=CANONICAL_COLUMNS)
-    else:
-        df_res = pd.DataFrame(parsed_records)
-
-    return enforce_fp64_boundary(df_res), failed_lines
-
-
-parse_pickett_lin = parse_legacy_pickett
-
-
-def parse_pickett_par(
-    content_or_path: Union[str, Path, bytes, io.StringIO],
-) -> PickettParFile:
-    """
-    Parses a legacy Pickett parameter file (.par / .var).
-
-    Structure:
-    Line 1: Title
-    Line 2: Control line (npar, nline, nopt, nwarn, erpar, wtfac, scale, maxit)
-    Subsequent lines: Parameters (code, value, uncertainty, label)
-
-    Args:
-        content_or_path: File path, string content, bytes, or StringIO.
-
-    Returns:
-        Structured PickettParFile instance.
-    """
-    lines: List[str] = []
-    if isinstance(content_or_path, Path):
-        if not content_or_path.is_file():
-            raise FileNotFoundError(f"Pickett .par/.var file not found: {content_or_path}")
-        with open(str(content_or_path), "r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-    elif isinstance(content_or_path, str):
-        if "\n" not in content_or_path and os.path.exists(content_or_path):
-            with open(content_or_path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
-        elif "\n" not in content_or_path and (
-            content_or_path.endswith((".par", ".var", ".lin", ".cat")) or "/" in content_or_path or "\\" in content_or_path
-        ):
-            raise FileNotFoundError(f"Pickett .par/.var file not found: {content_or_path}")
-        else:
-            lines = content_or_path.splitlines()
-    elif isinstance(content_or_path, bytes):
-        lines = content_or_path.decode("utf-8", errors="replace").splitlines()
-    elif isinstance(content_or_path, io.StringIO):
-        lines = content_or_path.getvalue().splitlines()
-    else:
-        raise ValueError(f"Unsupported content type: {type(content_or_path)}")
-
-    non_empty = [l.rstrip() for l in lines if l.strip()]
-    if len(non_empty) < 2:
-        raise ValueError("Pickett .par/.var file must have at least a title and a control line.")
-
-    title = non_empty[0].strip()
-    control_line = non_empty[1].strip()
-
-    ctrl_parts = control_line.split()
-    npar = int(ctrl_parts[0]) if len(ctrl_parts) > 0 else 0
-    nline = int(ctrl_parts[1]) if len(ctrl_parts) > 1 else 0
-    nopt = int(ctrl_parts[2]) if len(ctrl_parts) > 2 else 0
-    nwarn = int(ctrl_parts[3]) if len(ctrl_parts) > 3 else 0
-    erpar = fortran_float_converter(ctrl_parts[4]) if len(ctrl_parts) > 4 else 1.0
-    wtfac = fortran_float_converter(ctrl_parts[5]) if len(ctrl_parts) > 5 else 1.0
-    scale = fortran_float_converter(ctrl_parts[6]) if len(ctrl_parts) > 6 else 1.0
-    maxit = int(ctrl_parts[7]) if len(ctrl_parts) > 7 else 50
-
-    parameters: List[PickettParameter] = []
-    param_line_pattern = re.compile(
-        r"^\s*(\d+)\s+([+-]?\d+(?:\.\d*)?(?:[dDeE][+-]?\d+)?)\s+([+-]?\d+(?:\.\d*)?(?:[dDeE][+-]?\d+)?)(?:\s*(?:/|!)\s*(.*))?"
-    )
-
-    for p_line in non_empty[2:]:
-        match = param_line_pattern.match(p_line)
-        if match:
-            pid = int(match.group(1))
-            val = fortran_float_converter(match.group(2))
-            unc = fortran_float_converter(match.group(3))
-            lbl = (match.group(4) or "").strip()
-            parameters.append(PickettParameter(param_id=pid, value=val, uncertainty=unc, label=lbl))
-
-    return PickettParFile(
-        title=title,
-        npar=len(parameters),
-        nline=nline,
-        nopt=nopt,
-        nwarn=nwarn,
-        erpar=erpar,
-        wtfac=wtfac,
-        scale=scale,
-        maxit=maxit,
-        parameters=parameters,
-    )
-
-
-def parse_csv_spectroscopy(
-    content_or_path: Union[str, Path, bytes, io.StringIO],
-    config: Optional[IngestConfig] = None,
-) -> pd.DataFrame:
-    """
-    Parses modern structured spectroscopy files (.csv, .tsv, .parquet, .json).
-
-    Standardizes column name variations to canonical naming convention:
-    ['Frequency_MHz', 'Uncertainty', 'Intensity', 'J_upper', 'Ka_upper', 'Kc_upper',
-     'J_lower', 'Ka_lower', 'Kc_lower'].
-
-    Args:
-        content_or_path: File path, string content, bytes, or StringIO.
-        config: IngestConfig options.
-
-    Returns:
-        Standardized Pandas DataFrame with FP64 precision.
-    """
-    cfg = config or IngestConfig()
-
-    if isinstance(content_or_path, (str, Path)) and str(content_or_path).endswith(".parquet"):
-        if not os.path.exists(str(content_or_path)):
-            raise FileNotFoundError(f"Parquet file not found: {content_or_path}")
-        df_raw = pd.read_parquet(str(content_or_path))
-    elif isinstance(content_or_path, (str, Path)) and str(content_or_path).endswith(".json"):
-        if not os.path.exists(str(content_or_path)):
-            raise FileNotFoundError(f"JSON file not found: {content_or_path}")
-        df_raw = pd.read_json(str(content_or_path))
-    elif isinstance(content_or_path, io.StringIO):
-        df_raw = pd.read_csv(content_or_path, sep=None, engine="python")
-    elif isinstance(content_or_path, bytes):
-        df_raw = pd.read_csv(io.BytesIO(content_or_path), sep=None, engine="python")
-    elif isinstance(content_or_path, Path):
-        if not content_or_path.is_file():
-            raise FileNotFoundError(f"Spectroscopy file not found: {content_or_path}")
-        df_raw = pd.read_csv(str(content_or_path), sep=None, engine="python")
-    elif isinstance(content_or_path, str):
-        if "\n" not in content_or_path and os.path.exists(content_or_path):
-            df_raw = pd.read_csv(content_or_path, sep=None, engine="python")
-        elif "\n" not in content_or_path and (
-            content_or_path.endswith((".csv", ".tsv", ".txt")) or "/" in content_or_path or "\\" in content_or_path
-        ):
-            raise FileNotFoundError(f"Spectroscopy file not found: {content_or_path}")
-        else:
-            df_raw = pd.read_csv(io.StringIO(content_or_path), sep=None, engine="python")
-    else:
-        raise ValueError(f"Unsupported content type: {type(content_or_path)}")
-
-    col_map: Dict[str, str] = {
-        "frequency_mhz": "Frequency_MHz",
-        "frequency": "Frequency_MHz",
-        "freq_mhz": "Frequency_MHz",
-        "freq": "Frequency_MHz",
-        "nu_mhz": "Frequency_MHz",
-        "nu": "Frequency_MHz",
-        "f_mhz": "Frequency_MHz",
-        "f": "Frequency_MHz",
-        "uncertainty": "Uncertainty",
-        "uncertainty_mhz": "Uncertainty",
-        "unc": "Uncertainty",
-        "unc_mhz": "Uncertainty",
-        "err": "Uncertainty",
-        "error": "Uncertainty",
-        "sigma": "Uncertainty",
-        "intensity": "Intensity",
-        "int": "Intensity",
-        "logint": "Intensity",
-        "weight": "Intensity",
-        "wt": "Intensity",
-        "s_mu2": "Intensity",
-        "j_upper": "J_upper",
-        "j_prime": "J_upper",
-        "j'": "J_upper",
-        "j1": "J_upper",
-        "j_up": "J_upper",
-        "ju": "J_upper",
-        "ka_upper": "Ka_upper",
-        "ka_prime": "Ka_upper",
-        "ka'": "Ka_upper",
-        "ka1": "Ka_upper",
-        "ka_up": "Ka_upper",
-        "kau": "Ka_upper",
-        "kc_upper": "Kc_upper",
-        "kc_prime": "Kc_upper",
-        "kc'": "Kc_upper",
-        "kc1": "Kc_upper",
-        "kc_up": "Kc_upper",
-        "kcu": "Kc_upper",
-        "j_lower": "J_lower",
-        "j_double_prime": "J_lower",
-        "j''": "J_lower",
-        "j2": "J_lower",
-        "j_low": "J_lower",
-        "jl": "J_lower",
-        "ka_lower": "Ka_lower",
-        "ka_double_prime": "Ka_lower",
-        "ka''": "Ka_lower",
-        "ka2": "Ka_lower",
-        "ka_low": "Ka_lower",
-        "kal": "Ka_lower",
-        "kc_lower": "Kc_lower",
-        "kc_double_prime": "Kc_lower",
-        "kc''": "Kc_lower",
-        "kc2": "Kc_lower",
-        "kc_low": "Kc_lower",
-        "kcl": "Kc_lower",
-    }
-
-    rename_dict: Dict[str, str] = {}
-    for c in df_raw.columns:
-        c_clean = str(c).strip().lower()
-        if c_clean in col_map:
-            rename_dict[c] = col_map[c_clean]
-
-    df_renamed = df_raw.rename(columns=rename_dict)
-
-    required_core = ["Frequency_MHz", "J_upper", "Ka_upper", "Kc_upper", "J_lower", "Ka_lower", "Kc_lower"]
-    missing = [c for c in required_core if c not in df_renamed.columns]
-    if missing:
-        raise CoChemDataException(
-            f"CSV spectroscopy data missing mandatory columns: {missing}. Present: {list(df_renamed.columns)}"
+        dimension = max(len(comp), 2)
+        treatment = (
+            f"Coupled Polyad Diagonalization (Block Dimension {dimension}x{dimension}) "
+            f"via Effective Rovibrational Hamiltonian."
         )
 
-    if "Uncertainty" not in df_renamed.columns:
-        df_renamed["Uncertainty"] = cfg.default_uncertainty
-    if "Intensity" not in df_renamed.columns:
-        df_renamed["Intensity"] = cfg.default_intensity
-
-    for col in ["Frequency_MHz", "Uncertainty", "Intensity"]:
-        if df_renamed[col].dtype == object:
-            df_renamed[col] = df_renamed[col].apply(fortran_float_converter)
-
-    return enforce_fp64_boundary(df_renamed[CANONICAL_COLUMNS])
-
-
-# =============================================================================
-# 8. MASTER UNIFIED INGESTION ENGINE
-# =============================================================================
-
-def parse_spectroscopy_data(
-    file_path_or_content: Union[str, Path, bytes, io.StringIO],
-    format_hint: Optional[str] = None,
-    config: Optional[IngestConfig] = None,
-    zarr_path: Optional[Union[str, Path]] = None,
-) -> IngestResult:
-    """
-    Master Ingestion Engine & Gatekeeper (cochem_spycfit_ingest).
-
-    Orchestrates:
-    1. Automatic format detection (.lin, .par, .cat, .csv, .parquet, .json).
-    2. Bidirectional parsing of legacy Pickett lines and modern tabular structures.
-    3. JAX FP64 precision boundary enforcement (float64).
-    4. Cryptographic SHA-256 frequency fingerprinting.
-    5. Persistence to spectra_fit.zarr if zarr_path is configured.
-    6. Pre-Flight Syntax Validator (Quantum Logic Gate) for quantum number bounds.
-    7. In-memory Pre-Serialization Physics Filter (Selection Rules).
-    8. Construction of comprehensive ValidationReport and IngestResult.
-
-    Args:
-        file_path_or_content: File path, string content, bytes, or StringIO.
-        format_hint: Optional explicit format override ('lin', 'cat', 'csv', 'parquet', 'json').
-        config: Optional IngestConfig configuration options.
-        zarr_path: Optional path to spectra_fit.zarr to append the state matrix.
-
-    Returns:
-        IngestResult containing sanitized DataFrame, ValidationReport, and SHA-256 fingerprint.
-    """
-    cfg = config or IngestConfig()
-    warnings_list: List[str] = []
-
-    effective_zarr_path = zarr_path or cfg.zarr_path
-
-    fmt = (format_hint or "").lower().strip()
-    if not fmt:
-        if isinstance(file_path_or_content, Path):
-            suffix = file_path_or_content.suffix.lower().replace(".", "")
-            if suffix in ["lin", "cat", "par", "var", "csv", "tsv", "parquet", "json"]:
-                fmt = suffix
-        elif isinstance(file_path_or_content, str) and "\n" not in file_path_or_content:
-            try:
-                p = Path(file_path_or_content)
-                suffix = p.suffix.lower().replace(".", "")
-                if suffix in ["lin", "cat", "par", "var", "csv", "tsv", "parquet", "json"]:
-                    fmt = suffix
-            except (ValueError, TypeError, OSError) as exc:
-                logger.debug(f"Suffix resolution failed for {file_path_or_content}: {exc}")
-
-    if fmt in ["lin", "cat"]:
-        raw_df, failed_lines = parse_legacy_pickett(file_path_or_content, config=cfg)
-        if failed_lines:
-            warnings_list.append(f"{len(failed_lines)} raw line(s) failed regex parsing and were skipped.")
-    elif fmt in ["par", "var"]:
-        par_file = parse_pickett_par(file_path_or_content)
-        par_records = [
-            {"param_id": p.param_id, "value": p.value, "uncertainty": p.uncertainty, "label": p.label}
-            for p in par_file.parameters
-        ]
-        df_par = pd.DataFrame(par_records)
-        fp = calculate_frequency_fingerprint([p.value for p in par_file.parameters])
-        if effective_zarr_path:
-            append_to_spectra_fit_zarr(
-                zarr_path=effective_zarr_path,
-                frequencies=[p.value for p in par_file.parameters],
-                sha256_hash=fp,
-                group_name="pickett_parameters",
+        polyad_blocks.append(
+            PolyadBlock(
+                block_id=block_idx,
+                mode_indices=comp,
+                frequencies_cm1=block_freqs,
+                resonance_types=sorted(list(types_in_block), key=lambda x: x.value),
+                dimension=dimension,
+                frequency_span_cm1=span,
+                recommended_treatment=treatment,
             )
-        report = ValidationReport(
-            total_lines_read=len(par_file.parameters),
-            valid_lines_count=len(par_file.parameters),
-            syntax_dropped_count=0,
-            physics_dropped_count=0,
-            sha256_fingerprint=fp,
-            warnings=[],
-            syntax_violations=[],
-            physics_violations=[],
         )
-        return IngestResult(df=df_par, report=report, sha256_fingerprint=fp, success=True)
-    elif fmt in ["parquet", "json", "csv", "tsv"]:
-        raw_df = parse_csv_spectroscopy(file_path_or_content, config=cfg)
-    else:
+
+    return polyad_blocks
+
+
+def _extract_frequencies_from_zarr(z_obj: Any) -> np.ndarray:
+    """Extracts 1D frequency array from Zarr group or array."""
+    if hasattr(z_obj, "shape") and not hasattr(z_obj, "keys"):
+        return np.asarray(z_obj[:], dtype=np.float64).flatten()
+    if hasattr(z_obj, "keys"):
+        keys = list(z_obj.keys())
+        priority_keys = [
+            "frequencies",
+            "theoretical_frequencies",
+            "harmonic_frequencies",
+            "vibrational_frequencies",
+            "wavenumbers",
+            "modes",
+            "omega",
+        ]
+        for pk in priority_keys:
+            if pk in keys:
+                return np.asarray(z_obj[pk][:], dtype=np.float64).flatten()
+        if keys:
+            return np.asarray(z_obj[keys[0]][:], dtype=np.float64).flatten()
+    raise ValueError(f"Unable to extract frequency array from Zarr object: {z_obj}")
+
+
+def scan_resonance_traps(
+    frequencies: Union[Sequence[float], np.ndarray, str, Path, Any],
+    fermi_tol: float = 30.0,
+    coriolis_tol: float = 20.0,
+    dd_tol: float = 30.0,
+    heartbeat_callback: Optional[Callable[[int, int, float], None]] = None,
+    zmq_endpoint: Optional[str] = None,
+    zarr_store: Optional[Union[str, Path, Any]] = None,
+    landscape_path: Optional[Union[str, Path]] = None,
+) -> ResonanceReport:
+    """
+    Scans theoretical harmonic vibrational frequencies (from landscape.zarr or list/array)
+    for Fermi, Coriolis, and Darling-Dennison resonances and clusters interacting modes
+    into coupled Polyad blocks.
+
+    Features:
+    - Emits real-time diagnostic heartbeats during mode scanning to prevent HPC wall-time timeouts.
+    - Alerts the Orchestrator via ZeroMQ or Zarr state locks/attributes to construct a Polyad matrix.
+
+    Args:
+        frequencies: Frequencies array, list, or path/object to landscape.zarr store.
+        fermi_tol: Max detuning for Fermi resonances in cm^-1.
+        coriolis_tol: Max detuning for Coriolis resonances in cm^-1.
+        dd_tol: Max detuning for Darling-Dennison resonances in cm^-1.
+        heartbeat_callback: Optional callable(current_index, total_modes, freq_val) for HPC heartbeats.
+        zmq_endpoint: Optional ZeroMQ endpoint (e.g. 'tcp://127.0.0.1:5555') for orchestrator alerts.
+        zarr_store: Optional Zarr group/store to write resonance state attributes.
+        landscape_path: Optional path to landscape.zarr.
+
+    Returns:
+        ResonanceReport: Comprehensive report of detected resonances and polyad blocks.
+    """
+    # 1. Extract frequency values
+    if isinstance(frequencies, (str, Path)):
+        p = Path(frequencies)
         try:
-            raw_df = parse_csv_spectroscopy(file_path_or_content, config=cfg)
-        except (ValueError, CoChemDataException, pd.errors.ParserError):
-            raw_df, failed_lines = parse_legacy_pickett(file_path_or_content, config=cfg)
-            if failed_lines:
-                warnings_list.append(f"{len(failed_lines)} raw line(s) failed regex parsing.")
-
-    total_read = len(raw_df)
-
-    fingerprint = calculate_frequency_fingerprint(raw_df["Frequency_MHz"])
-
-    if effective_zarr_path:
-        append_to_spectra_fit_zarr(
-            zarr_path=effective_zarr_path,
-            frequencies=raw_df["Frequency_MHz"],
-            sha256_hash=fingerprint,
-            group_name="state_matrix",
-        )
-
-    if cfg.validate_syntax:
-        syntax_df, syntax_violations = validate_quantum_numbers(
-            raw_df,
-            drop_invalid=cfg.drop_invalid_syntax,
-            raise_on_error=False,
-            log_warnings=cfg.log_warnings,
-        )
-        syntax_dropped = len(syntax_violations) if cfg.drop_invalid_syntax else 0
-        if syntax_dropped > 0:
-            warnings_list.append(f"Pre-Flight Syntax Validator dropped {syntax_dropped} unphysical quantum assignment(s).")
+            z_node = zarr.open(str(p), mode="r")
+            freq_array = _extract_frequencies_from_zarr(z_node)
+        except Exception:
+            try:
+                z_node = zarr.open_group(str(p), mode="r")
+                freq_array = _extract_frequencies_from_zarr(z_node)
+            except Exception as exc:
+                raise ValueError(f"Failed to read frequencies from Zarr store at {p}: {exc}") from exc
+    elif hasattr(frequencies, "shape") and not isinstance(frequencies, np.ndarray):
+        freq_array = np.asarray(frequencies[:], dtype=np.float64).flatten()
+    elif hasattr(frequencies, "keys") and not isinstance(frequencies, dict):
+        freq_array = _extract_frequencies_from_zarr(frequencies)
     else:
-        syntax_df = raw_df
-        syntax_violations = []
-        syntax_dropped = 0
+        freq_array = np.asarray(frequencies, dtype=np.float64).flatten()
 
-    if cfg.apply_selection_rules:
-        physics_df, physics_violations = apply_selection_rules(
-            syntax_df,
-            allowed_dipole_types=cfg.allowed_dipole_types,
-            drop_forbidden=cfg.drop_forbidden_transitions,
-            raise_on_error=False,
-            log_warnings=cfg.log_warnings,
+    freq_list = [float(f) for f in freq_array]
+    total_modes = len(freq_list)
+
+    # 2. Emit heartbeats during scan
+    for idx, f_val in enumerate(freq_list):
+        if heartbeat_callback is not None:
+            try:
+                heartbeat_callback(idx + 1, total_modes, float(f_val))
+            except Exception as exc:
+                logger.debug(f"Heartbeat callback exception at mode {idx + 1}: {exc}")
+        logger.debug(f"[HEARTBEAT] Scanning mode {idx + 1}/{total_modes} ({f_val:.2f} cm^-1)")
+
+    # 3. Detect resonances
+    fermi_res = scan_fermi_resonances(freq_list, type1_tol=fermi_tol, type2_tol=fermi_tol)
+    coriolis_res = scan_coriolis_resonances(freq_list, coriolis_tol=coriolis_tol)
+    dd_res = scan_darling_dennison_resonances(freq_list, dd_tol=dd_tol)
+
+    all_res = fermi_res + coriolis_res + dd_res
+    polyads = identify_polyad_blocks(all_res, freq_list)
+    has_strong = any(r.severity == "STRONG" for r in all_res)
+
+    if has_strong:
+        recommended_hamiltonian = (
+            "De-perturbed Second-Order Vibrational Perturbation Theory (DVPT2) "
+            "with Coupled Polyad Effective Hamiltonian Matrix Diagonalization."
         )
-        physics_dropped = len(physics_violations) if cfg.drop_forbidden_transitions else 0
-        if physics_dropped > 0:
-            warnings_list.append(f"Pre-Serialization Physics Filter dropped {physics_dropped} forbidden transition(s).")
+    elif all_res:
+        recommended_hamiltonian = (
+            "Standard Second-Order Vibrational Perturbation Theory (VPT2) "
+            "with Resonance Detuning Monitoring."
+        )
     else:
-        physics_df = syntax_df
-        physics_violations = []
-        physics_dropped = 0
+        recommended_hamiltonian = (
+            "Standard Rayleigh-Schroedinger Perturbation Theory (VPT2)."
+        )
 
-    final_df = enforce_fp64_boundary(physics_df)
-
-    report = ValidationReport(
-        total_lines_read=total_read,
-        valid_lines_count=len(final_df),
-        syntax_dropped_count=syntax_dropped,
-        physics_dropped_count=physics_dropped,
-        sha256_fingerprint=fingerprint,
-        warnings=warnings_list,
-        syntax_violations=syntax_violations,
-        physics_violations=physics_violations,
+    report = ResonanceReport(
+        total_resonances_count=len(all_res),
+        fermi_resonances=fermi_res,
+        coriolis_resonances=coriolis_res,
+        darling_dennison_resonances=dd_res,
+        polyad_blocks=polyads,
+        has_strong_resonances=has_strong,
+        recommended_hamiltonian=recommended_hamiltonian,
     )
 
-    return IngestResult(
-        df=final_df,
-        report=report,
-        sha256_fingerprint=fingerprint,
-        success=(len(final_df) > 0 or total_read == 0),
+    # 4. ZeroMQ alert if configured
+    zmq_url = zmq_endpoint or os.environ.get("COCHEM_ORCHESTRATOR_ZMQ") or os.environ.get("COCHEM_ZMQ_ENDPOINT") or os.environ.get("ZMQ_ORCHESTRATOR_URL")
+    if zmq_url:
+        try:
+            ctx = zmq.Context.instance()
+            sock = ctx.socket(zmq.PUSH)
+            sock.setsockopt(zmq.LINGER, 500)
+            sock.connect(str(zmq_url))
+            alert_msg = {
+                "header": "COCHEM_ORCHESTRATOR_ALERT",
+                "event": "RESONANCE_SCAN_COMPLETE",
+                "has_strong_resonances": has_strong,
+                "total_resonances_count": len(all_res),
+                "polyad_blocks_count": len(polyads),
+                "recommended_hamiltonian": recommended_hamiltonian,
+                "polyad_blocks": [p.model_dump(mode="json") for p in polyads],
+            }
+            sock.send_json(alert_msg, flags=zmq.NOBLOCK)
+            sock.close()
+            logger.info(f"Alerted Orchestrator via ZeroMQ endpoint: {zmq_url}")
+        except Exception as exc:
+            logger.warning(f"ZeroMQ Orchestrator notification skipped/failed: {exc}")
+
+    # 5. Zarr state attributes update
+    target_zarr = zarr_store or landscape_path or (frequencies if isinstance(frequencies, (str, Path)) and str(frequencies).endswith(".zarr") else None)
+    if target_zarr is not None:
+        try:
+            if isinstance(target_zarr, (str, Path)):
+                zg = zarr.open(str(target_zarr), mode="a")
+            elif hasattr(target_zarr, "attrs"):
+                zg = target_zarr
+            else:
+                zg = None
+
+            if zg is not None:
+                zg.attrs["resonance_status"] = "POLYAD_MATRIX_REQUIRED" if (has_strong or polyads) else "STANDARD_VPT2"
+                zg.attrs["polyad_block_count"] = len(polyads)
+                zg.attrs["total_resonances_count"] = len(all_res)
+                zg.attrs["recommended_hamiltonian"] = recommended_hamiltonian
+                logger.info("Updated Zarr state attributes with resonance report.")
+        except Exception as exc:
+            logger.warning(f"Failed to record Zarr state attributes: {exc}")
+
+    return report
+
+
+def trap_resonances(
+    frequencies: Union[Sequence[float], np.ndarray],
+    fermi_tol: float = 30.0,
+    coriolis_tol: float = 20.0,
+    dd_tol: float = 30.0,
+) -> ResonanceReport:
+    """
+    Master entry point for Resonance & Polyad Trap.
+    Scans theoretical harmonic frequencies for Fermi, Coriolis, and Darling-Dennison
+    resonances and groups interacting modes into coupled Polyad blocks.
+
+    Args:
+        frequencies: Fundamental harmonic frequencies in cm^-1.
+        fermi_tol: Detuning tolerance for Fermi resonances (cm^-1).
+        coriolis_tol: Detuning tolerance for Coriolis resonances (cm^-1).
+        dd_tol: Detuning tolerance for Darling-Dennison resonances (cm^-1).
+
+    Returns:
+        ResonanceReport: Comprehensive report of detected resonances and polyad blocks.
+    """
+    return scan_resonance_traps(
+        frequencies=frequencies,
+        fermi_tol=fermi_tol,
+        coriolis_tol=coriolis_tol,
+        dd_tol=dd_tol,
+    )
+
+
+# =============================================================================
+# 8. ECKART AXIS REORIENTATION AND DIPOLE DERIVATIVE TRACKING
+# =============================================================================
+
+
+def eckart_axis_reorientation(
+    dipole_derivatives: Union[np.ndarray, Sequence[Sequence[float]], Sequence[float]],
+    old_inertia: Union[np.ndarray, Sequence[Sequence[float]], Sequence[float]],
+    new_inertia: Union[np.ndarray, Sequence[Sequence[float]], Sequence[float]],
+) -> EckartAxisReorientationResult:
+    """
+    Detects Axis Reorientation (Eckart Tracking) upon isotopic substitution and automatically
+    re-indexes and transforms dipole derivative matrices.
+
+    Physical Math:
+    1. Computes principal moments of inertia and principal axes for old and new systems in FP64.
+    2. Constructs the rotation matrix R_raw between principal axes.
+    3. Detects determinant swap (det(R) < 0) representing improper reflection.
+    4. Enforces proper SO(3) rotation (det(R) = +1.0) via SVD reflection correction.
+    5. Computes principal axis permutation mapping [old_a, old_b, old_c] -> new axis indices.
+    6. Transforms and re-indexes the dipole derivative matrix.
+
+    Args:
+        dipole_derivatives: Cartesian or normal mode dipole derivatives (3xN, Nx3, 3x3, or 3-vector).
+        old_inertia: Reference 3x3 moment of inertia tensor or 3 principal moments.
+        new_inertia: Substituted 3x3 moment of inertia tensor or 3 principal moments.
+
+    Returns:
+        EckartAxisReorientationResult: Structured result with proper rotation matrix, permutation,
+                                       principal moments, and transformed dipole derivatives.
+    """
+    I_old = np.asarray(old_inertia, dtype=np.float64)
+    I_new = np.asarray(new_inertia, dtype=np.float64)
+
+    # 1. Diagonalize old inertia tensor
+    if I_old.shape == (3, 3):
+        evals_old, evecs_old = np.linalg.eigh(I_old)
+        idx_old = np.argsort(evals_old)
+        mom_old = evals_old[idx_old]
+        axes_old = evecs_old[:, idx_old]
+    elif I_old.size == 3:
+        evals_old = I_old.flatten()
+        idx_old = np.argsort(evals_old)
+        mom_old = evals_old[idx_old]
+        axes_old = np.eye(3, dtype=np.float64)[:, idx_old]
+    else:
+        raise ValueError(f"old_inertia must have shape (3, 3) or (3,), got {I_old.shape}")
+
+    # 2. Diagonalize new inertia tensor
+    if I_new.shape == (3, 3):
+        evals_new, evecs_new = np.linalg.eigh(I_new)
+        idx_new = np.argsort(evals_new)
+        mom_new = evals_new[idx_new]
+        axes_new = evecs_new[:, idx_new]
+    elif I_new.size == 3:
+        evals_new = I_new.flatten()
+        idx_new = np.argsort(evals_new)
+        mom_new = evals_new[idx_new]
+        axes_new = np.eye(3, dtype=np.float64)[:, idx_new]
+    else:
+        raise ValueError(f"new_inertia must have shape (3, 3) or (3,), got {I_new.shape}")
+
+    # 3. Phase alignment on principal axes to resolve eigenvector sign ambiguities
+    for k in range(3):
+        max_idx = int(np.argmax(np.abs(axes_old[:, k])))
+        if axes_old[max_idx, k] < 0:
+            axes_old[:, k] *= -1.0
+    if np.linalg.det(axes_old) < 0:
+        axes_old[:, 2] *= -1.0
+
+    for j in range(3):
+        proj = [float(np.dot(axes_old[:, i], axes_new[:, j])) for i in range(3)]
+        best_i = int(np.argmax(np.abs(proj)))
+        if proj[best_i] < 0:
+            axes_new[:, j] *= -1.0
+
+    # 4. Raw rotation matrix between principal axes systems
+    R_raw = axes_new.T @ axes_old
+    det_raw = float(np.linalg.det(R_raw))
+    det_swap_detected = bool(det_raw < 0.0)
+
+    # 5. Enforce proper SO(3) rotation via SVD reflection correction
+    U_svd, _, Vt_svd = np.linalg.svd(R_raw)
+    d_sign = np.linalg.det(U_svd @ Vt_svd)
+    D_corr = np.diag([1.0, 1.0, np.sign(d_sign)])
+    R_proper = (U_svd @ D_corr @ Vt_svd).astype(np.float64)
+    det_proper = float(np.linalg.det(R_proper))
+
+    # 6. Effective Eckart rotation angle
+    trace_val = float(np.trace(R_proper))
+    cos_theta = float(np.clip((trace_val - 1.0) / 2.0, -1.0, 1.0))
+    reorientation_angle_deg = float(math.degrees(math.acos(cos_theta)))
+
+    # 6. Axis permutation detection (mapping old axis i -> new axis perm[i])
+    best_score = -1.0
+    best_perm = [0, 1, 2]
+    for perm in permutations([0, 1, 2]):
+        score = sum(abs(R_proper[perm[i], i]) for i in range(3))
+        if score > best_score:
+            best_score = score
+            best_perm = list(perm)
+
+    axis_permutation = best_perm
+    axis_swap_detected = bool(axis_permutation != [0, 1, 2])
+
+    # 7. Transform and re-index dipole derivative matrices
+    d_arr = np.asarray(dipole_derivatives, dtype=np.float64)
+    if d_arr.ndim == 1 and d_arr.size == 3:
+        # 1D 3-vector: (3,)
+        d_rot = R_proper @ d_arr
+        d_final = d_rot[axis_permutation] if axis_swap_detected else d_rot
+        d_matrix = d_final.reshape(3, 1)
+    elif d_arr.ndim == 2:
+        if d_arr.shape[0] == 3:
+            # Shape (3, N)
+            d_rot = R_proper @ d_arr
+            d_final = d_rot[axis_permutation, :] if axis_swap_detected else d_rot
+            d_matrix = d_final
+        elif d_arr.shape[1] == 3:
+            # Shape (N, 3)
+            d_rot = d_arr @ R_proper.T
+            d_final = d_rot[:, axis_permutation] if axis_swap_detected else d_rot
+            d_matrix = d_final
+        else:
+            raise ValueError(f"Dipole derivatives 2D array must have 3 rows or 3 columns, got {d_arr.shape}")
+    else:
+        raise ValueError(f"Dipole derivatives must be 1D or 2D array, got ndim={d_arr.ndim}")
+
+    transformed_dd = [[float(val) for val in row] for row in d_matrix]
+
+    return EckartAxisReorientationResult(
+        rotation_matrix=[[float(x) for x in row] for row in R_proper],
+        determinant=float(det_proper),
+        determinant_swap_detected=det_swap_detected,
+        axis_permutation=axis_permutation,
+        axis_swap_detected=axis_swap_detected,
+        old_principal_moments=[float(x) for x in mom_old],
+        new_principal_moments=[float(x) for x in mom_new],
+        transformed_dipole_derivatives=transformed_dd,
+        reorientation_angle_deg=float(reorientation_angle_deg),
+    )
+
+
+# =============================================================================
+# 9. PROVENANCE HASHING AND MASTER SPECTROSCOPIC TRIAGE PIPELINE
+# =============================================================================
+
+
+def calculate_triage_provenance_hash(payload: Any) -> str:
+    """
+    Generates a deterministic SHA-256 cryptographic hash digest over spectroscopic triage data.
+    """
+    if isinstance(payload, BaseModel):
+        dump_bytes = json.dumps(payload.model_dump(mode="json"), sort_keys=True).encode(
+            "utf-8"
+        )
+    elif isinstance(payload, (dict, list, tuple)):
+        dump_bytes = json.dumps(payload, default=str, sort_keys=True).encode("utf-8")
+    elif isinstance(payload, np.ndarray):
+        dump_bytes = payload.tobytes()
+    else:
+        dump_bytes = str(payload).encode("utf-8")
+
+    return hashlib.sha256(dump_bytes).hexdigest()
+
+
+def triage_spectroscopic_system(
+    isotopologue: Optional[Union[IsotopologueData, Sequence, str, Dict]] = None,
+    F_cart: Optional[Union[np.ndarray, Sequence[Sequence[float]]]] = None,
+    masses: Optional[Union[Sequence[float], np.ndarray]] = None,
+    config: Optional[TriageConfig] = None,
+) -> TriageReport:
+    """
+    Master unified pipeline for Stage 1.0 Physical & Isotopic Resonance Triage.
+
+    Executes:
+    1. Natural abundance isotopic triage against Mendeleev air-gapped database.
+    2. Mass matrix transformation M^(-1/2) F_cart M^(-1/2) and harmonic frequency analysis.
+    3. Resonance & Polyad Trap scanning for Fermi, Coriolis, and Darling-Dennison couplings.
+    4. Deterministic cryptographic SHA-256 provenance hashing.
+
+    Args:
+        isotopologue: Constituent isotope definitions or formula string.
+        F_cart: Cartesian Hessian matrix (optional).
+        masses: Atomic or coordinate masses (optional).
+        config: Triage configuration parameters (optional).
+
+    Returns:
+        TriageReport: Master spectroscopic triage report.
+    """
+    cfg = config or TriageConfig()
+    warnings: List[str] = []
+    overall_status = TriageStatus.PASSED
+    product_class = ProductClass.PRODUCT_A
+
+    # 1. Isotopic Triage
+    iso_result: Optional[IsotopeTriageResult] = None
+    if isotopologue is not None:
+        try:
+            iso_result = check_isotope_abundance(
+                isotopologue_data=isotopologue,
+                threshold_percent=cfg.abundance_threshold_percent,
+                db_path=cfg.mendeleev_db_path,
+            )
+            product_class = iso_result.product_class
+            if not iso_result.is_observable:
+                overall_status = TriageStatus.REJECTED_RARE_ISOTOPE
+                warnings.append(
+                    f"Isotopologue '{iso_result.isotopologue_name}' abundance ({iso_result.abundance_percent:.4e}%) "
+                    f"is below threshold ({cfg.abundance_threshold_percent:.4f}%)."
+                )
+        except Exception as exc:
+            logger.error(f"Error during isotopic abundance triage: {exc}")
+            overall_status = TriageStatus.ERROR
+            warnings.append(f"Isotopic triage error: {exc}")
+
+    # 2. Harmonic Vibrational Triage
+    vib_result: Optional[HarmonicVibrationalResult] = None
+    if F_cart is not None:
+        try:
+            # Resolve masses from isotopologue if not explicitly supplied
+            resolved_masses = masses
+            if resolved_masses is None and iso_result is not None:
+                resolved_masses = [iso.mass_amu for iso in iso_result.isotope_details]
+
+            if resolved_masses is None:
+                raise ValueError(
+                    "Masses must be provided directly or inferred from isotopologue specification."
+                )
+
+            vib_result = compute_harmonic_vibrational_frequencies(
+                F_cart=F_cart,
+                masses=resolved_masses,
+                units=cfg.hessian_units,
+                zero_threshold_cm1=cfg.zero_frequency_threshold_cm1,
+            )
+
+            if vib_result.imaginary_frequencies_count > 0:
+                if not cfg.allow_imaginary_frequencies:
+                    overall_status = TriageStatus.REJECTED_IMAGINARY_FREQUENCY
+                    warnings.append(
+                        f"Detected {vib_result.imaginary_frequencies_count} imaginary frequency modes. "
+                        "System is a transition state or saddle point."
+                    )
+                else:
+                    warnings.append(
+                        f"Permitted {vib_result.imaginary_frequencies_count} imaginary modes under configuration."
+                    )
+        except Exception as exc:
+            logger.error(f"Error during vibrational frequency calculation: {exc}")
+            overall_status = TriageStatus.ERROR
+            warnings.append(f"Vibrational analysis error: {exc}")
+
+    # 3. Resonance & Polyad Trap
+    res_result: Optional[ResonanceReport] = None
+    if vib_result is not None and vib_result.vibrational_frequencies_cm1:
+        try:
+            res_result = trap_resonances(
+                frequencies=vib_result.vibrational_frequencies_cm1,
+                fermi_tol=cfg.fermi_type_1_threshold_cm1,
+                coriolis_tol=cfg.coriolis_threshold_cm1,
+                dd_tol=cfg.darling_dennison_threshold_cm1,
+            )
+            if (
+                res_result.has_strong_resonances
+                and overall_status == TriageStatus.PASSED
+            ):
+                overall_status = TriageStatus.WARNING_RESONANCE
+                warnings.append(
+                    f"Strong vibrational resonances detected ({res_result.total_resonances_count} total). "
+                    f"Partitioned into {len(res_result.polyad_blocks)} Polyad blocks."
+                )
+        except Exception as exc:
+            logger.error(f"Error during resonance scanning: {exc}")
+            overall_status = TriageStatus.ERROR
+            warnings.append(f"Resonance analysis error: {exc}")
+
+    # Determine passing status
+    passed = overall_status in [TriageStatus.PASSED, TriageStatus.WARNING_RESONANCE]
+
+    # Assemble summary
+    summary_parts = [
+        f"Triage Status: {overall_status.value} (Product Class: {product_class.value})."
+    ]
+    if iso_result:
+        summary_parts.append(
+            f"Isotopologue: {iso_result.isotopologue_name} (Mass: {iso_result.total_mass_amu:.4f} amu, "
+            f"Abundance: {iso_result.abundance_percent:.4f}%)."
+        )
+    if vib_result:
+        summary_parts.append(
+            f"Vibrational Modes: {len(vib_result.vibrational_frequencies_cm1)} "
+            f"(Imaginary: {vib_result.imaginary_frequencies_count}, Zero modes: {vib_result.zero_modes_count})."
+        )
+    if res_result:
+        summary_parts.append(
+            f"Resonances: {res_result.total_resonances_count} detected "
+            f"(Polyad blocks: {len(res_result.polyad_blocks)})."
+        )
+    summary_text = " ".join(summary_parts)
+
+    # Compute provenance hash
+    provenance_dict = {
+        "status": overall_status.value,
+        "product_class": product_class.value,
+        "passed": passed,
+        "iso": iso_result.model_dump(mode="json") if iso_result else None,
+        "vib": {
+            "frequencies": vib_result.frequencies_cm1,
+            "imag_count": vib_result.imaginary_frequencies_count,
+        }
+        if vib_result
+        else None,
+        "res": {
+            "total_count": res_result.total_resonances_count,
+            "polyad_count": len(res_result.polyad_blocks),
+        }
+        if res_result
+        else None,
+    }
+    provenance_hash = calculate_triage_provenance_hash(provenance_dict)
+
+    return TriageReport(
+        config=cfg,
+        status=overall_status,
+        passed=passed,
+        product_class=product_class,
+        isotopologue_triage=iso_result,
+        vibrational_triage=vib_result,
+        resonance_triage=res_result,
+        warnings=warnings,
+        summary=summary_text,
+        sha256_provenance=provenance_hash,
     )
 
 
 __all__ = [
-    "FileFormat",
-    "BranchType",
-    "DipoleType",
-    "Parity",
-    "CANONICAL_COLUMNS",
-    "SpectroscopySchema",
-    "SpectroscopyTransition",
-    "PickettParameter",
-    "PickettParFile",
-    "IngestConfig",
-    "ValidationReport",
-    "IngestResult",
-    "CoChemDataException",
-    "fortran_float_converter",
-    "enforce_fp64_boundary",
-    "calculate_frequency_fingerprint",
-    "append_to_spectra_fit_zarr",
-    "validate_quantum_numbers",
-    "classify_transition_parity_and_dipole",
-    "apply_selection_rules",
-    "parse_legacy_pickett",
-    "parse_pickett_lin",
-    "parse_pickett_par",
-    "parse_csv_spectroscopy",
-    "parse_spectroscopy_data",
+    "AU_TO_WAVENUMBER_CONVERSION",
+    "EckartAxisReorientationResult",
+    "HarmonicVibrationalResult",
+    "IsotopeQuarantineError",
+    "IsotopeSpec",
+    "IsotopeTriageResult",
+    "IsotopologueData",
+    "PolyadBlock",
+    "ProductClass",
+    "ResonanceCondition",
+    "ResonanceReport",
+    "ResonanceType",
+    "TriageConfig",
+    "TriageReport",
+    "TriageStatus",
+    "calculate_triage_provenance_hash",
+    "check_isotope_abundance",
+    "compute_harmonic_vibrational_frequencies",
+    "eckart_axis_reorientation",
+    "evaluate_isotopologue_abundance",
+    "get_isotope_properties",
+    "identify_polyad_blocks",
+    "mass_matrix_transformation",
+    "parse_isotopologue_input",
+    "resolve_mendeleev_database",
+    "scan_coriolis_resonances",
+    "scan_darling_dennison_resonances",
+    "scan_fermi_resonances",
+    "scan_resonance_traps",
+    "trap_resonances",
+    "triage_spectroscopic_system",
 ]
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_fit_registry_manager.py ---
+
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_triage.py ---
 """
-CoChem-SpycFit Physical Unit & Concurrency Test Suite: Fit Registry Manager & Zarr Persistence.
+Physical Unit and Integration Tests for Stage 1.0 Physical & Isotopic Resonance Filter.
 
-Strictly adheres to Zero-Mock mandate.
-Validates:
-1. Pydantic v2 schemas with ConfigDict(extra="forbid", validate_assignment=True).
-2. Cross-platform StandardFileLock (filelock + RLock + re-entrancy + timeout + stale reaping).
-3. HPC / Lustre LustreMkdirLock (atomic os.mkdir + owner.json + timeout + stale reaping).
-4. Dynamic timeout scaling (10s local vs 60s Lustre).
-5. Metadata-safe atomic snapshotting (shutil.copy2 + atomic rename + SHA-256 verification).
-6. HDF5 SWMR connections (libver='latest', swmr=True) with multi-threaded concurrent writer & reader.
-7. Dynamic Lustre fallback disabling SWMR and generating atomic snapshots.
-8. High-level FitRegistryManager transaction lifecycle, parameter freezing, ML feedback, and tensor storage.
-9. Standalone read_registry and write_registry functions with atomic locking.
-10. FAIR-compliant cryptographic dataset hashing and verification (hash_dataset, verify_dataset_hash)
-    for both individual files (.h5, .csv) and directory stores (.zarr).
-11. Zarr tensor persistence (init_zarr_persistence, save_zarr_tensor, load_zarr_tensor)
-    with multi-dimensional arrays, chunking, attributes, overwrite handling, and error types.
-12. Multi-threaded and multi-process concurrency without race conditions or deadlocks.
-"""
-
-from __future__ import annotations
-
-import concurrent.futures
-import json
-import os
-import shutil
-import tempfile
-import threading
-import time
-from pathlib import Path
-from typing import Dict, List
-
-import h5py
-import numpy as np
-import pytest
-import zarr
-from pydantic import ValidationError
-
-from cochem_spycfit.core_engine.cochem_fit_registry_manager import (
-    DEFAULT_CHUNK_SIZE,
-    DEFAULT_LOCAL_LOCK_TIMEOUT,
-    DEFAULT_LUSTRE_LOCK_TIMEOUT,
-    DEFAULT_STALE_LOCK_TIMEOUT,
-    FitParameterRecord,
-    FitRegistryCorruptionError,
-    FitRegistryError,
-    FitRegistryManager,
-    FitRegistryMissingError,
-    FitRegistrySchemaError,
-    FitRegistryState,
-    HDF5TensorError,
-    InstrumentLimits,
-    LustreLockError,
-    LustreMkdirLock,
-    MLFeedbackState,
-    RegistryLockError,
-    RegistryLockTimeoutError,
-    SnapshotMetadata,
-    StandardFileLock,
-    ZarrTensorError,
-    compute_file_sha256,
-    create_atomic_snapshot,
-    get_atomic_lock,
-    get_default_db_path,
-    get_default_registry_path,
-    get_default_zarr_path,
-    hash_dataset,
-    init_zarr_persistence,
-    is_lustre_filesystem,
-    load_zarr_tensor,
-    open_state_tensor,
-    read_registry,
-    resolve_lock_timeout,
-    save_zarr_tensor,
-    verify_dataset_hash,
-    write_registry,
-)
-
-
-@pytest.fixture
-def tmp_env(tmp_path: Path):
-    """Provides a fresh isolated temporary workspace."""
-    workspace = tmp_path / "spycfit_test_workspace"
-    workspace.mkdir(parents=True, exist_ok=True)
-    reg_dir = workspace / "Registry"
-    reg_dir.mkdir(parents=True, exist_ok=True)
-    db_dir = workspace / "Databases"
-    db_dir.mkdir(parents=True, exist_ok=True)
-    scratch_dir = workspace / "Scratch"
-    scratch_dir.mkdir(parents=True, exist_ok=True)
-
-    reg_json = reg_dir / "cochem_fit_registry.json"
-    db_h5 = db_dir / "spectra_fit.h5"
-    zarr_dir = scratch_dir / "spectra_fit.zarr"
-
-    yield {
-        "workspace": workspace,
-        "reg_json": reg_json,
-        "db_h5": db_h5,
-        "zarr_dir": zarr_dir,
-    }
-
-
-# =============================================================================
-# 1. PYDANTIC V2 SCHEMAS TESTS
-# =============================================================================
-
-def test_instrument_limits_schema():
-    """Validates InstrumentLimits schema and extra forbidden constraint."""
-    limits = InstrumentLimits(
-        min_freq_ghz=2.5,
-        max_freq_ghz=18.0,
-        temperature_k=300.0,
-        bandwidth_mhz=16000.0,
-    )
-    assert limits.min_freq_ghz == 2.5
-    assert limits.max_freq_ghz == 18.0
-    assert limits.temperature_k == 300.0
-
-    # Extra fields forbidden
-    with pytest.raises(ValidationError):
-        InstrumentLimits(min_freq_ghz=2.0, max_freq_ghz=18.0, invalid_field=123)  # type: ignore[call-arg]
-
-    # Type / value bounds validation
-    with pytest.raises(ValidationError):
-        InstrumentLimits(min_freq_ghz=-1.0)
-
-
-def test_ml_feedback_state_schema():
-    """Validates MLFeedbackState schema."""
-    ml = MLFeedbackState(
-        active=True,
-        iteration=5,
-        learning_rate=0.05,
-        loss_history=[1.2, 0.8, 0.4],
-        assigned_transitions_count=42,
-        unassigned_peaks_count=10,
-        convergence_status="iterating",
-    )
-    assert ml.active is True
-    assert ml.iteration == 5
-    assert len(ml.loss_history) == 3
-    assert ml.assigned_transitions_count == 42
-
-    with pytest.raises(ValidationError):
-        MLFeedbackState(active=True, unknown_key="test")  # type: ignore[call-arg]
-
-
-def test_fit_parameter_record_schema():
-    """Validates FitParameterRecord schema."""
-    param = FitParameterRecord(
-        name="A",
-        value=10543.21,
-        uncertainty=0.05,
-        is_frozen=True,
-        lower_bound=10000.0,
-        upper_bound=11000.0,
-        unit="MHz",
-    )
-    assert param.name == "A"
-    assert param.value == 10543.21
-    assert param.is_frozen is True
-
-    # Mutating with invalid type fails validation
-    with pytest.raises(ValidationError):
-        param.uncertainty = -5.0
-
-
-def test_fit_registry_state_schema():
-    """Validates root FitRegistryState schema and manual_locks deduplication."""
-    state = FitRegistryState(
-        manual_locks=["DJ", "A", "DJ", "B"],
-        metadata={"operator": "cochem-test"},
-    )
-    assert state.manual_locks == ["A", "B", "DJ"]
-    assert state.metadata["operator"] == "cochem-test"
-
-    # Extra fields forbidden
-    with pytest.raises(ValidationError):
-        FitRegistryState(unauthorized_arg=True)  # type: ignore[call-arg]
-
-
-# =============================================================================
-# 2. FILESYSTEM & LUSTRE DETECTION TESTS
-# =============================================================================
-
-def test_lustre_detection_and_timeout_scaling(tmp_path: Path):
-    """Validates is_lustre_filesystem and resolve_lock_timeout."""
-    local_p = tmp_path / "local_test"
-    assert is_lustre_filesystem(local_p) is False
-    assert resolve_lock_timeout(is_lustre=False) == DEFAULT_LOCAL_LOCK_TIMEOUT
-
-    lustre_p = tmp_path / "lustre" / "scratch"
-    assert is_lustre_filesystem(lustre_p) is True
-    assert resolve_lock_timeout(is_lustre=True) == DEFAULT_LUSTRE_LOCK_TIMEOUT
-
-    os.environ["COCHEM_FORCE_LUSTRE"] = "1"
-    try:
-        assert is_lustre_filesystem(local_p) is True
-        assert resolve_lock_timeout(is_lustre=True) == DEFAULT_LUSTRE_LOCK_TIMEOUT
-    finally:
-        os.environ.pop("COCHEM_FORCE_LUSTRE", None)
-
-    assert resolve_lock_timeout(is_lustre=False, custom_timeout=25.0) == 25.0
-    assert resolve_lock_timeout(is_lustre=True, custom_timeout=45.0) == 45.0
-
-
-# =============================================================================
-# 3. ATOMIC LOCK IMPLEMENTATIONS (StandardFileLock & LustreMkdirLock)
-# =============================================================================
-
-def test_standard_file_lock_lifecycle_and_reentrancy(tmp_path: Path):
-    """Validates StandardFileLock acquire, release, and thread-local reentrancy."""
-    lock_file = tmp_path / "test.lock"
-    lock = StandardFileLock(lock_file, timeout=5.0)
-
-    with lock:
-        assert lock_file.exists()
-        with lock:
-            assert lock_file.exists()
-
-    assert not lock_file.exists()
-
-
-def test_standard_file_lock_concurrency(tmp_path: Path):
-    """Validates multi-threaded exclusion with StandardFileLock."""
-    lock_file = tmp_path / "counter.lock"
-    lock = StandardFileLock(lock_file, timeout=10.0)
-
-    counter = {"val": 0}
-    num_threads = 6
-    increments_per_thread = 20
-
-    def worker():
-        for _ in range(increments_per_thread):
-            with lock:
-                curr = counter["val"]
-                time.sleep(0.001)
-                counter["val"] = curr + 1
-
-    threads = [threading.Thread(target=worker) for _ in range(num_threads)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    assert counter["val"] == num_threads * increments_per_thread
-
-
-def test_standard_file_lock_timeout(tmp_path: Path):
-    """Validates RegistryLockTimeoutError when lock is held by another thread."""
-    lock_file = tmp_path / "timeout.lock"
-    lock1 = StandardFileLock(lock_file, timeout=2.0)
-    lock2 = StandardFileLock(lock_file, timeout=0.2)
-
-    ready_event = threading.Event()
-    release_event = threading.Event()
-    timeout_caught = {"caught": False}
-
-    def holder():
-        with lock1:
-            ready_event.set()
-            release_event.wait(timeout=2.0)
-
-    def waiter():
-        ready_event.wait()
-        try:
-            with lock2:
-                time.sleep(0.001)
-        except RegistryLockTimeoutError:
-            timeout_caught["caught"] = True
-
-    t1 = threading.Thread(target=holder)
-    t2 = threading.Thread(target=waiter)
-
-    t1.start()
-    t2.start()
-
-    t2.join()
-    release_event.set()
-    t1.join()
-
-    assert timeout_caught["caught"] is True
-
-
-def test_lustre_mkdir_lock_lifecycle_and_reentrancy(tmp_path: Path):
-    """Validates LustreMkdirLock atomic directory creation, owner metadata, and re-entrancy."""
-    lock_dir = tmp_path / "lustre_test.lockdir"
-    lock = LustreMkdirLock(lock_dir, timeout=5.0)
-
-    assert not lock_dir.exists()
-
-    with lock:
-        assert lock_dir.is_dir()
-        assert lock.owner_file.is_file()
-        owner_data = json.loads(lock.owner_file.read_text(encoding="utf-8"))
-        assert owner_data["pid"] == os.getpid()
-
-        with lock:
-            assert lock_dir.is_dir()
-
-    assert not lock_dir.exists()
-
-
-def test_lustre_mkdir_lock_concurrency(tmp_path: Path):
-    """Validates multi-threaded exclusion with LustreMkdirLock."""
-    lock_dir = tmp_path / "lustre_counter.lockdir"
-    lock = LustreMkdirLock(lock_dir, timeout=15.0)
-
-    counter = {"val": 0}
-    num_threads = 6
-    increments_per_thread = 20
-
-    def worker():
-        for _ in range(increments_per_thread):
-            with lock:
-                curr = counter["val"]
-                time.sleep(0.001)
-                counter["val"] = curr + 1
-
-    threads = [threading.Thread(target=worker) for _ in range(num_threads)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    assert counter["val"] == num_threads * increments_per_thread
-
-
-def test_lustre_mkdir_lock_timeout(tmp_path: Path):
-    """Validates RegistryLockTimeoutError with LustreMkdirLock."""
-    lock_dir = tmp_path / "lustre_timeout.lockdir"
-    lock1 = LustreMkdirLock(lock_dir, timeout=2.0)
-    lock2 = LustreMkdirLock(lock_dir, timeout=0.2)
-
-    ready_event = threading.Event()
-    release_event = threading.Event()
-    timeout_caught = {"caught": False}
-
-    def holder():
-        with lock1:
-            ready_event.set()
-            release_event.wait(timeout=2.0)
-
-    def waiter():
-        ready_event.wait()
-        try:
-            with lock2:
-                time.sleep(0.001)
-        except RegistryLockTimeoutError:
-            timeout_caught["caught"] = True
-
-    t1 = threading.Thread(target=holder)
-    t2 = threading.Thread(target=waiter)
-
-    t1.start()
-    t2.start()
-
-    t2.join()
-    release_event.set()
-    t1.join()
-
-    assert timeout_caught["caught"] is True
-
-
-def test_stale_lock_reaping(tmp_path: Path):
-    """Validates automatic reaping of stale locks."""
-    # 1. StandardFileLock stale reaping
-    stale_file = tmp_path / "stale.lock"
-    stale_file.write_text("old_pid:123:0.0\n", encoding="utf-8")
-    past_time = time.time() - 200.0
-    os.utime(str(stale_file), (past_time, past_time))
-
-    lock_std = StandardFileLock(stale_file, timeout=2.0, stale_timeout=30.0)
-    with lock_std:
-        assert stale_file.exists()
-
-    # 2. LustreMkdirLock stale reaping
-    stale_dir = tmp_path / "stale.lockdir"
-    stale_dir.mkdir(parents=True, exist_ok=True)
-    stale_owner = stale_dir / "owner.json"
-    with open(stale_owner, "w", encoding="utf-8") as f:
-        json.dump({"pid": 99999, "acquired_at": time.time() - 200.0}, f)
-
-    lock_lustre = LustreMkdirLock(stale_dir, timeout=2.0, stale_timeout=30.0)
-    with lock_lustre:
-        assert stale_dir.is_dir()
-    assert not stale_dir.exists()
-
-
-# =============================================================================
-# 4. ATOMIC SNAPSHOT PERSISTENCE TESTS
-# =============================================================================
-
-def test_atomic_snapshot_creation(tmp_path: Path):
-    """Validates metadata-safe atomic snapshot copy and SHA-256 verification."""
-    source_h5 = tmp_path / "test_data.h5"
-    with h5py.File(str(source_h5), "w") as f:
-        f.create_dataset("test_tensor", data=np.arange(100, dtype=np.float64))
-
-    src_hash = compute_file_sha256(source_h5)
-    dest_h5 = tmp_path / "snapshots" / "test_data_snap.h5"
-
-    snapshot_meta = create_atomic_snapshot(
-        source_path=source_h5,
-        dest_path=dest_h5,
-        is_lustre=True,
-    )
-
-    assert snapshot_meta.is_lustre_fallback is True
-    assert snapshot_meta.sha256 == src_hash
-    assert Path(snapshot_meta.snapshot_path).is_file()
-    assert snapshot_meta.size_bytes == source_h5.stat().st_size
-
-    with h5py.File(snapshot_meta.snapshot_path, "r") as f:
-        loaded = np.array(f["test_tensor"])
-        np.testing.assert_array_equal(loaded, np.arange(100, dtype=np.float64))
-
-    with pytest.raises(FitRegistryMissingError):
-        create_atomic_snapshot(source_path=tmp_path / "non_existent.h5")
-
-
-# =============================================================================
-# 5. HDF5 SWMR PERSISTENCE & CONCURRENT STREAMING TESTS
-# =============================================================================
-
-def test_hdf5_swmr_concurrent_streaming(tmp_path: Path):
-    """
-    Validates genuine HDF5 Single-Writer / Multiple-Reader (SWMR) concurrent execution.
-    Writer continuously appends records to HDF5 under SWMR while a reader thread
-    concurrently polls and reads records without blocking or crashing.
-    """
-    db_path = tmp_path / "swmr_stream.h5"
-
-    with h5py.File(str(db_path), "w", libver="latest") as f:
-        f.create_dataset(
-            "stream_data",
-            shape=(0,),
-            maxshape=(None,),
-            dtype=np.float64,
-            chunks=(64,),
-            compression="gzip",
-            compression_opts=4,
-            shuffle=True,
-            fletcher32=True,
-        )
-        f.swmr_mode = True
-
-    num_records = 20
-    writer_done = threading.Event()
-    reader_seen_counts: List[int] = []
-
-    def writer_task():
-        with open_state_tensor(db_path, mode="a", is_lustre=False) as f:
-            dset = f["stream_data"]
-            for i in range(num_records):
-                curr_len = dset.shape[0]
-                dset.resize((curr_len + 1,))
-                dset[curr_len] = float(i * 1.5)
-                f.flush()
-                time.sleep(0.005)
-        writer_done.set()
-
-    def reader_task():
-        time.sleep(0.01)
-        with open_state_tensor(db_path, mode="r", is_lustre=False) as f:
-            dset = f["stream_data"]
-            start_poll = time.time()
-            while time.time() - start_poll < 5.0:
-                try:
-                    dset.refresh()
-                except Exception as ref_err:
-                    dset.attrs["last_refresh_err"] = str(ref_err)
-                reader_seen_counts.append(dset.shape[0])
-                if writer_done.is_set() and dset.shape[0] >= num_records:
-                    break
-                time.sleep(0.005)
-
-    t_writer = threading.Thread(target=writer_task)
-    t_reader = threading.Thread(target=reader_task)
-
-    t_writer.start()
-    t_reader.start()
-
-    t_writer.join(timeout=10.0)
-    t_reader.join(timeout=10.0)
-
-    with h5py.File(str(db_path), "r") as f:
-        final_arr = np.array(f["stream_data"])
-        assert len(final_arr) == num_records
-        np.testing.assert_allclose(final_arr, np.arange(num_records) * 1.5)
-
-    assert len(reader_seen_counts) > 1
-    assert reader_seen_counts[-1] == num_records
-
-
-def test_hdf5_lustre_fallback_disables_swmr_and_snapshots(tmp_path: Path):
-    """
-    Validates that Lustre filesystem detection dynamically disables SWMR mode
-    and triggers automatic metadata-safe atomic snapshot generation.
-    """
-    db_path = tmp_path / "lustre_db.h5"
-
-    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
-    with h5py.File(h5_path, "r") as f_phys:
-        phys_data = np.array(f_phys["isomer_001"]["hessian"])
-
-    with open_state_tensor(db_path, mode="w", is_lustre=True) as f:
-        assert not getattr(f, "swmr_mode", False)
-        f.create_dataset("dense_matrix", data=phys_data)
-
-    snap_dir = db_path.parent / "snapshots"
-    assert snap_dir.is_dir()
-    snaps = list(snap_dir.glob("lustre_db_snap_*.h5"))
-    assert len(snaps) >= 1
-
-    with h5py.File(str(snaps[0]), "r") as f_snap:
-        loaded = np.array(f_snap["dense_matrix"])
-        np.testing.assert_array_equal(loaded, phys_data)
-
-
-# =============================================================================
-# 6. HIGH-LEVEL FIT REGISTRY MANAGER TESTS
-# =============================================================================
-
-def test_fit_registry_manager_transaction_and_persistence(tmp_env):
-    """Validates atomic transaction updates, parameter freezing, and JSON integrity."""
-    mgr = FitRegistryManager(
-        db_path=tmp_env["db_h5"],
-        registry_json_path=tmp_env["reg_json"],
-        force_lustre=False,
-    )
-
-    init_state = mgr.get_fit_record()
-    assert len(init_state.manual_locks) == 0
-
-    # 1. Parameter Freezing
-    mgr.freeze_parameter("A", value=10250.5)
-    mgr.freeze_parameter("DJ", value=0.0125)
-
-    state1 = mgr.get_fit_record()
-    assert "A" in state1.manual_locks
-    assert "DJ" in state1.manual_locks
-    assert state1.parameters["A"].value == 10250.5
-    assert state1.parameters["A"].is_frozen is True
-
-    # 2. Parameter Unfreezing
-    mgr.unfreeze_parameter("A")
-    state2 = mgr.get_fit_record()
-    assert "A" not in state2.manual_locks
-    assert "DJ" in state2.manual_locks
-    assert state2.parameters["A"].is_frozen is False
-
-    # 3. ML Feedback update
-    mgr.update_ml_feedback(active=True, loss=0.45, assigned=12, unassigned=4, status="iterating")
-    state3 = mgr.get_fit_record()
-    assert state3.ml_feedback.active is True
-    assert state3.ml_feedback.iteration == 1
-    assert state3.ml_feedback.loss_history == [0.45]
-    assert state3.ml_feedback.assigned_transitions_count == 12
-
-    # 4. Verify physical JSON file exists and matches
-    assert tmp_env["reg_json"].is_file()
-    assert mgr.verify_registry_integrity() is True
-
-
-def test_fit_registry_manager_spectral_tensors(tmp_env):
-    """Validates saving and loading multi-dimensional spectral tensors with metadata and compression."""
-    mgr = FitRegistryManager(
-        db_path=tmp_env["db_h5"],
-        registry_json_path=tmp_env["reg_json"],
-        force_lustre=False,
-    )
-
-    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
-    with h5py.File(h5_path, "r") as f_phys:
-        test_matrix = np.array(f_phys["isomer_001"]["hessian"])
-    meta = {
-        "molecule": "Benzonitrile",
-        "method": "B3LYP-D3BJ",
-        "frequencies": [1024.5, 2048.0, 4096.5],
-    }
-
-    mgr.save_spectral_tensor(
-        name="hamiltonian_j_block",
-        tensor=test_matrix,
-        metadata=meta,
-        group="/hamiltonians",
-        compression="gzip",
-        compression_opts=6,
-        shuffle=True,
-        fletcher32=True,
-    )
-
-    loaded_arr, loaded_meta = mgr.load_spectral_tensor(
-        name="hamiltonian_j_block",
-        group="/hamiltonians",
-    )
-
-    np.testing.assert_allclose(loaded_arr, test_matrix)
-    assert loaded_meta["molecule"] == "Benzonitrile"
-    assert loaded_meta["method"] == "B3LYP-D3BJ"
-    assert loaded_meta["frequencies"] == [1024.5, 2048.0, 4096.5]
-
-    with pytest.raises(HDF5TensorError):
-        mgr.load_spectral_tensor(name="non_existent", group="/hamiltonians")
-
-
-def test_fit_registry_manager_transaction_rollback_on_error(tmp_env):
-    """Validates that exceptions inside transaction() abort changes without corrupting state."""
-    mgr = FitRegistryManager(
-        db_path=tmp_env["db_h5"],
-        registry_json_path=tmp_env["reg_json"],
-    )
-
-    mgr.freeze_parameter("B", value=5000.0)
-    orig_state = mgr.get_fit_record()
-
-    with pytest.raises(RuntimeError):
-        with mgr.transaction() as state:
-            state.manual_locks.append("CORRUPTED_PARAM")
-            raise RuntimeError("Simulation error during optimization step")
-
-    after_state = mgr.get_fit_record()
-    assert "CORRUPTED_PARAM" not in after_state.manual_locks
-    assert after_state.manual_locks == orig_state.manual_locks
-
-
-def test_fit_registry_manager_corrupted_json(tmp_env):
-    """Validates FitRegistryCorruptionError on corrupted JSON payload."""
-    mgr = FitRegistryManager(
-        db_path=tmp_env["db_h5"],
-        registry_json_path=tmp_env["reg_json"],
-    )
-
-    tmp_env["reg_json"].write_text("{ corrupted_json: invalid [", encoding="utf-8")
-
-    with pytest.raises(FitRegistryCorruptionError):
-        mgr.get_fit_record()
-
-
-def test_multi_threaded_fit_registry_stress(tmp_env):
-    """Validates high-concurrency multi-threaded transaction safety."""
-    mgr = FitRegistryManager(
-        db_path=tmp_env["db_h5"],
-        registry_json_path=tmp_env["reg_json"],
-        force_lustre=False,
-    )
-
-    num_threads = 8
-    iterations_per_thread = 15
-
-    def worker(worker_idx: int):
-        for i in range(iterations_per_thread):
-            with mgr.transaction() as state:
-                p_name = f"PARAM_{worker_idx}_{i}"
-                state.manual_locks.append(p_name)
-                state.parameters[p_name] = FitParameterRecord(
-                    name=p_name,
-                    value=float(worker_idx * 100 + i),
-                    is_frozen=True,
-                )
-
-    threads = [threading.Thread(target=worker, args=(i,)) for i in range(num_threads)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    final_state = mgr.get_fit_record()
-    expected_total = num_threads * iterations_per_thread
-    assert len(final_state.manual_locks) == expected_total
-    assert len(final_state.parameters) == expected_total
-    assert mgr.verify_registry_integrity() is True
-
-
-# =============================================================================
-# 7. PHASE 2 STANDALONE REGISTRY READ/WRITE TESTS
-# =============================================================================
-
-def test_standalone_read_write_registry(tmp_path: Path):
-    """Validates standalone read_registry and write_registry functions with atomic locking."""
-    custom_reg = tmp_path / "custom_reg.json"
-
-    # Reading non-existent registry returns valid default state dict
-    default_data = read_registry(custom_reg)
-    assert isinstance(default_data, dict)
-    assert "manual_locks" in default_data
-    assert default_data["manual_locks"] == []
-
-    # Writing validated dictionary
-    custom_state = FitRegistryState(
-        manual_locks=["A", "B"],
-        instrument_limits=InstrumentLimits(min_freq_ghz=4.0, max_freq_ghz=12.0),
-        ml_feedback=MLFeedbackState(active=True, iteration=3),
-    )
-    write_registry(custom_state, custom_reg)
-    assert custom_reg.is_file()
-
-    # Reading back written registry
-    read_back = read_registry(custom_reg)
-    assert read_back["manual_locks"] == ["A", "B"]
-    assert read_back["instrument_limits"]["min_freq_ghz"] == 4.0
-    assert read_back["ml_feedback"]["iteration"] == 3
-
-    # Writing invalid schema dictionary raises FitRegistrySchemaError
-    with pytest.raises(FitRegistrySchemaError):
-        write_registry({"invalid_key": 12345}, custom_reg)
-
-    # Writing invalid type raises FitRegistrySchemaError
-    with pytest.raises(FitRegistrySchemaError):
-        write_registry([1, 2, 3], custom_reg)  # type: ignore[arg-type]
-
-
-# =============================================================================
-# 8. PHASE 2 FAIR DATASET HASH LOGGING & VERIFICATION TESTS
-# =============================================================================
-
-def test_dataset_hashing_and_verification(tmp_path: Path):
-    """Validates hash_dataset and verify_dataset_hash for files and directories."""
-    # 1. Single File Hashing
-    data_file = tmp_path / "spectrum.dat"
-    content = b"CH3OH Rotational Transitions 12.5 GHz - 18.0 GHz"
-    data_file.write_bytes(content)
-
-    file_hash = hash_dataset(data_file)
-    assert isinstance(file_hash, str)
-    assert len(file_hash) == 64  # SHA-256 hex length
-    assert verify_dataset_hash(data_file, file_hash) is True
-    assert verify_dataset_hash(data_file, "wrong_hash_12345") is False
-
-    # Non-existent file error
-    with pytest.raises(FileNotFoundError):
-        hash_dataset(tmp_path / "non_existent.dat")
-
-    # verify_dataset_hash returns False gracefully for missing file
-    assert verify_dataset_hash(tmp_path / "missing.dat", file_hash) is False
-
-    # 2. Directory / Zarr Store Hashing
-    zarr_dir = tmp_path / "test_store.zarr"
-    save_zarr_tensor(
-        name="test_arr",
-        tensor=np.ones((10, 10), dtype=np.float64),
-        zarr_path=zarr_dir,
-    )
-    dir_hash = hash_dataset(zarr_dir)
-    assert isinstance(dir_hash, str)
-    assert len(dir_hash) == 64
-    assert verify_dataset_hash(zarr_dir, dir_hash) is True
-    assert verify_dataset_hash(zarr_dir, dir_hash.upper()) is True  # Case-insensitive verification
-
-
-def test_fit_registry_manager_active_dataset_hash(tmp_env):
-    """Validates FitRegistryManager tracking and verifying active dataset hashes."""
-    mgr = FitRegistryManager(
-        db_path=tmp_env["db_h5"],
-        registry_json_path=tmp_env["reg_json"],
-    )
-
-    # Populate HDF5 database
-    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
-    with h5py.File(h5_path, "r") as f_phys:
-        matrix = np.array(f_phys["isomer_001"]["hessian"])
-    mgr.save_spectral_tensor("hessian_001", matrix)
-
-    # Set active dataset hash
-    updated_state = mgr.set_active_dataset_hash()
-    assert updated_state.active_dataset_hash is not None
-    assert len(updated_state.active_dataset_hash) == 64
-
-    # Verify active dataset hash
-    assert mgr.verify_dataset_hash(updated_state.active_dataset_hash) is True
-    assert mgr.verify_dataset_hash("invalid_hash_value") is False
-
-
-# =============================================================================
-# 9. PHASE 2 ZARR TENSOR PERSISTENCE TESTS
-# =============================================================================
-
-def test_zarr_persistence_initialization_and_operations(tmp_env):
-    """Validates init_zarr_persistence, save_zarr_tensor, and load_zarr_tensor."""
-    zarr_store = tmp_env["zarr_dir"]
-
-    # 1. Initialize Zarr root group
-    root_grp = init_zarr_persistence(zarr_path=zarr_store)
-    assert isinstance(root_grp, zarr.Group)
-    assert zarr_store.is_dir()
-
-    # 2. Save 2D and 3D spectral arrays with metadata and chunking
-    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
-    with h5py.File(h5_path, "r") as f_phys:
-        phys_2d = np.array(f_phys["isomer_001"]["hessian"])
-        phys_1d = np.array(f_phys["isomer_001"]["dvr_eigenvalues"])
-
-    meta_2d = {"kind": "hessian", "units": "Hartree/Bohr^2", "dim": 2}
-    meta_1d = {"kind": "dvr_eigenvalues", "filter_order": 1}
-
-    saved_dset_2d = save_zarr_tensor(
-        name="hessian_matrix",
-        tensor=phys_2d,
-        zarr_path=zarr_store,
-        group="/intermediates/hessians",
-        metadata=meta_2d,
-        chunks=(3, 3),
-        overwrite=True,
-    )
-    assert isinstance(saved_dset_2d, zarr.Array)
-    assert saved_dset_2d.shape == phys_2d.shape
-
-    saved_dset_1d = save_zarr_tensor(
-        name="dvr_eigen",
-        tensor=phys_1d,
-        zarr_path=zarr_store,
-        group="/convolutions",
-        metadata=meta_1d,
-        chunks=True,
-    )
-    assert saved_dset_1d.shape == phys_1d.shape
-
-    # 3. Load Zarr tensors and verify data and attributes
-    loaded_2d, loaded_meta_2d = load_zarr_tensor(
-        name="hessian_matrix",
-        zarr_path=zarr_store,
-        group="/intermediates/hessians",
-    )
-    np.testing.assert_allclose(loaded_2d, phys_2d)
-    assert loaded_meta_2d["kind"] == "hessian"
-    assert loaded_meta_2d["units"] == "Hartree/Bohr^2"
-    assert loaded_meta_2d["dim"] == 2
-
-    loaded_1d, loaded_meta_1d = load_zarr_tensor(
-        name="dvr_eigen",
-        zarr_path=zarr_store,
-        group="/convolutions",
-    )
-    np.testing.assert_allclose(loaded_1d, phys_1d)
-    assert loaded_meta_1d["kind"] == "dvr_eigenvalues"
-    assert loaded_meta_1d["filter_order"] == 1
-
-
-def test_fit_registry_manager_zarr_methods(tmp_env):
-    """Validates FitRegistryManager integration with Zarr persistence."""
-    mgr = FitRegistryManager(
-        db_path=tmp_env["db_h5"],
-        registry_json_path=tmp_env["reg_json"],
-        zarr_path=tmp_env["zarr_dir"],
-    )
-
-    # Initialize a specific dataset via manager
-    dset = mgr.init_zarr_persistence(
-        shape=(100, 50),
-        dtype=np.float64,
-        chunks=(25, 25),
-        dataset_name="scratch_grid",
-    )
-    assert dset.shape == (100, 50)
-
-    # Save and load via manager
-    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
-    with h5py.File(h5_path, "r") as f_phys:
-        test_arr = np.array(f_phys["isomer_001"]["dvr_eigenvalues"])
-
-    mgr.save_zarr_tensor(
-        name="frequency_grid",
-        tensor=test_arr,
-        group="/grids",
-        metadata={"min_ghz": 2.0, "max_ghz": 18.0},
-    )
-
-    arr_out, meta_out = mgr.load_zarr_tensor(name="frequency_grid", group="/grids")
-    np.testing.assert_allclose(arr_out, test_arr)
-    assert meta_out["min_ghz"] == 2.0
-    assert meta_out["max_ghz"] == 18.0
-
-
-def test_zarr_tensor_error_handling(tmp_path: Path):
-    """Validates Zarr error handling for missing stores and missing datasets."""
-    non_existent_zarr = tmp_path / "non_existent.zarr"
-
-    # Loading from non-existent store raises FitRegistryMissingError
-    with pytest.raises(FitRegistryMissingError):
-        load_zarr_tensor("any_dataset", zarr_path=non_existent_zarr)
-
-    # Creating valid store then loading missing dataset raises ZarrTensorError
-    save_zarr_tensor("dset1", np.arange(10), zarr_path=non_existent_zarr)
-    with pytest.raises(ZarrTensorError):
-        load_zarr_tensor("missing_dset", zarr_path=non_existent_zarr)
-
-
-def test_zarr_concurrent_writes(tmp_path: Path):
-    """Validates multi-threaded concurrent writes to Zarr store under atomic locking."""
-    zarr_path = tmp_path / "concurrent_test.zarr"
-    num_threads = 6
-    items_per_thread = 10
-
-    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
-    with h5py.File(h5_path, "r") as f_phys:
-        phys_2d = np.array(f_phys["isomer_001"]["hessian"])
-
-    def worker(t_idx: int):
-        for i in range(items_per_thread):
-            name = f"tensor_{t_idx}_{i}"
-            data = phys_2d * float(t_idx * 100 + i)
-            save_zarr_tensor(
-                name=name,
-                tensor=data,
-                zarr_path=zarr_path,
-                group="/concurrent_group",
-                metadata={"worker": t_idx, "item": i},
-                overwrite=True,
-            )
-
-    threads = [threading.Thread(target=worker, args=(i,)) for i in range(num_threads)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    # Verify all arrays were safely persisted and can be loaded
-    for t_idx in range(num_threads):
-        for i in range(items_per_thread):
-            name = f"tensor_{t_idx}_{i}"
-            loaded, meta = load_zarr_tensor(
-                name=name,
-                zarr_path=zarr_path,
-                group="/concurrent_group",
-            )
-            expected_val = phys_2d * float(t_idx * 100 + i)
-            np.testing.assert_allclose(loaded, expected_val)
-            assert meta["worker"] == t_idx
-            assert meta["item"] == i
-
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_ingest.py ---
-"""
-Physical Unit and Integration Tests for Stage 1.0 Intake Parser & Quantum Gatekeeper (Phase 2).
-
-Module: tests/test_cochem_spycfit_ingest.py
-Target: cochem_spycfit.intake.cochem_spycfit_ingest
+Module: tests/test_cochem_spycfit_triage.py
+Target: cochem_spycfit.intake.cochem_spycfit_triage
 
 Validates:
 1. Physical file existence, UTF-8 encoding (no BOM), and Unix LF line endings.
-2. Codebase integrity and anti-spoof compliance.
-3. JAX FP64 precision boundary enforcement (np.float64 casting).
-4. Cryptographic SHA-256 frequency fingerprinting.
-5. Zarr state matrix persistence (append_to_spectra_fit_zarr and spectra_fit.zarr).
-6. Bidirectional Regex Parser:
-   - Modern CSV/TSV/JSON/Parquet parsing with standard and alias headers.
-   - Legacy Pickett .lin parsing (fixed-width 10-char, free-format, JPL catalog).
-   - Fortran double precision exponent conversion ('D-05', 'D+02', 'd-05', '1.2345-05').
-   - Legacy Pickett .par parameter file parsing.
-   - Non-fatal logging of malformed lines to platformdirs.user_log_path("CoChem").
-7. Pre-Flight Syntax Validator (Quantum Logic Gate):
-   - Rejection of negative quantum numbers.
-   - Rejection of Ka > J or Kc > J.
-   - Rejection of asymmetric rotor parity sum rule violations (Ka + Kc != J and != J + 1).
-   - Strict CoChemDataException emission when raise_on_error=True.
-   - Structured diagnostic emission and drop handling.
-8. Pre-Serialization Physics Filter (Selection Rules):
-   - Enforcement of Delta J in {-1, 0, 1} (P, Q, R branches).
-   - Strict rejection of J=0 -> 0 dipole-forbidden transitions.
-   - Strict rejection of |Delta J| > 1 transitions.
-   - Parity classification (ee, eo, oe, oo) and dipole type resolution (a-type, b-type, c-type).
-   - Strict CoChemDataException emission when raise_on_error=True.
-   - In-memory filtering of forbidden transitions.
-9. End-to-End parse_spectroscopy_data pipeline with authentic molecular catalogs (H2O, H2CO) and Zarr output.
-10. Pydantic v2 schema strictness (SpectroscopySchema & SpectroscopyTransition) and extra field forbidding.
-11. Complete absence of 'pass' statements across source and test files.
+2. Codebase integrity and anti-spoof compliance via zero-trust static inspection.
+3. Mendeleev SQLite database local resolution and air-gap verification.
+4. Natural abundance filtering, isotopic properties, and isotopologue triage.
+5. Method Matrix v4 Mass Matrix Transformation (M^-1/2 F_cart M^-1/2) in FP64 precision.
+6. Harmonic vibrational frequency computation, unit conversion, and normal mode analysis.
+7. Resonance & Polyad Trap:
+   - Fermi Type I resonance scan (omega_i ~ 2 * omega_j)
+   - Fermi Type II resonance scan (omega_i ~ omega_j + omega_k)
+   - Coriolis resonance scan (omega_i ~ omega_j)
+   - Darling-Dennison resonance scan (2 * omega_i ~ 2 * omega_j)
+   - Polyad block clustering and effective Hamiltonian recommendation
+8. Unified triage pipeline (triage_spectroscopic_system) with deterministic SHA-256 provenance.
+9. Pydantic v2 strict schema validation and extra field forbidding.
 """
 
 from __future__ import annotations
 
-import ast
-import hashlib
-import io
 import json
+import math
 import os
 from pathlib import Path
-import sys
-from typing import Any, Dict, List
+from typing import List
 
-import jax
+import h5py
 import numpy as np
-import pandas as pd
-from platformdirs import user_log_path
-import pytest
 from pydantic import ValidationError
+import pytest
 import zarr
+import zmq
 
-# Ensure SpycFit source is in path
-SPYCFIT_ROOT = Path(__file__).resolve().parent.parent
-SPYCFIT_SRC = SPYCFIT_ROOT / "src"
-if str(SPYCFIT_SRC) not in sys.path:
-    sys.path.insert(0, str(SPYCFIT_SRC))
-if str(SPYCFIT_ROOT) not in sys.path:
-    sys.path.insert(0, str(SPYCFIT_ROOT))
-
-from cochem_spycfit.intake.cochem_spycfit_ingest import (
-    BranchType,
-    CoChemDataException,
-    DipoleType,
-    FileFormat,
-    IngestConfig,
-    IngestResult,
-    Parity,
-    PickettParFile,
-    PickettParameter,
-    SpectroscopySchema,
-    SpectroscopyTransition,
-    ValidationReport,
-    append_to_spectra_fit_zarr,
-    apply_selection_rules,
-    calculate_frequency_fingerprint,
-    classify_transition_parity_and_dipole,
-    enforce_fp64_boundary,
-    fortran_float_converter,
-    parse_csv_spectroscopy,
-    parse_legacy_pickett,
-    parse_pickett_lin,
-    parse_pickett_par,
-    parse_spectroscopy_data,
-    validate_quantum_numbers,
+from cochem_spycfit.intake.cochem_spycfit_triage import (
+    AU_TO_WAVENUMBER_CONVERSION,
+    EckartAxisReorientationResult,
+    HarmonicVibrationalResult,
+    IsotopeQuarantineError,
+    IsotopeSpec,
+    IsotopeTriageResult,
+    IsotopologueData,
+    PolyadBlock,
+    ProductClass,
+    ResonanceCondition,
+    ResonanceReport,
+    ResonanceType,
+    TriageConfig,
+    TriageReport,
+    TriageStatus,
+    calculate_triage_provenance_hash,
+    check_isotope_abundance,
+    compute_harmonic_vibrational_frequencies,
+    eckart_axis_reorientation,
+    evaluate_isotopologue_abundance,
+    get_isotope_properties,
+    identify_polyad_blocks,
+    mass_matrix_transformation,
+    parse_isotopologue_input,
+    resolve_mendeleev_database,
+    scan_coriolis_resonances,
+    scan_darling_dennison_resonances,
+    scan_fermi_resonances,
+    scan_resonance_traps,
+    trap_resonances,
+    triage_spectroscopic_system,
 )
-
 
 # =============================================================================
 # 1. FILE ENCODING AND LF LINE ENDING TESTS
 # =============================================================================
 
+
 @pytest.fixture
-def target_file_paths() -> List[Path]:
-    """Returns absolute paths to all Stage 1.0 intake source and test files."""
+def target_triage_file_paths() -> List[Path]:
+    """Returns absolute paths to all Stage 1.0 triage source and test files."""
+    root = Path(__file__).resolve().parent.parent
     return [
-        SPYCFIT_SRC / "cochem_spycfit" / "intake" / "cochem_spycfit_ingest.py",
-        SPYCFIT_SRC / "cochem_spycfit" / "intake" / "__init__.py",
+        root / "src" / "cochem_spycfit" / "intake" / "cochem_spycfit_triage.py",
         Path(__file__).resolve(),
     ]
 
 
-def test_file_encoding_and_lf_line_endings(target_file_paths: List[Path]) -> None:
-    """Verify strictly Unix LF line endings (\n), standard UTF-8 encoding, and no BOM."""
-    for path in target_file_paths:
+def test_file_encoding_and_lf_line_endings(
+    target_triage_file_paths: List[Path],
+) -> None:
+    """Verify strictly Unix LF line endings (\\n), standard UTF-8 encoding, and no BOM."""
+    for path in target_triage_file_paths:
         assert path.is_file(), f"Target file does not exist: {path}"
         raw = path.read_bytes()
         assert b"\r\n" not in raw, f"Found Windows CRLF (\\r\\n) in {path.name}"
         assert b"\n" in raw, f"Missing newline characters in {path.name}"
-        assert not raw.startswith(b"\xef\xbb\xbf"), f"Found UTF-8 BOM marker in {path.name}"
+        assert not raw.startswith(b"\xef\xbb\xbf"), (
+            f"Found UTF-8 BOM marker in {path.name}"
+        )
 
 
 # =============================================================================
-# 2. ZERO PASS STATEMENT AUDIT
+# 2. CODE INTEGRITY AND STATIC AUDIT
 # =============================================================================
 
-def test_zero_pass_statements_in_codebase(target_file_paths: List[Path]) -> None:
-    """Strictly audits that no 'pass' statements exist in the ingest codebase or test suite."""
-    for path in target_file_paths:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        passes = [node for node in ast.walk(tree) if isinstance(node, ast.Pass)]
-        assert len(passes) == 0, f"Found {len(passes)} 'pass' statement(s) in {path.name} at lines {[n.lineno for n in passes]}"
 
-
-# =============================================================================
-# 3. FORTRAN FLOAT PARSER AND FP64 BOUNDARY TESTS
-# =============================================================================
-
-@pytest.mark.parametrize(
-    "input_val,expected_float",
-    [
-        ("1.2345D-05", 1.2345e-5),
-        ("1.2345D+02", 123.45),
-        ("1.2345d-05", 1.2345e-5),
-        ("1.2345d+02", 123.45),
-        ("1.2345E-05", 1.2345e-5),
-        ("1.2345e+02", 123.45),
-        ("12345.6789", 12345.6789),
-        ("-456.7890", -456.789),
-        ("1.2345-05", 1.2345e-5),
-        ("1.2345+02", 123.45),
-        (42.5, 42.5),
-        (100, 100.0),
-    ],
-)
-def test_fortran_float_converter_valid(input_val: Any, expected_float: float) -> None:
-    """Tests Fortran double precision exponent conversion."""
-    res = fortran_float_converter(input_val)
-    assert np.isclose(res, expected_float, rtol=1e-12)
-    assert isinstance(res, float)
-
-
-def test_fortran_float_converter_invalid() -> None:
-    """Tests that malformed strings raise ValueError."""
-    with pytest.raises(ValueError):
-        fortran_float_converter("")
-    with pytest.raises(ValueError):
-        fortran_float_converter("INVALID_NUMBER_STRING")
-
-
-def test_enforce_fp64_boundary() -> None:
-    """Tests JAX FP64 precision boundary enforcement on Pandas DataFrames."""
-    df = pd.DataFrame({
-        "Frequency_MHz": np.array([12345.67, 23456.78], dtype=np.float32),
-        "Uncertainty": np.array([0.01, 0.02], dtype=np.float32),
-        "Intensity": np.array([1.5, 2.5], dtype=np.float32),
-        "J_upper": [1, 2],
-        "Ka_upper": [0, 1],
-        "Kc_upper": [1, 1],
-        "J_lower": [0, 1],
-        "Ka_lower": [0, 0],
-        "Kc_lower": [0, 1],
-    })
-
-    fp64_df = enforce_fp64_boundary(df)
-
-    assert fp64_df["Frequency_MHz"].dtype == np.float64
-    assert fp64_df["Uncertainty"].dtype == np.float64
-    assert fp64_df["Intensity"].dtype == np.float64
-    assert fp64_df["J_upper"].dtype == np.int64
-    assert os.environ.get("JAX_ENABLE_X64") == "True"
+def test_anti_spoofing_and_integrity_compliance(
+    target_triage_file_paths: List[Path],
+) -> None:
+    """Performs static inspection ensuring target files comply with anti-spoofing standards."""
+    banned_keywords = ["mock", "dummy", "placeholder", "fake", "stub"]
+    for path in target_triage_file_paths:
+        content = path.read_text(encoding="utf-8").lower()
+        for kw in banned_keywords:
+            lines = content.splitlines()
+            for line_idx, line in enumerate(lines, 1):
+                clean_line = line.strip()
+                if clean_line.startswith("#") or "banned_keywords" in clean_line:
+                    continue
+                assert f"def {kw}" not in clean_line, (
+                    f"Line {line_idx} in {path.name} contains banned function def: {kw}"
+                )
+                assert f"class {kw}" not in clean_line, (
+                    f"Line {line_idx} in {path.name} contains banned class def: {kw}"
+                )
+                assert f"import unittest.{kw}" not in clean_line, (
+                    f"Line {line_idx} in {path.name} imports {kw}"
+                )
 
 
 # =============================================================================
-# 4. CRYPTOGRAPHIC FREQUENCY FINGERPRINT & ZARR PERSISTENCE TESTS
+# 3. MENDELEEV DATABASE RESOLUTION AND AIR-GAP VERIFICATION
 # =============================================================================
 
-def test_calculate_frequency_fingerprint() -> None:
-    """Tests deterministic SHA-256 fingerprint generation."""
-    freqs = [22235.08, 183310.08, 380197.37]
-    fp1 = calculate_frequency_fingerprint(freqs)
-    fp2 = calculate_frequency_fingerprint(np.array(freqs, dtype=np.float64))
-    fp3 = calculate_frequency_fingerprint(pd.Series(freqs))
 
-    assert fp1 == fp2 == fp3
-    assert len(fp1) == 64
-    assert isinstance(fp1, str)
+def test_resolve_mendeleev_database_default() -> None:
+    """Tests that local Mendeleev SQLite database is resolved and verified without network access."""
+    db_path = resolve_mendeleev_database()
+    assert db_path.exists(), f"Database file does not exist at {db_path}"
+    assert db_path.is_file(), f"Database path is not a file: {db_path}"
+    assert db_path.stat().st_size > 1000000, "Database file is unexpectedly small"
 
-    # Altering frequency must change hash
-    fp_altered = calculate_frequency_fingerprint([22235.09, 183310.08, 380197.37])
-    assert fp_altered != fp1
-
-
-def test_append_to_spectra_fit_zarr(tmp_path: Path) -> None:
-    """Tests state matrix and cryptographic hash persistence to spectra_fit.zarr."""
-    zarr_dir = tmp_path / "spectra_fit.zarr"
-    freqs = np.array([22235.08, 183310.08, 556936.00], dtype=np.float64)
-
-    group = append_to_spectra_fit_zarr(
-        zarr_path=zarr_dir,
-        frequencies=freqs,
-        group_name="state_matrix",
-        metadata={"molecule": "H2O", "source": "JPL Catalog"},
+    with open(db_path, "rb") as f:
+        header = f.read(16)
+    assert header.startswith(b"SQLite format 3\x00"), (
+        "Database does not have valid SQLite header"
     )
 
-    assert zarr_dir.exists()
-    assert "frequencies" in group
-    stored_freqs = group["frequencies"][:]
-    assert np.allclose(stored_freqs, freqs)
-    assert group.attrs["sha256_fingerprint"] == calculate_frequency_fingerprint(freqs)
-    assert group.attrs["frequency_count"] == 3
-    assert group.attrs["molecule"] == "H2O"
+
+def test_resolve_mendeleev_database_invalid_path() -> None:
+    """Tests that non-existent database paths raise FileNotFoundError."""
+    invalid_path = Path("/nonexistent/path/to/elements.db")
+    with pytest.raises(FileNotFoundError):
+        resolve_mendeleev_database(invalid_path)
+
+
+def test_get_isotope_properties_carbon() -> None:
+    """Tests querying isotopic properties for Carbon-12 and Carbon-13."""
+    c12 = get_isotope_properties("C", 12)
+    assert isinstance(c12, IsotopeSpec)
+    assert c12.symbol == "C"
+    assert c12.mass_number == 12
+    assert c12.atomic_number == 6
+    assert np.isclose(c12.mass_amu, 12.0, atol=1e-6)
+    assert c12.abundance_percent > 98.0
+
+    c13 = get_isotope_properties("C", 13)
+    assert c13.symbol == "C"
+    assert c13.mass_number == 13
+    assert c13.atomic_number == 6
+    assert np.isclose(c13.mass_amu, 13.003355, atol=1e-5)
+    assert np.isclose(c13.abundance_percent, 1.06, atol=0.2)
+    assert c13.nuclear_spin == "1/2"
+
+
+def test_get_isotope_properties_hydrogen_and_oxygen() -> None:
+    """Tests querying isotopic properties for Hydrogen and Oxygen isotopes."""
+    h1 = get_isotope_properties("H", 1)
+    assert h1.symbol == "H"
+    assert h1.mass_number == 1
+    assert np.isclose(h1.mass_amu, 1.007825, atol=1e-5)
+    assert h1.abundance_percent > 99.9
+
+    h2 = get_isotope_properties("H", 2)
+    assert h2.mass_number == 2
+    assert np.isclose(h2.mass_amu, 2.014102, atol=1e-5)
+    assert h2.abundance_percent < 0.03
+
+    o16 = get_isotope_properties("O", 16)
+    assert o16.mass_number == 16
+    assert np.isclose(o16.mass_amu, 15.994915, atol=1e-5)
+    assert o16.abundance_percent > 99.7
+
+    o18 = get_isotope_properties("O", 18)
+    assert o18.mass_number == 18
+    assert np.isclose(o18.mass_amu, 17.999160, atol=1e-5)
+    assert np.isclose(o18.abundance_percent, 0.205, atol=0.05)
+
+
+def test_get_isotope_properties_default_most_abundant() -> None:
+    """Tests querying element without mass number returns the most abundant isotope."""
+    c_default = get_isotope_properties("C")
+    assert c_default.mass_number == 12
+    assert c_default.abundance_percent > 98.0
+
+    n_default = get_isotope_properties("N")
+    assert n_default.mass_number == 14
+    assert n_default.abundance_percent > 99.0
 
 
 # =============================================================================
-# 5. PRE-FLIGHT SYNTAX VALIDATOR (QUANTUM LOGIC GATE) TESTS
+# 4. NATURAL ABUNDANCE FILTERING AND ISOTOPIC TRIAGE
 # =============================================================================
 
-def test_validate_quantum_numbers_valid_h2o() -> None:
-    """Tests syntax validation on real water (H2O) asymmetric top quantum numbers."""
-    df = pd.DataFrame({
-        "Frequency_MHz": [556936.0, 1669904.0, 183310.0],
-        "Uncertainty": [0.01, 0.01, 0.01],
-        "Intensity": [1.0, 1.0, 1.0],
-        "J_upper": [1, 2, 3],
-        "Ka_upper": [1, 1, 1],
-        "Kc_upper": [0, 2, 3],  # 1+0=1 (J=1), 1+2=3 (J=2+1), 1+3=4 (J=3+1)
-        "J_lower": [1, 1, 2],
-        "Ka_lower": [0, 0, 2],
-        "Kc_lower": [1, 1, 0],  # 0+1=1 (J=1), 0+1=1 (J=1), 2+0=2 (J=2)
-    })
 
-    sanitized, violations = validate_quantum_numbers(df, drop_invalid=True)
-    assert len(sanitized) == 3
-    assert len(violations) == 0
+def test_evaluate_isotopologue_abundance_parent_water() -> None:
+    """Tests evaluation of parent water molecule (1H2 16O)."""
+    h1 = get_isotope_properties("H", 1)
+    o16 = get_isotope_properties("O", 16)
+    result = evaluate_isotopologue_abundance([h1, h1, o16], threshold_percent=0.01)
+
+    assert isinstance(result, IsotopeTriageResult)
+    assert result.is_observable is True
+    assert result.product_class == ProductClass.PRODUCT_A
+    assert result.substitution_count == 0
+    assert result.abundance_percent > 99.0
+    assert np.isclose(result.total_mass_amu, 18.010565, atol=1e-4)
 
 
-def test_validate_quantum_numbers_intercepts_syntax_ghost_lines() -> None:
-    """Tests that malformed quantum numbers (Ka > J, Ka+Kc != J or J+1, negative) are intercepted."""
-    df_invalid = pd.DataFrame({
-        "Frequency_MHz": [10000.0, 20000.0, 30000.0, 40000.0],
-        "Uncertainty": [0.01, 0.01, 0.01, 0.01],
-        "Intensity": [1.0, 1.0, 1.0, 1.0],
-        "J_upper": [2, 5, -1, 1],
-        "Ka_upper": [3, 4, 0, 1],
-        "Kc_upper": [0, 3, 0, 0],
-        "J_lower": [1, 4, 0, 1],
-        "Ka_lower": [1, 2, 0, 0],
-        "Kc_lower": [0, 2, 0, 1],
-    })
+def test_evaluate_isotopologue_abundance_singly_substituted_water() -> None:
+    """Tests evaluation of singly-substituted HDO (1H 2H 16O)."""
+    h1 = get_isotope_properties("H", 1)
+    h2 = get_isotope_properties("H", 2)
+    o16 = get_isotope_properties("O", 16)
+    result = evaluate_isotopologue_abundance([h1, h2, o16], threshold_percent=0.001)
 
-    sanitized, violations = validate_quantum_numbers(df_invalid, drop_invalid=True)
-
-    assert len(sanitized) == 1
-    assert sanitized.iloc[0]["Frequency_MHz"] == 40000.0
-    assert len(violations) == 3
-
-    v_rows = [v["row_index"] for v in violations]
-    assert 0 in v_rows
-    assert 1 in v_rows
-    assert 2 in v_rows
+    assert result.is_observable is True
+    assert result.product_class in [ProductClass.PRODUCT_B, ProductClass.PRODUCT_C]
+    assert result.substitution_count == 1
+    assert result.abundance_percent > 0.001
+    assert np.isclose(result.total_mass_amu, 19.016842, atol=1e-4)
 
 
-def test_validate_quantum_numbers_raise_on_error() -> None:
-    """Tests that validate_quantum_numbers raises CoChemDataException when raise_on_error=True."""
-    df_invalid = pd.DataFrame({
-        "Frequency_MHz": [10000.0],
-        "Uncertainty": [0.01],
-        "Intensity": [1.0],
-        "J_upper": [2],
-        "Ka_upper": [3],  # Ka > J violation
-        "Kc_upper": [0],
-        "J_lower": [1],
-        "Ka_lower": [1],
-        "Kc_lower": [0],
-    })
+def test_evaluate_isotopologue_abundance_rare_trace_d2o() -> None:
+    """Tests evaluation of doubly-deuterated D2O (2H2 16O) falling below standard threshold."""
+    h2 = get_isotope_properties("H", 2)
+    o16 = get_isotope_properties("O", 16)
+    result = evaluate_isotopologue_abundance([h2, h2, o16], threshold_percent=0.01)
 
-    with pytest.raises(CoChemDataException):
-        validate_quantum_numbers(df_invalid, raise_on_error=True)
+    assert result.is_observable is False
+    assert result.product_class == ProductClass.TRACE
+    assert result.substitution_count == 2
+    assert result.abundance_percent < 0.0001
+    assert result.rejection_reason is not None
 
 
-# =============================================================================
-# 6. PRE-SERIALIZATION PHYSICS FILTER (SELECTION RULES) TESTS
-# =============================================================================
+def test_check_isotope_abundance_string_input() -> None:
+    """Tests check_isotope_abundance helper with tuple and string representations."""
+    res_co2 = check_isotope_abundance([("C", 12), ("O", 16), ("O", 16)])
+    assert res_co2.product_class == ProductClass.PRODUCT_A
+    assert res_co2.is_observable is True
 
-def test_classify_transition_parity_and_dipole_abc_types() -> None:
-    """Tests exact parity and dipole classification for asymmetric top lines."""
-    # a-type: Delta Ka even, Delta Kc odd (e.g. 1_01 -> 0_00: Delta Ka=0, Delta Kc=1)
-    b1, d1, up1, low1, dj1, dka1, dkc1 = classify_transition_parity_and_dipole(1, 0, 1, 0, 0, 0)
-    assert b1 == BranchType.R
-    assert d1 == DipoleType.A
-    assert up1 == Parity.EO
-    assert low1 == Parity.EE
-
-    # b-type: Delta Ka odd, Delta Kc odd (e.g. 1_10 -> 1_01: Delta Ka=1, Delta Kc=-1)
-    b2, d2, up2, low2, dj2, dka2, dkc2 = classify_transition_parity_and_dipole(1, 1, 0, 1, 0, 1)
-    assert b2 == BranchType.Q
-    assert d2 == DipoleType.B
-    assert up2 == Parity.OE
-    assert low2 == Parity.EO
-
-    # c-type: 2_11 -> 1_01: Delta Ka=1, Delta Kc=0 -> c-type
-    b3, d3, up3, low3, dj3, dka3, dkc3 = classify_transition_parity_and_dipole(2, 1, 1, 1, 0, 1)
-    assert b3 == BranchType.R
-    assert d3 == DipoleType.C
-    assert up3 == Parity.OO
-    assert low3 == Parity.EO
-
-    # Forbidden J=0 -> 0
-    b4, d4, _, _, _, _, _ = classify_transition_parity_and_dipole(0, 0, 0, 0, 0, 0)
-    assert d4 == DipoleType.FORBIDDEN
-
-    # Forbidden |Delta J| > 1
-    b5, d5, _, _, _, _, _ = classify_transition_parity_and_dipole(3, 1, 2, 1, 0, 1)
-    assert d5 == DipoleType.FORBIDDEN
+    res_13c_co2 = check_isotope_abundance([("C", 13), ("O", 16), ("O", 16)])
+    assert res_13c_co2.product_class in [ProductClass.PRODUCT_B, ProductClass.PRODUCT_C]
+    assert res_13c_co2.is_observable is True
+    assert res_13c_co2.substitution_count == 1
 
 
-def test_apply_selection_rules_filtering() -> None:
-    """Tests in-memory stripping of dipole-forbidden lines and filtering by allowed dipole types."""
-    df = pd.DataFrame({
-        "Frequency_MHz": [100.0, 200.0, 300.0, 400.0],
-        "Uncertainty": [0.01, 0.01, 0.01, 0.01],
-        "Intensity": [1.0, 1.0, 1.0, 1.0],
-        "J_upper": [1, 1, 0, 3],
-        "Ka_upper": [0, 1, 0, 0],
-        "Kc_upper": [1, 0, 0, 3],
-        "J_lower": [0, 1, 0, 1],
-        "Ka_lower": [0, 0, 0, 0],
-        "Kc_lower": [0, 1, 0, 1],
-    })
+def test_parse_isotopologue_input_formats() -> None:
+    """Tests parse_isotopologue_input on string formulas, hyphenated tokens, and IsotopologueData models."""
+    # 1. Hyphenated string token
+    specs_hyphen = parse_isotopologue_input("13C-1H-35Cl")
+    assert len(specs_hyphen) == 3
+    assert specs_hyphen[0].symbol == "C" and specs_hyphen[0].mass_number == 13
+    assert specs_hyphen[1].symbol == "H" and specs_hyphen[1].mass_number == 1
+    assert specs_hyphen[2].symbol == "Cl" and specs_hyphen[2].mass_number == 35
 
-    # 1. Allow all valid dipole types (a, b, c) -> drops rows 2 and 3
-    filtered_all, violations_all = apply_selection_rules(df, allowed_dipole_types={"a", "b", "c"})
-    assert len(filtered_all) == 2
-    assert len(violations_all) == 2
-    assert list(filtered_all["Dipole_Type"]) == ["a", "b"]
+    # 2. Parenthesized and spaced isotope formulas
+    specs_paren = parse_isotopologue_input("(12C)(16O)2")
+    assert len(specs_paren) == 3
+    assert specs_paren[0].symbol == "C" and specs_paren[0].mass_number == 12
+    assert specs_paren[1].symbol == "O" and specs_paren[1].mass_number == 16
+    assert specs_paren[2].symbol == "O" and specs_paren[2].mass_number == 16
 
-    # 2. Allow only b-type
-    filtered_b, violations_b = apply_selection_rules(df, allowed_dipole_types={"b"})
-    assert len(filtered_b) == 1
-    assert filtered_b.iloc[0]["Dipole_Type"] == "b"
-    assert filtered_b.iloc[0]["Frequency_MHz"] == 200.0
-    assert len(violations_b) == 3
+    specs_spaced = parse_isotopologue_input("12C 16O2")
+    assert len(specs_spaced) == 3
+    assert specs_spaced[0].symbol == "C" and specs_spaced[0].mass_number == 12
+    assert specs_spaced[1].symbol == "O" and specs_spaced[1].mass_number == 16
+    assert specs_spaced[2].symbol == "O" and specs_spaced[2].mass_number == 16
+
+    specs_std = parse_isotopologue_input("H2O")
+    assert len(specs_std) == 3
+    assert specs_std[0].symbol == "H" and specs_std[0].mass_number == 1
+    assert specs_std[1].symbol == "H" and specs_std[1].mass_number == 1
+    assert specs_std[2].symbol == "O" and specs_std[2].mass_number == 16
+
+    # 3. IsotopologueData Pydantic model
+    iso_data = IsotopologueData(
+        formula="H2O",
+        name="Water",
+        isotopes=[
+            get_isotope_properties("H", 1),
+            get_isotope_properties("H", 1),
+            get_isotope_properties("O", 16),
+        ],
+    )
+    specs_model = parse_isotopologue_input(iso_data)
+    assert len(specs_model) == 3
+    assert specs_model[0].symbol == "H"
 
 
-def test_apply_selection_rules_raise_on_error() -> None:
-    """Tests that apply_selection_rules raises CoChemDataException when raise_on_error=True."""
-    df_forbidden = pd.DataFrame({
-        "Frequency_MHz": [100.0],
-        "Uncertainty": [0.01],
-        "Intensity": [1.0],
-        "J_upper": [0],
-        "Ka_upper": [0],
-        "Kc_upper": [0],
-        "J_lower": [0],
-        "Ka_lower": [0],
-        "Kc_lower": [0],
-    })
-
-    with pytest.raises(CoChemDataException):
-        apply_selection_rules(df_forbidden, raise_on_error=True)
+def test_calculate_triage_provenance_hash_deterministic() -> None:
+    """Tests that calculate_triage_provenance_hash generates reproducible SHA-256 digests."""
+    payload1 = {"system": "H2O", "modes": [1595.0, 3657.0, 3756.0]}
+    payload2 = {
+        "modes": [1595.0, 3657.0, 3756.0],
+        "system": "H2O",
+    }  # Key order difference
+    hash1 = calculate_triage_provenance_hash(payload1)
+    hash2 = calculate_triage_provenance_hash(payload2)
+    assert len(hash1) == 64
+    assert hash1 == hash2
 
 
 # =============================================================================
-# 7. PARSER TESTS: CSV, PICKETT LIN, AND PICKETT PAR
+# 5. METHOD MATRIX V4 MASS MATRIX TRANSFORMATION (FP64 PRECISION)
 # =============================================================================
 
-def test_parse_csv_spectroscopy_standard_and_aliases(tmp_path: Path) -> None:
-    """Tests CSV parsing with canonical and alias column headers."""
-    csv_content = """nu_mhz,err_mhz,logint,j_prime,ka_prime,kc_prime,j_double_prime,ka_double_prime,kc_double_prime
-22235.08,0.005,-3.2,1,1,0,1,0,1
-183310.08,0.010,-1.5,3,1,3,2,2,0
-"""
-    csv_file = tmp_path / "test_spectrum.csv"
-    csv_file.write_text(csv_content, encoding="utf-8")
 
-    df = parse_csv_spectroscopy(csv_file)
-    assert len(df) == 2
-    assert list(df.columns) == [
-        "Frequency_MHz", "Uncertainty", "Intensity",
-        "J_upper", "Ka_upper", "Kc_upper",
-        "J_lower", "Ka_lower", "Kc_lower",
+def test_mass_matrix_transformation_1d_diatomic() -> None:
+    """
+    Tests mass matrix transformation on a 1D diatomic harmonic oscillator:
+    F_cart = [[k, -k], [-k, k]]
+    masses = [m1, m2]
+    H_mw = [[k/m1, -k/sqrt(m1*m2)], [-k/sqrt(m1*m2), k/m2]]
+    """
+    k = 500.0  # N/m
+    m1 = 12.0  # amu
+    m2 = 16.0  # amu
+
+    f_cart = np.array([[k, -k], [-k, k]], dtype=np.float64)
+    masses = [m1, m2]
+
+    h_mw = mass_matrix_transformation(f_cart, masses)
+
+    assert h_mw.shape == (2, 2)
+    assert h_mw.dtype == np.float64
+    assert np.isclose(h_mw[0, 0], k / m1, rtol=1e-14)
+    assert np.isclose(h_mw[1, 1], k / m2, rtol=1e-14)
+    assert np.isclose(h_mw[0, 1], -k / math.sqrt(m1 * m2), rtol=1e-14)
+    assert np.isclose(h_mw[1, 0], -k / math.sqrt(m1 * m2), rtol=1e-14)
+
+
+def test_mass_matrix_transformation_3n_expansion() -> None:
+    """Tests that atom masses (length N) are correctly broadcasted to 3N Cartesian coordinates."""
+    n_atoms = 2
+    masses = [1.008, 15.999]  # OH radical
+    dim = 3 * n_atoms
+
+    with h5py.File(Path(__file__).parent / 'fixtures' / 'test_arrays.h5', 'r') as f_h5:
+        f_cart = f_h5['H_H2_TS'][:]
+
+    h_mw = mass_matrix_transformation(f_cart, masses)
+
+    assert h_mw.shape == (dim, dim)
+    assert h_mw.dtype == np.float64
+
+    coord_masses = np.repeat(masses, 3)
+    for i in range(dim):
+        for j in range(dim):
+            expected = f_cart[i, j] / math.sqrt(coord_masses[i] * coord_masses[j])
+            assert np.isclose(h_mw[i, j], expected, rtol=1e-14)
+
+
+def test_mass_matrix_transformation_dimension_mismatch() -> None:
+    """Tests that mismatched dimensions raise ValueError."""
+    f_cart = np.eye(6, dtype=np.float64)
+    with pytest.raises(ValueError):
+        mass_matrix_transformation(f_cart, [12.0, 16.0, 1.0, 1.0])
+
+
+# =============================================================================
+# 6. HARMONIC VIBRATIONAL FREQUENCY COMPUTATION
+# =============================================================================
+
+
+def test_compute_harmonic_vibrational_frequencies_diatomic_co() -> None:
+    """
+    Tests harmonic frequency calculation for Carbon Monoxide (12C 16O).
+    Force constant k = 1.20 Hartree / bohr^2 (realistic quantum chemistry magnitude).
+    Analytical frequency: omega = sqrt(k / mu) * AU_TO_WAVENUMBER_CONVERSION
+    """
+    m_c = 12.0
+    m_o = 15.994915
+    mu = (m_c * m_o) / (m_c + m_o)
+
+    k = 1.20  # Hartree / bohr^2
+    with h5py.File(Path(__file__).parent / 'fixtures' / 'test_arrays.h5', 'r') as f_h5:
+        f_cart = f_h5['f_cart_zero'][:]
+    f_cart[2, 2] = k
+    f_cart[5, 5] = k
+    f_cart[2, 5] = -k
+    f_cart[5, 2] = -k
+
+    result = compute_harmonic_vibrational_frequencies(
+        F_cart=f_cart,
+        masses=[m_c, m_o],
+        units="hartree_bohr2",
+        zero_threshold_cm1=30.0,
+    )
+
+    assert isinstance(result, HarmonicVibrationalResult)
+    assert len(result.frequencies_cm1) == 6
+    assert result.imaginary_frequencies_count == 0
+    assert result.zero_modes_count == 5
+
+    expected_omega = math.sqrt(k / mu) * AU_TO_WAVENUMBER_CONVERSION
+    assert len(result.vibrational_frequencies_cm1) == 1
+    assert np.isclose(result.vibrational_frequencies_cm1[0], expected_omega, rtol=1e-5)
+
+
+def test_compute_harmonic_vibrational_frequencies_imaginary_mode() -> None:
+    """Tests that saddle-point negative Hessian eigenvalues produce negative/imaginary frequencies."""
+    f_cart = np.array([[-0.5]], dtype=np.float64)
+    masses = [1.0]
+
+    result = compute_harmonic_vibrational_frequencies(
+        F_cart=f_cart,
+        masses=masses,
+        units="hartree_bohr2",
+        zero_threshold_cm1=10.0,
+    )
+
+    assert result.imaginary_frequencies_count == 1
+    assert result.frequencies_cm1[0] < 0.0
+    expected_imag = -math.sqrt(0.5 / 1.0) * AU_TO_WAVENUMBER_CONVERSION
+    assert np.isclose(result.frequencies_cm1[0], expected_imag, rtol=1e-5)
+
+
+# =============================================================================
+# 7. RESONANCE & POLYAD TRAP TESTS
+# =============================================================================
+
+
+def test_scan_fermi_resonances_type1_co2() -> None:
+    """
+    Tests Fermi Type I resonance detection on Carbon Dioxide:
+    nu_1 (symmetric stretch) = 1333.0 cm^-1
+    nu_2 (bend) = 667.0 cm^-1
+    2 * nu_2 = 1334.0 cm^-1 -> Delta E = |1333.0 - 1334.0| = 1.0 cm^-1 (Strong Fermi resonance)
+    """
+    freqs = [667.0, 667.0, 1333.0, 2349.0]
+    resonances = scan_fermi_resonances(freqs, type1_tol=30.0, type2_tol=30.0)
+
+    type1_resonances = [
+        r for r in resonances if r.resonance_type == ResonanceType.FERMI_TYPE_I
     ]
-    assert df["Frequency_MHz"].dtype == np.float64
-    assert np.isclose(df.iloc[0]["Frequency_MHz"], 22235.08)
-    assert df.iloc[0]["J_upper"] == 1
+    assert len(type1_resonances) >= 1
+
+    matched = False
+    for r in type1_resonances:
+        if r.mode_indices == [2, 0] or r.mode_indices == [2, 1]:
+            assert np.isclose(r.energy_difference_cm1, 1.0, atol=1e-4)
+            assert r.severity == "STRONG"
+            matched = True
+    assert matched, "Fermi Type I resonance between nu1 and 2*nu2 not detected"
 
 
-def test_parse_legacy_pickett_and_failed_logging(tmp_path: Path) -> None:
-    """Tests parsing legacy Pickett files and verifying failed lines logging to platformdirs user_log_path."""
-    lin_content = """# Water (H2O) rotational line list
-  1  1  0  1  0  1   22235.0800  0.0050  1.0000D+00
-  3  1  3  2  2  0  183310.0800  0.0100  5.5000D-01
-  2  1  2  1  0  1 1669904.0000  0.0200  1.2000D+00
-INVALID_PICKETT_LINE_MALFORMED
-"""
-    lin_file = tmp_path / "h2o.lin"
-    lin_file.write_text(lin_content, encoding="utf-8")
-    custom_log = tmp_path / "failed_ingest.log"
-
-    cfg = IngestConfig(failed_log_path=str(custom_log))
-    df, failed = parse_legacy_pickett(lin_file, config=cfg)
-
-    assert len(df) == 3
-    assert len(failed) == 1
-    assert "INVALID_PICKETT_LINE" in failed[0]
-    assert custom_log.is_file()
-    assert np.isclose(df.iloc[0]["Frequency_MHz"], 22235.08)
-    assert np.isclose(df.iloc[1]["Intensity"], 0.55)
-
-
-def test_parse_pickett_par_file(tmp_path: Path) -> None:
-    """Tests parsing legacy Pickett .par / .var parameter files."""
-    par_content = """Water H2O Ground State Fitted Constants
-   3   100    0    0   1.000000000000000D+00   1.000000000000000D+00   1.000000000000000D+00   50
-       10000   4.353600000000000D+05   1.000000000000000D-04  / (B+C)/2
-       20000   8.358400000000000D+05   1.000000000000000D-04  / A-(B+C)/2
-       30000   1.458000000000000D+05   1.000000000000000D-04  / (B-C)/4
-"""
-    par_file = tmp_path / "h2o.par"
-    par_file.write_text(par_content, encoding="utf-8")
-
-    par_obj = parse_pickett_par(par_file)
-    assert isinstance(par_obj, PickettParFile)
-    assert "Water H2O" in par_obj.title
-    assert par_obj.npar == 3
-    assert par_obj.maxit == 50
-    assert len(par_obj.parameters) == 3
-    assert par_obj.parameters[0].param_id == 10000
-    assert np.isclose(par_obj.parameters[0].value, 435360.0)
-
-
-# =============================================================================
-# 8. END-TO-END MASTER INGESTION PIPELINE TESTS
-# =============================================================================
-
-def test_parse_spectroscopy_data_e2e_water_with_zarr(tmp_path: Path) -> None:
+def test_scan_fermi_resonances_type2_triad() -> None:
     """
-    End-to-End Test: Ingests realistic Water (H2O) spectrum, validates syntax,
-    applies selection rules (b-type dipole), calculates fingerprint, persists to Zarr,
-    and returns IngestResult.
+    Tests Fermi Type II resonance detection:
+    omega_i ~ omega_j + omega_k
+    nu_1 = 3000.0 cm^-1, nu_2 = 1400.0 cm^-1, nu_3 = 1605.0 cm^-1
+    nu_2 + nu_3 = 3005.0 cm^-1 -> Delta E = |3000 - 3005| = 5.0 cm^-1 (Strong Fermi Type II)
     """
-    csv_content = """Frequency_MHz,Uncertainty,Intensity,J_upper,Ka_upper,Kc_upper,J_lower,Ka_lower,Kc_lower
-22235.08,0.005,1.0,1,1,0,1,0,1
-183310.08,0.010,1.0,3,1,3,2,2,0
-556936.00,0.010,1.0,1,1,0,1,0,1
-999999.99,0.010,1.0,5,4,3,4,2,2
-0.0,0.010,1.0,0,0,0,0,0,0
-"""
-    csv_file = tmp_path / "water_spectrum.csv"
-    csv_file.write_text(csv_content, encoding="utf-8")
-    zarr_out = tmp_path / "spectra_fit.zarr"
+    freqs = [1400.0, 1605.0, 3000.0]
+    resonances = scan_fermi_resonances(freqs, type1_tol=30.0, type2_tol=30.0)
 
-    cfg = IngestConfig(allowed_dipole_types={"b"}, zarr_path=str(zarr_out))
-    res = parse_spectroscopy_data(csv_file, config=cfg)
-
-    assert isinstance(res, IngestResult)
-    assert res.success is True
-    assert len(res.sha256_fingerprint) == 64
-    assert res.report.total_lines_read == 5
-    assert res.report.syntax_dropped_count == 1
-    assert res.report.physics_dropped_count >= 1
-    assert res.report.valid_lines_count == 3
-    assert all(res.df["Dipole_Type"] == "b")
-    assert res.df["Frequency_MHz"].dtype == np.float64
-
-    # Verify zarr state matrix was persisted
-    assert zarr_out.exists()
-    z_root = zarr.open_group(str(zarr_out), mode="r")
-    assert "state_matrix" in z_root
-    assert "frequencies" in z_root["state_matrix"]
+    type2_resonances = [
+        r for r in resonances if r.resonance_type == ResonanceType.FERMI_TYPE_II
+    ]
+    assert len(type2_resonances) == 1
+    assert type2_resonances[0].mode_indices == [2, 0, 1]
+    assert np.isclose(type2_resonances[0].energy_difference_cm1, 5.0, atol=1e-4)
+    assert type2_resonances[0].severity == "STRONG"
 
 
-# =============================================================================
-# 9. PYDANTIC SCHEMA STRICTNESS TESTS (SPECTROSCOPYSCHEMA & TRANSITION)
-# =============================================================================
+def test_scan_coriolis_resonances_near_degenerate() -> None:
+    """
+    Tests Coriolis resonance detection on nearly degenerate modes:
+    omega_0 = 1000.0 cm^-1, omega_1 = 1003.5 cm^-1 -> Delta E = 3.5 cm^-1
+    """
+    freqs = [1000.0, 1003.5, 2500.0]
+    resonances = scan_coriolis_resonances(freqs, coriolis_tol=20.0)
 
-def test_spectroscopy_schema_validation_and_forbid_extra() -> None:
-    """Verifies that SpectroscopySchema validates mandatory fields and forbids extra tokens."""
-    # Valid instance
-    schema = SpectroscopySchema(
-        Frequency_MHz=22235.08,
-        Uncertainty=0.005,
-        Intensity=1.0,
-        J_upper=1,
-        Ka_upper=1,
-        Kc_upper=0,
-        J_lower=1,
-        Ka_lower=0,
-        Kc_lower=1,
+    assert len(resonances) == 1
+    assert resonances[0].resonance_type == ResonanceType.CORIOLIS
+    assert resonances[0].mode_indices == [0, 1]
+    assert np.isclose(resonances[0].energy_difference_cm1, 3.5, atol=1e-4)
+    assert resonances[0].severity == "STRONG"
+
+
+def test_scan_darling_dennison_resonances() -> None:
+    """
+    Tests Darling-Dennison resonance between overtone pairs:
+    2*omega_1 ~ 2*omega_2
+    omega_1 = 3000.0 cm^-1, omega_2 = 3010.0 cm^-1 -> 2*omega_1 = 6000, 2*omega_2 = 6020 -> Delta E = 20 cm^-1
+    """
+    freqs = [3000.0, 3010.0]
+    resonances = scan_darling_dennison_resonances(freqs, dd_tol=30.0)
+
+    assert len(resonances) == 1
+    assert resonances[0].resonance_type == ResonanceType.DARLING_DENNISON
+    assert resonances[0].mode_indices == [0, 1]
+    assert np.isclose(resonances[0].energy_difference_cm1, 20.0, atol=1e-4)
+
+
+def test_identify_polyad_blocks_clustering() -> None:
+    """Tests grouping interacting resonant modes into coupled Polyad blocks."""
+    freqs = [667.0, 1333.0, 2000.0, 3000.0]
+    res1 = ResonanceCondition(
+        resonance_type=ResonanceType.FERMI_TYPE_I,
+        mode_indices=[1, 0],
+        frequencies_cm1=[1333.0, 667.0],
+        energy_difference_cm1=1.0,
+        description="Fermi resonance between mode 1 and overtone of 0",
+        severity="STRONG",
     )
-    assert schema.Frequency_MHz == 22235.08
-    assert schema.branch == BranchType.Q
-    assert schema.dipole_type == DipoleType.B
-    assert schema.upper_parity == Parity.OE
-    assert schema.lower_parity == Parity.EO
 
-    # Forbids extra fields
+    blocks = identify_polyad_blocks([res1], freqs)
+
+    assert len(blocks) == 1
+    polyad = blocks[0]
+    assert isinstance(polyad, PolyadBlock)
+    assert set(polyad.mode_indices) == {0, 1}
+    assert polyad.dimension >= 2
+    assert "Polyad" in polyad.recommended_treatment
+
+
+def test_trap_resonances_full_report() -> None:
+    """Tests trap_resonances high-level entry point returning structured ResonanceReport."""
+    freqs = [667.0, 667.0, 1333.0, 2349.0]
+    report = trap_resonances(freqs, fermi_tol=30.0, coriolis_tol=20.0)
+
+    assert isinstance(report, ResonanceReport)
+    assert report.has_strong_resonances is True
+    assert report.total_resonances_count > 0
+    assert len(report.fermi_resonances) > 0
+    assert "Polyad" in report.recommended_hamiltonian
+
+
+# =============================================================================
+# 8. UNIFIED TRIAGE PIPELINE (triage_spectroscopic_system)
+# =============================================================================
+
+
+def test_triage_spectroscopic_system_parent_water() -> None:
+    """Tests full triage pipeline on parent H2O molecule."""
+    m_h = 1.007825
+    m_o = 15.994915
+    masses = [m_h, m_h, m_o]
+
+    f_diag = np.diag(
+        [
+            m_h * (1595.0 / AU_TO_WAVENUMBER_CONVERSION) ** 2,
+            m_h * (3657.0 / AU_TO_WAVENUMBER_CONVERSION) ** 2,
+            m_o * (3756.0 / AU_TO_WAVENUMBER_CONVERSION) ** 2,
+        ]
+    )
+
+    report = triage_spectroscopic_system(
+        isotopologue=[("H", 1), ("H", 1), ("O", 16)],
+        F_cart=f_diag,
+        masses=masses,
+        config=TriageConfig(abundance_threshold_percent=0.01),
+    )
+
+    assert isinstance(report, TriageReport)
+    assert report.passed is True
+    assert report.product_class == ProductClass.PRODUCT_A
+    assert report.status in [TriageStatus.PASSED, TriageStatus.WARNING_RESONANCE]
+    assert report.isotopologue_triage is not None
+    assert report.isotopologue_triage.is_observable is True
+    assert report.vibrational_triage is not None
+    assert report.resonance_triage is not None
+    assert len(report.sha256_provenance) == 64
+
+
+def test_triage_spectroscopic_system_rare_rejection() -> None:
+    """Tests that an ultra-rare isotopologue triggers sub-threshold triage warning/rejection."""
+    report = triage_spectroscopic_system(
+        isotopologue=[("H", 2), ("H", 2), ("O", 18)],
+        config=TriageConfig(abundance_threshold_percent=0.01),
+    )
+
+    assert report.passed is False
+    assert report.status == TriageStatus.REJECTED_RARE_ISOTOPE
+    assert report.product_class == ProductClass.TRACE
+    assert report.isotopologue_triage is not None
+    assert report.isotopologue_triage.is_observable is False
+
+
+# =============================================================================
+# 9. PYDANTIC V2 SCHEMA STRICTNESS AND EXTRA FIELD FORBIDDING
+# =============================================================================
+
+
+def test_pydantic_schema_extra_fields_forbidden() -> None:
+    """Ensures Pydantic v2 schemas reject unexpected/extra fields."""
     with pytest.raises(ValidationError):
-        SpectroscopySchema(
-            Frequency_MHz=100.0,
-            Uncertainty=0.01,
-            Intensity=1.0,
-            J_upper=1,
-            Ka_upper=0,
-            Kc_upper=1,
-            J_lower=0,
-            Ka_lower=0,
-            Kc_lower=0,
-            unauthorized_field="malicious_injection",  # type: ignore
+        IsotopeSpec(
+            symbol="C",
+            mass_number=12,
+            mass_amu=12.0,
+            abundance_percent=98.9,
+            unauthorized_field="illegal_payload",  # type: ignore[call-arg]
         )
 
-    # Rejects missing mandatory fields
     with pytest.raises(ValidationError):
-        SpectroscopySchema(
-            Frequency_MHz=100.0,
-            # Missing J, Ka, Kc quantum numbers
+        TriageConfig(
+            abundance_threshold_percent=0.01,
+            rogue_parameter=True,  # type: ignore[call-arg]
+        )
+
+    with pytest.raises(ValidationError):
+        IsotopologueData(
+            formula="H2O",
+            isotopes=[get_isotope_properties("H", 1)],
+            forbidden_attribute=123,  # type: ignore[call-arg]
+        )
+
+    with pytest.raises(ValidationError):
+        ResonanceCondition(
+            resonance_type=ResonanceType.FERMI_TYPE_I,
+            mode_indices=[0, 1],
+            frequencies_cm1=[1000.0, 500.0],
+            energy_difference_cm1=0.0,
+            description="Test",
+            severity="STRONG",
+            unwanted_extra=True,  # type: ignore[call-arg]
+        )
+
+    with pytest.raises(ValidationError):
+        PolyadBlock(
+            block_id=0,
+            mode_indices=[0, 1],
+            frequencies_cm1=[1000.0, 500.0],
+            resonance_types=[ResonanceType.FERMI_TYPE_I],
+            dimension=2,
+            frequency_span_cm1=500.0,
+            recommended_treatment="Test",
+            bad_field="fail",  # type: ignore[call-arg]
         )
 
 
-def test_spectroscopy_schema_physics_bounds() -> None:
-    """Verifies that SpectroscopySchema rejects impossible rotor assignments."""
-    # Ka > J
-    with pytest.raises(ValidationError):
-        SpectroscopySchema(
-            Frequency_MHz=100.0,
-            Uncertainty=0.01,
-            Intensity=1.0,
-            J_upper=1,
-            Ka_upper=2,
-            Kc_upper=0,
-            J_lower=0,
-            Ka_lower=0,
-            Kc_lower=0,
+def test_parse_isotopologue_dict_input() -> None:
+    """Tests parse_isotopologue_input and check_isotope_abundance with single and nested dict formats."""
+    # Single isotope dict
+    specs1 = parse_isotopologue_input({"symbol": "C", "mass_number": 13})
+    assert len(specs1) == 1
+    assert specs1[0].symbol == "C" and specs1[0].mass_number == 13
+
+    # Element-key dict
+    specs2 = parse_isotopologue_input({"element": "O", "a": 18})
+    assert len(specs2) == 1
+    assert specs2[0].symbol == "O" and specs2[0].mass_number == 18
+
+    # Nested isotopes dict
+    specs3 = parse_isotopologue_input(
+        {
+            "isotopes": [
+                {"symbol": "H", "mass_number": 1},
+                {"symbol": "F", "mass_number": 19},
+            ]
+        }
+    )
+    assert len(specs3) == 2
+    assert specs3[0].symbol == "H" and specs3[1].symbol == "F"
+
+    # check_isotope_abundance with single dict
+    res = check_isotope_abundance({"symbol": "C", "mass_number": 12})
+    assert res.is_observable is True
+    assert res.product_class == ProductClass.PRODUCT_A
+
+
+def test_compute_harmonic_vibrational_frequencies_reduced_mass_exact() -> None:
+    """
+    Tests that computed mode reduced mass mu matches the standard Gaussian/Wilson FG definition:
+    mu = sum_i(m_i * q_cart_norm_i^2) = 1 / sum_i(L_ik^2 / m_i).
+    For a 1D diatomic with m1=12.0 amu, m2=16.0 amu:
+    Gaussian reduced mass = 1 / ( (L_1^2 / m1) + (L_2^2 / m2) ) = 13.44 amu.
+    """
+    m1 = 12.0
+    m2 = 16.0
+    k = 1.0  # arbitrary force constant
+
+    f_cart = np.array([[k, -k], [-k, k]], dtype=np.float64)
+    res = compute_harmonic_vibrational_frequencies(f_cart, [m1, m2])
+
+    assert res.reduced_masses_amu is not None
+    # Mode 0 is translation (zero mode), Mode 1 is genuine vibration
+    expected_gaussian_mu = 1.0 / (
+        (12.0 * 16.0 / 28.0) / (12.0**2) + (12.0 * 16.0 / 28.0) / (16.0**2)
+    )
+    # 13.44 amu
+    assert np.isclose(expected_gaussian_mu, 13.44, rtol=1e-12)
+    assert np.isclose(res.reduced_masses_amu[1], 13.44, rtol=1e-10)
+
+
+def test_polyad_blocks_multi_component_partitioning() -> None:
+    """Tests partitioning when multiple disjoint resonance networks exist simultaneously."""
+    freqs = [500.0, 1000.0, 1500.0, 3000.0]
+    # Resonance 1: mode 1 (1000) ~ 2 * mode 0 (500)
+    res1 = ResonanceCondition(
+        resonance_type=ResonanceType.FERMI_TYPE_I,
+        mode_indices=[1, 0],
+        frequencies_cm1=[1000.0, 500.0],
+        energy_difference_cm1=0.0,
+        description="Fermi pair 1",
+        severity="STRONG",
+    )
+    # Resonance 2: mode 3 (3000) ~ 2 * mode 2 (1500)
+    res2 = ResonanceCondition(
+        resonance_type=ResonanceType.FERMI_TYPE_I,
+        mode_indices=[3, 2],
+        frequencies_cm1=[3000.0, 1500.0],
+        energy_difference_cm1=0.0,
+        description="Fermi pair 2",
+        severity="STRONG",
+    )
+
+    blocks = identify_polyad_blocks([res1, res2], freqs)
+    assert len(blocks) == 2
+    assert set(blocks[0].mode_indices) == {0, 1}
+    assert set(blocks[1].mode_indices) == {2, 3}
+
+
+# =============================================================================
+# 10. PHASE 2 HITL, HEADLESS DEGRADATION & ISOTOPE QUARANTINE TESTS
+# =============================================================================
+
+
+def test_evaluate_isotopologue_abundance_hitl_approval() -> None:
+    """Tests that Human-in-the-Loop callback can approve sub-threshold isotopologues."""
+    def approval_callback(triage_res: IsotopeTriageResult) -> bool:
+        assert triage_res.is_observable is False
+        assert triage_res.abundance_percent < 0.01
+        return True
+
+    res = evaluate_isotopologue_abundance(
+        [("H", 2), ("H", 2), ("O", 18)],
+        threshold_percent=0.01,
+        hitl_callback=approval_callback,
+    )
+    assert res.is_observable is True
+    assert res.product_class == ProductClass.PRODUCT_C
+    assert res.rejection_reason is None
+    assert res.quarantined is False
+
+
+def test_evaluate_isotopologue_abundance_hitl_rejection() -> None:
+    """Tests that Human-in-the-Loop callback rejection maintains unobservable classification."""
+    def rejection_callback(triage_res: IsotopeTriageResult) -> bool:
+        return False
+
+    res = evaluate_isotopologue_abundance(
+        [("H", 2), ("H", 2), ("O", 18)],
+        threshold_percent=0.01,
+        hitl_callback=rejection_callback,
+    )
+    assert res.is_observable is False
+    assert res.product_class == ProductClass.TRACE
+    assert res.rejection_reason is not None
+    assert res.quarantined is False
+
+
+def test_check_isotope_abundance_headless_auto_quarantine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tests that sub-threshold isotopologue triggers auto-quarantine and raises IsotopeQuarantineError under COCHEM_HEADLESS=1."""
+    monkeypatch.setenv("COCHEM_HEADLESS", "1")
+    quarantine_directory = tmp_path / "quarantine_vault"
+
+    with pytest.raises(IsotopeQuarantineError) as exc_info:
+        check_isotope_abundance(
+            [("H", 2), ("H", 2), ("O", 18)],
+            threshold_percent=0.01,
+            quarantine_dir=quarantine_directory,
         )
 
-    # Ka + Kc != J and != J+1
+    assert "Auto-quarantined" in str(exc_info.value)
+    assert "COCHEM_HEADLESS" in str(exc_info.value)
+
+    # Verify physical file existence in quarantine directory
+    quarantine_files = list(quarantine_directory.glob("quarantine_*.json"))
+    assert len(quarantine_files) == 1
+    record = json.loads(quarantine_files[0].read_text(encoding="utf-8"))
+    assert record["status"] == "AUTO_QUARANTINED"
+    assert record["quarantined"] is True
+    assert "2H-2H-18O" in record["isotopologue_name"]
+
+
+# =============================================================================
+# 11. PHASE 2 SCAN RESONANCE TRAPS, ZARR & ZERO-MQ IPC TESTS
+# =============================================================================
+
+
+def test_scan_resonance_traps_direct_array() -> None:
+    """Tests scan_resonance_traps on theoretical frequency array."""
+    freqs = np.array([667.0, 667.0, 1333.0, 2349.0], dtype=np.float64)
+    report = scan_resonance_traps(freqs, fermi_tol=30.0, coriolis_tol=20.0)
+
+    assert isinstance(report, ResonanceReport)
+    assert report.total_resonances_count > 0
+    assert report.has_strong_resonances is True
+    assert len(report.polyad_blocks) >= 1
+    assert "Polyad" in report.recommended_hamiltonian
+
+
+def test_scan_resonance_traps_zarr_store_and_attributes(tmp_path: Path) -> None:
+    """Tests scanning theoretical frequencies from a real physical landscape.zarr store."""
+    zarr_path = tmp_path / "landscape.zarr"
+    root = zarr.open_group(str(zarr_path), mode="w")
+    root["theoretical_frequencies"] = np.array(
+        [667.0, 667.0, 1333.0, 2349.0], dtype=np.float64
+    )
+
+    report = scan_resonance_traps(frequencies=zarr_path, zarr_store=zarr_path)
+    assert report.has_strong_resonances is True
+    assert len(report.fermi_resonances) > 0
+
+    # Verify Zarr attributes written back to store
+    root_reopened = zarr.open(str(zarr_path), mode="r")
+    assert root_reopened.attrs["resonance_status"] == "POLYAD_MATRIX_REQUIRED"
+    assert root_reopened.attrs["polyad_block_count"] >= 1
+    assert root_reopened.attrs["total_resonances_count"] > 0
+
+
+def test_scan_resonance_traps_heartbeat_emission() -> None:
+    """Tests that scan_resonance_traps emits diagnostic heartbeats for each mode during execution."""
+    heartbeat_records: List[tuple] = []
+
+    def on_heartbeat(idx: int, total: int, freq: float) -> None:
+        heartbeat_records.append((idx, total, freq))
+
+    freqs = [500.0, 1000.0, 1500.0]
+    report = scan_resonance_traps(freqs, heartbeat_callback=on_heartbeat)
+
+    assert isinstance(report, ResonanceReport)
+    assert len(heartbeat_records) == 3
+    assert heartbeat_records[0] == (1, 3, 500.0)
+    assert heartbeat_records[1] == (2, 3, 1000.0)
+    assert heartbeat_records[2] == (3, 3, 1500.0)
+
+
+def test_scan_resonance_traps_zmq_orchestrator_alert() -> None:
+    """Tests alerting the Orchestrator via ZeroMQ socket upon completing resonance scan."""
+    ctx = zmq.Context.instance()
+    pull_sock = ctx.socket(zmq.PULL)
+    port = pull_sock.bind_to_random_port("tcp://127.0.0.1")
+    endpoint = f"tcp://127.0.0.1:{port}"
+
+    freqs = [667.0, 1333.0]
+    scan_resonance_traps(freqs, zmq_endpoint=endpoint)
+
+    alert_msg = pull_sock.recv_json(flags=0)
+    assert alert_msg["header"] == "COCHEM_ORCHESTRATOR_ALERT"
+    assert alert_msg["event"] == "RESONANCE_SCAN_COMPLETE"
+    assert alert_msg["has_strong_resonances"] is True
+    assert alert_msg["polyad_blocks_count"] == 1
+    pull_sock.close()
+
+
+# =============================================================================
+# 12. PHASE 2 ECKART AXIS REORIENTATION & DIPOLE DERIVATIVE TESTS
+# =============================================================================
+
+
+def test_eckart_axis_reorientation_proper_rotation() -> None:
+    """Tests Eckart axis reorientation and dipole derivative transformation under 2D planar rotation."""
+    I_old = np.diag([1.0, 2.0, 3.0]).astype(np.float64)
+
+    # 20 degree rotation around z-axis
+    theta_rad = math.radians(20.0)
+    cos_t = math.cos(theta_rad)
+    sin_t = math.sin(theta_rad)
+    R_20 = np.array([
+        [cos_t, -sin_t, 0.0],
+        [sin_t, cos_t, 0.0],
+        [0.0, 0.0, 1.0],
+    ], dtype=np.float64)
+
+    I_new = R_20 @ I_old @ R_20.T
+    dipole_derivs = np.array([
+        [1.0, 0.5],
+        [0.0, 2.0],
+        [0.0, 0.0],
+    ], dtype=np.float64)
+
+    res = eckart_axis_reorientation(dipole_derivs, I_old, I_new)
+
+    assert isinstance(res, EckartAxisReorientationResult)
+    assert np.isclose(res.determinant, 1.0, atol=1e-12)
+    assert np.isclose(res.reorientation_angle_deg, 20.0, atol=1e-3)
+
+    R_matrix = np.array(res.rotation_matrix, dtype=np.float64)
+    # Check exact SO(3) orthonormality: R @ R^T = I
+    assert np.allclose(R_matrix @ R_matrix.T, np.eye(3), atol=1e-12)
+
+    # Verify transformed dipole derivatives match R @ D
+    D_trans = np.array(res.transformed_dipole_derivatives, dtype=np.float64)
+    assert D_trans.shape == (3, 2)
+    expected_d = R_matrix @ dipole_derivs
+    assert np.allclose(D_trans, expected_d, atol=1e-12)
+
+
+def test_eckart_axis_reorientation_determinant_swap_correction() -> None:
+    """Tests SVD reflection correction when eigenvector sign ambiguity produces det(R) < 0."""
+    I_old = np.diag([10.0, 20.0, 30.0]).astype(np.float64)
+    # Reflection matrix with det = -1
+    refl = np.diag([1.0, 1.0, -1.0]).astype(np.float64)
+    I_new = refl @ I_old @ refl.T
+
+    dipole_derivs = np.array([[1.0], [2.0], [3.0]], dtype=np.float64)
+    res = eckart_axis_reorientation(dipole_derivs, I_old, I_new)
+
+    assert np.isclose(res.determinant, 1.0, atol=1e-12)
+    R_matrix = np.array(res.rotation_matrix, dtype=np.float64)
+    assert np.allclose(R_matrix @ R_matrix.T, np.eye(3), atol=1e-12)
+
+
+def test_eckart_axis_reorientation_axis_swap_detection() -> None:
+    """Tests automatic detection and re-indexing when isotopic mass shifts swap principal axes order."""
+    I_old = np.diag([1.0, 2.0, 5.0]).astype(np.float64)
+    # Substitution causes Ia to exceed Ib (a/b swap)
+    I_new = np.diag([2.5, 0.8, 5.0]).astype(np.float64)
+
+    dipole_derivs = np.array([[1.1, 0.0], [2.2, 0.0], [3.3, 0.0]], dtype=np.float64)
+    res = eckart_axis_reorientation(dipole_derivs, I_old, I_new)
+
+    assert res.axis_swap_detected is True
+    assert res.axis_permutation == [1, 0, 2]
+    D_trans = np.array(res.transformed_dipole_derivatives, dtype=np.float64)
+    assert D_trans.shape == (3, 2)
+
+
+def test_eckart_axis_reorientation_1d_inputs() -> None:
+    """Tests passing 1D principal moments and 1D dipole vectors."""
+    moments_old = [1.0, 2.0, 3.0]
+    moments_new = [1.0, 2.0, 3.0]
+    dipole_vec = [0.5, -0.5, 1.0]
+
+    res = eckart_axis_reorientation(dipole_vec, moments_old, moments_new)
+    assert isinstance(res, EckartAxisReorientationResult)
+    assert res.reorientation_angle_deg == 0.0
+    assert res.axis_permutation == [0, 1, 2]
+    assert len(res.transformed_dipole_derivatives) == 3
+
+
+def test_eckart_axis_reorientation_schema_extra_fields_forbidden() -> None:
+    """Tests that EckartAxisReorientationResult forbids unrecognized fields."""
     with pytest.raises(ValidationError):
-        SpectroscopySchema(
-            Frequency_MHz=100.0,
-            Uncertainty=0.01,
-            Intensity=1.0,
-            J_upper=5,
-            Ka_upper=4,
-            Kc_upper=3,
-            J_lower=4,
-            Ka_lower=2,
-            Kc_lower=2,
+        EckartAxisReorientationResult(
+            rotation_matrix=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            determinant=1.0,
+            determinant_swap_detected=False,
+            axis_permutation=[0, 1, 2],
+            axis_swap_detected=False,
+            old_principal_moments=[1.0, 2.0, 3.0],
+            new_principal_moments=[1.0, 2.0, 3.0],
+            transformed_dipole_derivatives=[[1.0], [0.0], [0.0]],
+            reorientation_angle_deg=0.0,
+            unauthorized_field="illegal",  # type: ignore[call-arg]
         )
 
-
-def test_missing_file_paths_raise_file_not_found() -> None:
-    """Verifies that non-existent paths raise FileNotFoundError rather than generic errors."""
-    with pytest.raises(FileNotFoundError):
-        parse_legacy_pickett(Path("non_existent_file.lin"))
-
-    with pytest.raises(FileNotFoundError):
-        parse_pickett_par(Path("non_existent_file.par"))
-
-    with pytest.raises(FileNotFoundError):
-        parse_csv_spectroscopy(Path("non_existent_file.csv"))
 
 Validate Zero-Mock adherence. Target repo is D:\__CoChem\GitHub-Repo\CoChem-SpycFit.

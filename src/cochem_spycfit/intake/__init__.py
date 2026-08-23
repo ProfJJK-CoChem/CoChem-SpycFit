@@ -28,7 +28,9 @@ from cochem_spycfit.intake.cochem_spycfit_ingest import (
 )
 from cochem_spycfit.intake.cochem_spycfit_triage import (
     AU_TO_WAVENUMBER_CONVERSION,
+    EckartAxisReorientationResult,
     HarmonicVibrationalResult,
+    IsotopeQuarantineError,
     IsotopeSpec,
     IsotopeTriageResult,
     IsotopologueData,
@@ -43,6 +45,7 @@ from cochem_spycfit.intake.cochem_spycfit_triage import (
     calculate_triage_provenance_hash,
     check_isotope_abundance,
     compute_harmonic_vibrational_frequencies,
+    eckart_axis_reorientation,
     evaluate_isotopologue_abundance,
     get_isotope_properties,
     identify_polyad_blocks,
@@ -52,6 +55,7 @@ from cochem_spycfit.intake.cochem_spycfit_triage import (
     scan_coriolis_resonances,
     scan_darling_dennison_resonances,
     scan_fermi_resonances,
+    scan_resonance_traps,
     trap_resonances,
     triage_spectroscopic_system,
 )
@@ -123,7 +127,9 @@ __all__ = [
     "validate_quantum_numbers",
     # Triage
     "AU_TO_WAVENUMBER_CONVERSION",
+    "EckartAxisReorientationResult",
     "HarmonicVibrationalResult",
+    "IsotopeQuarantineError",
     "IsotopeSpec",
     "IsotopeTriageResult",
     "IsotopologueData",
@@ -138,6 +144,7 @@ __all__ = [
     "calculate_triage_provenance_hash",
     "check_isotope_abundance",
     "compute_harmonic_vibrational_frequencies",
+    "eckart_axis_reorientation",
     "evaluate_isotopologue_abundance",
     "get_isotope_properties",
     "identify_polyad_blocks",
@@ -147,6 +154,7 @@ __all__ = [
     "scan_coriolis_resonances",
     "scan_darling_dennison_resonances",
     "scan_fermi_resonances",
+    "scan_resonance_traps",
     "trap_resonances",
     "triage_spectroscopic_system",
     # Orchestrator

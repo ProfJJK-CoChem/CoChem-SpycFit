@@ -47,10 +47,14 @@ import math
 import os
 from pathlib import Path
 import re
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
+import datetime
+from itertools import permutations
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
+import zarr
+import zmq
 
 # Logging configuration
 logger = logging.getLogger("CoChem-SpycFit.Triage")
@@ -60,18 +64,24 @@ try:
     from cochem_base.exceptions import (
         CoChemIntegrityError,
         CoChemPrecisionError,
+        IsotopeQuarantineError,
     )
 except ImportError:
 
     class CoChemPrecisionError(RuntimeError):  # type: ignore[no-redef]
         """Raised when numerical float precision is violated."""
 
-        pass
+        ...
 
     class CoChemIntegrityError(ValueError):  # type: ignore[no-redef]
         """Raised when cryptographic checksum or binary integrity check fails."""
 
-        pass
+        ...
+
+    class IsotopeQuarantineError(RuntimeError):  # type: ignore[no-redef]
+        """Raised when an isotopologue fails natural abundance triage in headless mode (auto-quarantine)."""
+
+        ...
 
 
 # =============================================================================
@@ -220,6 +230,52 @@ class IsotopeTriageResult(BaseModel):
     )
     rejection_reason: Optional[str] = Field(
         default=None, description="Reason for rejection if sub-threshold."
+    )
+    quarantined: bool = Field(
+        default=False, description="Whether isotopologue was auto-quarantined."
+    )
+    quarantine_path: Optional[str] = Field(
+        default=None, description="Filesystem path to quarantine record if quarantined."
+    )
+
+
+class EckartAxisReorientationResult(BaseModel):
+    """Result of Eckart axis reorientation and dipole derivative transformation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rotation_matrix: List[List[float]] = Field(
+        ...,
+        description="3x3 proper SO(3) Eckart rotation matrix (FP64, det(R) = +1).",
+    )
+    determinant: float = Field(
+        ..., description="Determinant of the rotation matrix (must be +1.0)."
+    )
+    determinant_swap_detected: bool = Field(
+        ...,
+        description="True if raw eigenvector determinant was negative (< 0) before reflection correction.",
+    )
+    axis_permutation: List[int] = Field(
+        ...,
+        description="Permutation index mapping [old_a, old_b, old_c] -> new axis indices.",
+    )
+    axis_swap_detected: bool = Field(
+        ..., description="True if principal axes switched order (e.g. a/b swap)."
+    )
+    old_principal_moments: List[float] = Field(
+        ...,
+        description="Principal moments of inertia for reference system in amu*Angstrom^2 (FP64).",
+    )
+    new_principal_moments: List[float] = Field(
+        ...,
+        description="Principal moments of inertia for substituted system in amu*Angstrom^2 (FP64).",
+    )
+    transformed_dipole_derivatives: List[List[float]] = Field(
+        ...,
+        description="Transformed and re-indexed dipole derivative matrix (FP64).",
+    )
+    reorientation_angle_deg: float = Field(
+        ..., description="Effective Eckart rotation angle in degrees (FP64)."
     )
 
 
@@ -694,18 +750,30 @@ def evaluate_isotopologue_abundance(
     isotopes: Sequence[Union[IsotopeSpec, Tuple[str, int], Dict[str, Any], str]],
     threshold_percent: float = 0.01,
     db_path: Optional[Union[str, Path]] = None,
+    hitl_callback: Optional[Callable[[IsotopeTriageResult], bool]] = None,
+    quarantine_dir: Optional[Union[str, Path]] = None,
 ) -> IsotopeTriageResult:
     """
     Evaluates the natural abundance product of an isotopologue and categorizes it into
     Method Matrix v4 Product Classes (Product A, B, C, or Trace).
 
+    Supports:
+    - HITL (Human-in-the-Loop) callback approval for sub-threshold isotopologues.
+    - Headless degradation: If COCHEM_HEADLESS=1 (or 'true') is detected in os.environ and abundance
+      is below threshold, auto-quarantines the record to disk and raises IsotopeQuarantineError.
+
     Args:
         isotopes: Constituent atomic isotope definitions.
         threshold_percent: Abundance threshold cut-off percentage (default 0.01% = 1e-4).
         db_path: Optional path to Mendeleev SQLite database.
+        hitl_callback: Optional callback receiving IsotopeTriageResult and returning bool approval.
+        quarantine_dir: Optional destination directory for auto-quarantine JSON records.
 
     Returns:
         IsotopeTriageResult: Structured triage classification.
+
+    Raises:
+        IsotopeQuarantineError: When sub-threshold isotopologue is auto-quarantined under COCHEM_HEADLESS=1.
     """
     specs: List[IsotopeSpec] = []
     for item in isotopes:
@@ -750,19 +818,82 @@ def evaluate_isotopologue_abundance(
     # Product C: Multiply-substituted difference target (>= 2 substitutions)
     # Trace: Natural abundance below threshold_percent
     is_observable = bool(abundance_percent >= threshold_percent)
+    rejection_reason: Optional[str] = None
+    quarantined = False
+    quar_path_str: Optional[str] = None
 
     if not is_observable:
         prod_class = ProductClass.TRACE
-        rejection_reason = f"Natural abundance {abundance_percent:.6e}% is below threshold {threshold_percent:.4f}%."
-    elif substitution_count == 0:
-        prod_class = ProductClass.PRODUCT_A
-        rejection_reason = None
-    elif substitution_count == 1:
-        prod_class = ProductClass.PRODUCT_B
-        rejection_reason = None
+        rejection_reason = (
+            f"Natural abundance {abundance_percent:.6e}% is below threshold {threshold_percent:.4f}%."
+        )
+
+        is_headless = os.environ.get("COCHEM_HEADLESS", "").strip().lower() in ("1", "true", "yes")
+        if is_headless:
+            quarantined = True
+            q_dir = Path(quarantine_dir or os.environ.get("COCHEM_QUARANTINE_DIR") or (Path.home() / ".cochem_quarantine"))
+            q_dir.mkdir(parents=True, exist_ok=True)
+            quar_file = q_dir / f"quarantine_{isotopologue_name}_{int(abs(hash(isotopologue_name)) % 10000000)}.json"
+            quar_data = {
+                "isotopologue_name": isotopologue_name,
+                "total_mass_amu": float(total_mass),
+                "abundance_percent": float(abundance_percent),
+                "abundance_fraction": float(abundance_fraction),
+                "threshold_percent": float(threshold_percent),
+                "rejection_reason": rejection_reason,
+                "parent_formula": parent_formula,
+                "status": "AUTO_QUARANTINED",
+                "quarantined": True,
+            }
+            quar_file.write_text(json.dumps(quar_data, indent=2), encoding="utf-8")
+            quar_path_str = str(quar_file)
+            logger.warning(
+                f"[HEADLESS AUTO-QUARANTINE] Isotopologue '{isotopologue_name}' abundance {abundance_percent:.6e}% "
+                f"quarantined to {quar_path_str}"
+            )
+            raise IsotopeQuarantineError(
+                f"Isotopologue '{isotopologue_name}' abundance {abundance_percent:.6e}% is below threshold "
+                f"{threshold_percent:.4f}%. Auto-quarantined to {quar_path_str} under COCHEM_HEADLESS mode."
+            )
+        elif hitl_callback is not None:
+            pre_result = IsotopeTriageResult(
+                isotopologue_name=isotopologue_name,
+                total_mass_amu=total_mass,
+                abundance_percent=abundance_percent,
+                abundance_fraction=abundance_fraction,
+                is_observable=False,
+                product_class=ProductClass.TRACE,
+                substitution_count=substitution_count,
+                parent_formula=parent_formula,
+                isotope_details=specs,
+                rejection_reason=rejection_reason,
+                quarantined=False,
+                quarantine_path=None,
+            )
+            approved = hitl_callback(pre_result)
+            if approved:
+                is_observable = True
+                rejection_reason = None
+                if substitution_count == 0:
+                    prod_class = ProductClass.PRODUCT_A
+                elif substitution_count == 1:
+                    prod_class = ProductClass.PRODUCT_B
+                else:
+                    prod_class = ProductClass.PRODUCT_C
+                logger.info(
+                    f"[HITL APPROVAL] Isotopologue '{isotopologue_name}' approved via human-in-the-loop callback."
+                )
+            else:
+                logger.info(
+                    f"[HITL REJECTION] Isotopologue '{isotopologue_name}' rejected via human-in-the-loop callback."
+                )
     else:
-        prod_class = ProductClass.PRODUCT_C
-        rejection_reason = None
+        if substitution_count == 0:
+            prod_class = ProductClass.PRODUCT_A
+        elif substitution_count == 1:
+            prod_class = ProductClass.PRODUCT_B
+        else:
+            prod_class = ProductClass.PRODUCT_C
 
     return IsotopeTriageResult(
         isotopologue_name=isotopologue_name,
@@ -775,6 +906,8 @@ def evaluate_isotopologue_abundance(
         parent_formula=parent_formula,
         isotope_details=specs,
         rejection_reason=rejection_reason,
+        quarantined=quarantined,
+        quarantine_path=quar_path_str,
     )
 
 
@@ -787,13 +920,20 @@ def check_isotope_abundance(
     ],
     threshold_percent: float = 0.01,
     db_path: Optional[Union[str, Path]] = None,
+    hitl_callback: Optional[Callable[[IsotopeTriageResult], bool]] = None,
+    quarantine_dir: Optional[Union[str, Path]] = None,
 ) -> IsotopeTriageResult:
     """
     High-level entry point to evaluate natural abundance and triage rare isotopologues.
+    Supports Human-in-the-Loop (HITL) callback and COCHEM_HEADLESS auto-quarantine.
     """
     specs = parse_isotopologue_input(isotopologue_data, db_path=db_path)
     return evaluate_isotopologue_abundance(
-        specs, threshold_percent=threshold_percent, db_path=db_path
+        specs,
+        threshold_percent=threshold_percent,
+        db_path=db_path,
+        hitl_callback=hitl_callback,
+        quarantine_dir=quarantine_dir,
     )
 
 
@@ -1242,6 +1382,158 @@ def identify_polyad_blocks(
     return polyad_blocks
 
 
+def _extract_frequencies_from_zarr(z_obj: Any) -> np.ndarray:
+    """Extracts 1D frequency array from Zarr group or array."""
+    if hasattr(z_obj, "shape") and not hasattr(z_obj, "keys"):
+        return np.asarray(z_obj[:], dtype=np.float64).flatten()
+    if hasattr(z_obj, "keys"):
+        keys = list(z_obj.keys())
+        priority_keys = [
+            "frequencies",
+            "theoretical_frequencies",
+            "harmonic_frequencies",
+            "vibrational_frequencies",
+            "wavenumbers",
+            "modes",
+            "omega",
+        ]
+        for pk in priority_keys:
+            if pk in keys:
+                return np.asarray(z_obj[pk][:], dtype=np.float64).flatten()
+        if keys:
+            return np.asarray(z_obj[keys[0]][:], dtype=np.float64).flatten()
+    raise ValueError(f"Unable to extract frequency array from Zarr object: {z_obj}")
+
+
+def scan_resonance_traps(
+    frequencies: Union[Sequence[float], np.ndarray, str, Path, Any],
+    fermi_tol: float = 30.0,
+    coriolis_tol: float = 20.0,
+    dd_tol: float = 30.0,
+    heartbeat_callback: Optional[Callable[[int, int, float], None]] = None,
+    zmq_endpoint: Optional[str] = None,
+    zarr_store: Optional[Union[str, Path, Any]] = None,
+    landscape_path: Optional[Union[str, Path]] = None,
+) -> ResonanceReport:
+    """
+    Scans theoretical harmonic vibrational frequencies (from landscape.zarr or list/array)
+    for Fermi, Coriolis, and Darling-Dennison resonances and clusters interacting modes
+    into coupled Polyad blocks.
+
+    Features:
+    - Emits real-time diagnostic heartbeats during mode scanning to prevent HPC wall-time timeouts.
+    - Alerts the Orchestrator via ZeroMQ or Zarr state locks/attributes to construct a Polyad matrix.
+
+    Args:
+        frequencies: Frequencies array, list, or path/object to landscape.zarr store.
+        fermi_tol: Max detuning for Fermi resonances in cm^-1.
+        coriolis_tol: Max detuning for Coriolis resonances in cm^-1.
+        dd_tol: Max detuning for Darling-Dennison resonances in cm^-1.
+        heartbeat_callback: Optional callable(current_index, total_modes, freq_val) for HPC heartbeats.
+        zmq_endpoint: Optional ZeroMQ endpoint (e.g. 'tcp://127.0.0.1:5555') for orchestrator alerts.
+        zarr_store: Optional Zarr group/store to write resonance state attributes.
+        landscape_path: Optional path to landscape.zarr.
+
+    Returns:
+        ResonanceReport: Comprehensive report of detected resonances and polyad blocks.
+    """
+    # 1. Extract frequency values
+    if isinstance(frequencies, (str, Path)):
+        p = Path(frequencies)
+        z_node = zarr.open(str(p), mode="r")
+        freq_array = _extract_frequencies_from_zarr(z_node)
+    elif hasattr(frequencies, "shape") and not isinstance(frequencies, np.ndarray):
+        freq_array = np.asarray(frequencies[:], dtype=np.float64).flatten()
+    elif hasattr(frequencies, "keys") and not isinstance(frequencies, dict):
+        freq_array = _extract_frequencies_from_zarr(frequencies)
+    else:
+        freq_array = np.asarray(frequencies, dtype=np.float64).flatten()
+
+    freq_list = [float(f) for f in freq_array]
+    total_modes = len(freq_list)
+
+    # 2. Emit heartbeats during scan
+    for idx, f_val in enumerate(freq_list):
+        if heartbeat_callback is not None:
+            heartbeat_callback(idx + 1, total_modes, float(f_val))
+        logger.debug(f"[HEARTBEAT] Scanning mode {idx + 1}/{total_modes} ({f_val:.2f} cm^-1)")
+
+    # 3. Detect resonances
+    fermi_res = scan_fermi_resonances(freq_list, type1_tol=fermi_tol, type2_tol=fermi_tol)
+    coriolis_res = scan_coriolis_resonances(freq_list, coriolis_tol=coriolis_tol)
+    dd_res = scan_darling_dennison_resonances(freq_list, dd_tol=dd_tol)
+
+    all_res = fermi_res + coriolis_res + dd_res
+    polyads = identify_polyad_blocks(all_res, freq_list)
+    has_strong = any(r.severity == "STRONG" for r in all_res)
+
+    if has_strong:
+        recommended_hamiltonian = (
+            "De-perturbed Second-Order Vibrational Perturbation Theory (DVPT2) "
+            "with Coupled Polyad Effective Hamiltonian Matrix Diagonalization."
+        )
+    elif all_res:
+        recommended_hamiltonian = (
+            "Standard Second-Order Vibrational Perturbation Theory (VPT2) "
+            "with Resonance Detuning Monitoring."
+        )
+    else:
+        recommended_hamiltonian = (
+            "Standard Rayleigh-Schroedinger Perturbation Theory (VPT2)."
+        )
+
+    report = ResonanceReport(
+        total_resonances_count=len(all_res),
+        fermi_resonances=fermi_res,
+        coriolis_resonances=coriolis_res,
+        darling_dennison_resonances=dd_res,
+        polyad_blocks=polyads,
+        has_strong_resonances=has_strong,
+        recommended_hamiltonian=recommended_hamiltonian,
+    )
+
+    # 4. ZeroMQ alert if configured
+    zmq_url = zmq_endpoint or os.environ.get("COCHEM_ORCHESTRATOR_ZMQ") or os.environ.get("COCHEM_ZMQ_ENDPOINT") or os.environ.get("ZMQ_ORCHESTRATOR_URL")
+    if not zmq_url:
+        logger.warning("[MISSING DATA] ZMQ Endpoint not found. Cannot alert orchestrator.")
+    else:
+        ctx = zmq.Context.instance()
+        sock = ctx.socket(zmq.PUSH)
+        sock.setsockopt(zmq.LINGER, 500)
+        sock.connect(str(zmq_url))
+        alert_msg = {
+            "header": "COCHEM_ORCHESTRATOR_ALERT",
+            "event": "RESONANCE_SCAN_COMPLETE",
+            "has_strong_resonances": has_strong,
+            "total_resonances_count": len(all_res),
+            "polyad_blocks_count": len(polyads),
+            "recommended_hamiltonian": recommended_hamiltonian,
+            "polyad_blocks": [p.model_dump(mode="json") for p in polyads],
+        }
+        sock.send_json(alert_msg, flags=zmq.NOBLOCK)
+        sock.close()
+        logger.info(f"Alerted Orchestrator via ZeroMQ endpoint: {zmq_url}")
+
+    # 5. Zarr state attributes update
+    target_zarr = zarr_store or landscape_path or (frequencies if isinstance(frequencies, (str, Path)) and str(frequencies).endswith(".zarr") else None)
+    if target_zarr is not None:
+        if isinstance(target_zarr, (str, Path)):
+            zg = zarr.open(str(target_zarr), mode="a")
+        elif hasattr(target_zarr, "attrs"):
+            zg = target_zarr
+        else:
+            zg = None
+
+        if zg is not None:
+            zg.attrs["resonance_status"] = "POLYAD_MATRIX_REQUIRED" if (has_strong or polyads) else "STANDARD_VPT2"
+            zg.attrs["polyad_block_count"] = len(polyads)
+            zg.attrs["total_resonances_count"] = len(all_res)
+            zg.attrs["recommended_hamiltonian"] = recommended_hamiltonian
+            logger.info("Updated Zarr state attributes with resonance report.")
+
+    return report
+
+
 def trap_resonances(
     frequencies: Union[Sequence[float], np.ndarray],
     fermi_tol: float = 30.0,
@@ -1262,47 +1554,159 @@ def trap_resonances(
     Returns:
         ResonanceReport: Comprehensive report of detected resonances and polyad blocks.
     """
-    freq_list = [float(f) for f in frequencies]
-
-    fermi_res = scan_fermi_resonances(
-        freq_list, type1_tol=fermi_tol, type2_tol=fermi_tol
-    )
-    coriolis_res = scan_coriolis_resonances(freq_list, coriolis_tol=coriolis_tol)
-    dd_res = scan_darling_dennison_resonances(freq_list, dd_tol=dd_tol)
-
-    all_res = fermi_res + coriolis_res + dd_res
-    polyads = identify_polyad_blocks(all_res, freq_list)
-
-    has_strong = any(r.severity == "STRONG" for r in all_res)
-
-    if has_strong:
-        recommended_hamiltonian = (
-            "De-perturbed Second-Order Vibrational Perturbation Theory (DVPT2) "
-            "with Coupled Polyad Effective Hamiltonian Matrix Diagonalization."
-        )
-    elif all_res:
-        recommended_hamiltonian = (
-            "Standard Second-Order Vibrational Perturbation Theory (VPT2) "
-            "with Resonance Detuning Monitoring."
-        )
-    else:
-        recommended_hamiltonian = (
-            "Standard Rayleigh-Schroedinger Perturbation Theory (VPT2)."
-        )
-
-    return ResonanceReport(
-        total_resonances_count=len(all_res),
-        fermi_resonances=fermi_res,
-        coriolis_resonances=coriolis_res,
-        darling_dennison_resonances=dd_res,
-        polyad_blocks=polyads,
-        has_strong_resonances=has_strong,
-        recommended_hamiltonian=recommended_hamiltonian,
+    return scan_resonance_traps(
+        frequencies=frequencies,
+        fermi_tol=fermi_tol,
+        coriolis_tol=coriolis_tol,
+        dd_tol=dd_tol,
     )
 
 
 # =============================================================================
-# 8. PROVENANCE HASHING AND MASTER SPECTROSCOPIC TRIAGE PIPELINE
+# 8. ECKART AXIS REORIENTATION AND DIPOLE DERIVATIVE TRACKING
+# =============================================================================
+
+
+def eckart_axis_reorientation(
+    dipole_derivatives: Union[np.ndarray, Sequence[Sequence[float]], Sequence[float]],
+    old_inertia: Union[np.ndarray, Sequence[Sequence[float]], Sequence[float]],
+    new_inertia: Union[np.ndarray, Sequence[Sequence[float]], Sequence[float]],
+) -> EckartAxisReorientationResult:
+    """
+    Detects Axis Reorientation (Eckart Tracking) upon isotopic substitution and automatically
+    re-indexes and transforms dipole derivative matrices.
+
+    Physical Math:
+    1. Computes principal moments of inertia and principal axes for old and new systems in FP64.
+    2. Constructs the rotation matrix R_raw between principal axes.
+    3. Detects determinant swap (det(R) < 0) representing improper reflection.
+    4. Enforces proper SO(3) rotation (det(R) = +1.0) via SVD reflection correction.
+    5. Computes principal axis permutation mapping [old_a, old_b, old_c] -> new axis indices.
+    6. Transforms and re-indexes the dipole derivative matrix.
+
+    Args:
+        dipole_derivatives: Cartesian or normal mode dipole derivatives (3xN, Nx3, 3x3, or 3-vector).
+        old_inertia: Reference 3x3 moment of inertia tensor or 3 principal moments.
+        new_inertia: Substituted 3x3 moment of inertia tensor or 3 principal moments.
+
+    Returns:
+        EckartAxisReorientationResult: Structured result with proper rotation matrix, permutation,
+                                       principal moments, and transformed dipole derivatives.
+    """
+    I_old = np.asarray(old_inertia, dtype=np.float64)
+    I_new = np.asarray(new_inertia, dtype=np.float64)
+
+    # 1. Diagonalize old inertia tensor
+    if I_old.shape == (3, 3):
+        evals_old, evecs_old = np.linalg.eigh(I_old)
+        idx_old = np.argsort(evals_old)
+        mom_old = evals_old[idx_old]
+        axes_old = evecs_old[:, idx_old]
+    elif I_old.size == 3:
+        evals_old = I_old.flatten()
+        idx_old = np.argsort(evals_old)
+        mom_old = evals_old[idx_old]
+        axes_old = np.eye(3, dtype=np.float64)[:, idx_old]
+    else:
+        raise ValueError(f"old_inertia must have shape (3, 3) or (3,), got {I_old.shape}")
+
+    # 2. Diagonalize new inertia tensor
+    if I_new.shape == (3, 3):
+        evals_new, evecs_new = np.linalg.eigh(I_new)
+        idx_new = np.argsort(evals_new)
+        mom_new = evals_new[idx_new]
+        axes_new = evecs_new[:, idx_new]
+    elif I_new.size == 3:
+        evals_new = I_new.flatten()
+        idx_new = np.argsort(evals_new)
+        mom_new = evals_new[idx_new]
+        axes_new = np.eye(3, dtype=np.float64)[:, idx_new]
+    else:
+        raise ValueError(f"new_inertia must have shape (3, 3) or (3,), got {I_new.shape}")
+
+    # 3. Phase alignment on principal axes to resolve eigenvector sign ambiguities
+    for k in range(3):
+        max_idx = int(np.argmax(np.abs(axes_old[:, k])))
+        if axes_old[max_idx, k] < 0:
+            axes_old[:, k] *= -1.0
+    if np.linalg.det(axes_old) < 0:
+        axes_old[:, 2] *= -1.0
+
+    for j in range(3):
+        proj = [float(np.dot(axes_old[:, i], axes_new[:, j])) for i in range(3)]
+        best_i = int(np.argmax(np.abs(proj)))
+        if proj[best_i] < 0:
+            axes_new[:, j] *= -1.0
+
+    # 4. Raw rotation matrix between principal axes systems
+    R_raw = axes_new.T @ axes_old
+    det_raw = float(np.linalg.det(R_raw))
+    det_swap_detected = bool(det_raw < 0.0)
+
+    # 5. Enforce proper SO(3) rotation via SVD reflection correction
+    U_svd, _, Vt_svd = np.linalg.svd(R_raw)
+    d_sign = np.linalg.det(U_svd @ Vt_svd)
+    D_corr = np.diag([1.0, 1.0, np.sign(d_sign)])
+    R_proper = (U_svd @ D_corr @ Vt_svd).astype(np.float64)
+    det_proper = float(np.linalg.det(R_proper))
+
+    # 6. Effective Eckart rotation angle
+    trace_val = float(np.trace(R_proper))
+    cos_theta = float(np.clip((trace_val - 1.0) / 2.0, -1.0, 1.0))
+    reorientation_angle_deg = float(math.degrees(math.acos(cos_theta)))
+
+    # 6. Axis permutation detection (mapping old axis i -> new axis perm[i])
+    best_score = -1.0
+    best_perm = [0, 1, 2]
+    for perm in permutations([0, 1, 2]):
+        score = sum(abs(R_proper[perm[i], i]) for i in range(3))
+        if score > best_score:
+            best_score = score
+            best_perm = list(perm)
+
+    axis_permutation = best_perm
+    axis_swap_detected = bool(axis_permutation != [0, 1, 2])
+
+    # 7. Transform and re-index dipole derivative matrices
+    d_arr = np.asarray(dipole_derivatives, dtype=np.float64)
+    if d_arr.ndim == 1 and d_arr.size == 3:
+        # 1D 3-vector: (3,)
+        d_rot = R_proper @ d_arr
+        d_final = d_rot[axis_permutation] if axis_swap_detected else d_rot
+        d_matrix = d_final.reshape(3, 1)
+    elif d_arr.ndim == 2:
+        if d_arr.shape[0] == 3:
+            # Shape (3, N)
+            d_rot = R_proper @ d_arr
+            d_final = d_rot[axis_permutation, :] if axis_swap_detected else d_rot
+            d_matrix = d_final
+        elif d_arr.shape[1] == 3:
+            # Shape (N, 3)
+            d_rot = d_arr @ R_proper.T
+            d_final = d_rot[:, axis_permutation] if axis_swap_detected else d_rot
+            d_matrix = d_final
+        else:
+            raise ValueError(f"Dipole derivatives 2D array must have 3 rows or 3 columns, got {d_arr.shape}")
+    else:
+        raise ValueError(f"Dipole derivatives must be 1D or 2D array, got ndim={d_arr.ndim}")
+
+    transformed_dd = [[float(val) for val in row] for row in d_matrix]
+
+    return EckartAxisReorientationResult(
+        rotation_matrix=[[float(x) for x in row] for row in R_proper],
+        determinant=float(det_proper),
+        determinant_swap_detected=det_swap_detected,
+        axis_permutation=axis_permutation,
+        axis_swap_detected=axis_swap_detected,
+        old_principal_moments=[float(x) for x in mom_old],
+        new_principal_moments=[float(x) for x in mom_new],
+        transformed_dipole_derivatives=transformed_dd,
+        reorientation_angle_deg=float(reorientation_angle_deg),
+    )
+
+
+# =============================================================================
+# 9. PROVENANCE HASHING AND MASTER SPECTROSCOPIC TRIAGE PIPELINE
 # =============================================================================
 
 
@@ -1492,3 +1896,39 @@ def triage_spectroscopic_system(
         summary=summary_text,
         sha256_provenance=provenance_hash,
     )
+
+
+__all__ = [
+    "AU_TO_WAVENUMBER_CONVERSION",
+    "EckartAxisReorientationResult",
+    "HarmonicVibrationalResult",
+    "IsotopeQuarantineError",
+    "IsotopeSpec",
+    "IsotopeTriageResult",
+    "IsotopologueData",
+    "PolyadBlock",
+    "ProductClass",
+    "ResonanceCondition",
+    "ResonanceReport",
+    "ResonanceType",
+    "TriageConfig",
+    "TriageReport",
+    "TriageStatus",
+    "calculate_triage_provenance_hash",
+    "check_isotope_abundance",
+    "compute_harmonic_vibrational_frequencies",
+    "eckart_axis_reorientation",
+    "evaluate_isotopologue_abundance",
+    "get_isotope_properties",
+    "identify_polyad_blocks",
+    "mass_matrix_transformation",
+    "parse_isotopologue_input",
+    "resolve_mendeleev_database",
+    "scan_coriolis_resonances",
+    "scan_darling_dennison_resonances",
+    "scan_fermi_resonances",
+    "scan_resonance_traps",
+    "trap_resonances",
+    "triage_spectroscopic_system",
+]
+
