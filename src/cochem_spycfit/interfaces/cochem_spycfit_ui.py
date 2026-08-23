@@ -1104,8 +1104,8 @@ def render_static_offline_pdf(
         story.append(Paragraph("1. Convergence & Physical Quality Metrics", heading_style))
         stat_rows = [
             ["Metric Name", "Value", "Unit / Standard", "Status"],
-            ["Root Mean Square Error (RMS)", f"{stats.get('rms_mhz', 0.018):.4f}", "MHz", "Passed [M]"],
-            ["Reduced Chi-Squared", f"{stats.get('reduced_chi_sq', 1.04):.4f}", "Dimensionless", "Optimal (< 1.5)"],
+            ["Root Mean Square Error (RMS)", f"{stats.get('rms_mhz', float('nan')):.4f}", "MHz", "Passed [M]"],
+            ["Reduced Chi-Squared", f"{stats.get('reduced_chi_sq', float('nan')):.4f}", "Dimensionless", "Optimal (< 1.5)"],
             ["Total Transitions Evaluated", str(len(assign_list)), "Assigned Lines", "Complete"],
             ["Ghost Peaks Excluded", str(sum(1 for a in assign_list if a.exp_peak.is_ghost)), "Rejected", "Quarantined"],
         ]
@@ -1649,21 +1649,12 @@ def launch_dashboard(
     Initializes and launches the interactive HITL decision dashboard.
     """
     if manager is None:
-        exp_peaks = [
-            SpectralPeak(peak_id="EXP_CH3OH_1", frequency=12178.59, intensity=1.5, quantum_label="2_0,2 -> 1_0,1"),
-            SpectralPeak(peak_id="EXP_CH3OH_2", frequency=48372.45, intensity=2.1, quantum_label="1_0,1 -> 0_0,0"),
-        ]
-        theo_peaks = [
-            SpectralPeak(peak_id="THEO_CH3OH_1", frequency=12178.60, intensity=1.5, quantum_label="2_0,2 -> 1_0,1"),
-            SpectralPeak(peak_id="THEO_CH3OH_2", frequency=48372.50, intensity=2.0, quantum_label="1_0,1 -> 0_0,0"),
-        ]
-        manager = HITLAssignmentManager(exp_peaks=exp_peaks, theo_peaks=theo_peaks)
+        raise ValueError("manager must not be None. Mock data has been removed per zero-mock policy.")
         
     cfg = config or DashboardConfig()
     
     if spectrum_engine is None:
-        base_state = WhatIfParameterState(A_mhz=127484.0, B_mhz=24685.0, C_mhz=23769.0, temperature_k=296.0)
-        spectrum_engine = WhatIfSpectrumEngine(base_peaks=manager.theo_peaks, base_state=base_state)
+        raise ValueError("spectrum_engine must not be None. Mock data has been removed per zero-mock policy.")
 
     dashboard = SpycFitInteractiveDashboard(manager=manager, spectrum_engine=spectrum_engine, config=cfg)
 

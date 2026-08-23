@@ -466,7 +466,7 @@ def query_physical_gpu_vram() -> Tuple[bool, str, float, int]:
                 device_count = len(gpu_jax_devices)
             if gpu_profile == "None":
                 gpu_profile = str(getattr(gpu_jax_devices[0], "device_kind", "GPU"))
-    except Exception as err:
+    except ImportError as err:
         logger.debug("JAX device probe skipped: %s", err)
 
     return gpu_detected, gpu_profile, vram_gb, device_count
@@ -512,7 +512,7 @@ def check_vram_and_set_flags(
         import jax
         jax_devices = jax.devices()
         jax_cuda_available = any(d.platform.lower() == "gpu" for d in jax_devices)
-    except Exception as err:
+    except ImportError as err:
         logger.debug("JAX device query notice: %s", err)
         jax_cuda_available = False
 
@@ -530,7 +530,7 @@ def check_vram_and_set_flags(
                         cfg_vram_gb = float(hw["vram_gb"])
                     if "gpu_profile" in hw and hw["gpu_profile"] != "None":
                         cfg_gpu_profile = str(hw["gpu_profile"])
-        except Exception as err:
+        except (OSError, json.JSONDecodeError) as err:
             logger.warning("Could not parse config at %s: %s", config_path, err)
 
     # Reconcile values
