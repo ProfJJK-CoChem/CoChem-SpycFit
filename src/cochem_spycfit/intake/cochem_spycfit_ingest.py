@@ -34,7 +34,6 @@ from datetime import datetime, timezone
 from enum import Enum
 import hashlib
 import io
-import json
 import logging
 import os
 from pathlib import Path
@@ -45,7 +44,7 @@ import jax
 import numpy as np
 import pandas as pd
 from platformdirs import user_log_path
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 import zarr
 
 # Logging configuration
