@@ -54,7 +54,7 @@ import filelock
 import h5py
 import numpy as np
 import platformdirs
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Configure module-level logger
 logger = logging.getLogger("CoChem-SpycFit.CatalogCompiler")
@@ -161,13 +161,24 @@ class TransitionBatch(BaseModel):
     )
     species_ids: Optional[List[int]] = Field(default=None, description="List of species IDs")
 
-    @field_validator("intensities")
-    @classmethod
-    def validate_lengths(cls, v: List[float], info: Any) -> List[float]:
-        freqs = info.data.get("frequencies_mhz")
-        if freqs is not None and len(v) != len(freqs):
-            raise ValueError(f"Intensities length ({len(v)}) does not match frequencies length ({len(freqs)})")
-        return v
+    @model_validator(mode="after")
+    def validate_all_field_lengths(self) -> TransitionBatch:
+        n = len(self.frequencies_mhz)
+        if len(self.intensities) != n:
+            raise ValueError(f"Intensities length ({len(self.intensities)}) does not match frequencies length ({n})")
+        if self.lower_energies_cm1 is not None and len(self.lower_energies_cm1) != n:
+            raise ValueError(f"lower_energies_cm1 length ({len(self.lower_energies_cm1)}) does not match frequencies length ({n})")
+        if self.upper_energies_cm1 is not None and len(self.upper_energies_cm1) != n:
+            raise ValueError(f"upper_energies_cm1 length ({len(self.upper_energies_cm1)}) does not match frequencies length ({n})")
+        if self.uncertainties_mhz is not None and len(self.uncertainties_mhz) != n:
+            raise ValueError(f"uncertainties_mhz length ({len(self.uncertainties_mhz)}) does not match frequencies length ({n})")
+        if self.g_upper is not None and len(self.g_upper) != n:
+            raise ValueError(f"g_upper length ({len(self.g_upper)}) does not match frequencies length ({n})")
+        if self.quantum_numbers is not None and len(self.quantum_numbers) != n:
+            raise ValueError(f"quantum_numbers length ({len(self.quantum_numbers)}) does not match frequencies length ({n})")
+        if self.species_ids is not None and len(self.species_ids) != n:
+            raise ValueError(f"species_ids length ({len(self.species_ids)}) does not match frequencies length ({n})")
+        return self
 
 
 class CatalogCompilerConfig(BaseModel):
@@ -351,7 +362,6 @@ class LustreDirectoryLock:
         self.stale_timeout = float(stale_timeout)
         self.poll_interval = float(poll_interval)
         self._depth: int = 0
-        self._thread_lock_acquired: bool = False
 
     @property
     def owner_file(self) -> Path:
@@ -384,7 +394,6 @@ class LustreDirectoryLock:
             raise CatalogLockTimeoutError(
                 f"Timed out after {eff_timeout:.2f}s waiting for in-process lock: {path_key}"
             )
-        self._thread_lock_acquired = True
 
         try:
             self.lock_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -432,9 +441,7 @@ class LustreDirectoryLock:
                     ) from os_err
 
         except Exception:
-            if self._thread_lock_acquired:
-                thread_lock.release()
-                self._thread_lock_acquired = False
+            thread_lock.release()
             raise
 
     def release(self) -> None:
@@ -464,10 +471,8 @@ class LustreDirectoryLock:
                     except Exception as e:
                         logger.debug("Error removing lock dir: %s", e)
             finally:
-                if self._thread_lock_acquired:
-                    thread_lock = self._get_thread_lock(path_key)
-                    thread_lock.release()
-                    self._thread_lock_acquired = False
+                thread_lock = self._get_thread_lock(path_key)
+                thread_lock.release()
 
     def _is_stale_lock(self) -> bool:
         try:
@@ -514,8 +519,19 @@ class Tier3RegistryLock:
       with atomic mkdir synchronization and stale lock recovery.
     """
 
+    _tls = threading.local()
     _local_r_locks: Dict[str, threading.RLock] = {}
+    _flock_instances: Dict[str, filelock.FileLock] = {}
     _meta_lock = threading.Lock()
+
+    @classmethod
+    def _get_shared_filelock(cls, lock_file_path: str, timeout: float) -> Tuple[threading.RLock, filelock.FileLock]:
+        with cls._meta_lock:
+            if lock_file_path not in cls._local_r_locks:
+                cls._local_r_locks[lock_file_path] = threading.RLock()
+            if lock_file_path not in cls._flock_instances:
+                cls._flock_instances[lock_file_path] = filelock.FileLock(lock_file_path, timeout=timeout)
+            return cls._local_r_locks[lock_file_path], cls._flock_instances[lock_file_path]
 
     def __init__(
         self,
@@ -553,7 +569,8 @@ class Tier3RegistryLock:
             )
             self._is_filelock = False
         else:
-            self.backend = filelock.FileLock(str(self.lock_file_path), timeout=self.timeout)
+            _, shared_flock = self._get_shared_filelock(str(self.lock_file_path), timeout=self.timeout)
+            self.backend = shared_flock
             self._is_filelock = True
 
         self._acquired = False
@@ -565,11 +582,16 @@ class Tier3RegistryLock:
         eff_timeout = float(timeout) if timeout is not None else self.timeout
 
         if self._is_filelock:
-            with self._meta_lock:
-                key = str(self.lock_file_path)
-                if key not in self._local_r_locks:
-                    self._local_r_locks[key] = threading.RLock()
-                thread_rlock = self._local_r_locks[key]
+            key = str(self.lock_file_path)
+            thread_rlock, flock = self._get_shared_filelock(key, timeout=eff_timeout)
+
+            if not hasattr(self._tls, "held_tier3"):
+                self._tls.held_tier3 = {}
+
+            if self._tls.held_tier3.get(key, 0) > 0:
+                self._tls.held_tier3[key] += 1
+                self._acquired = True
+                return True
 
             if not thread_rlock.acquire(timeout=eff_timeout):
                 raise CatalogLockTimeoutError(
@@ -577,9 +599,8 @@ class Tier3RegistryLock:
                 )
 
             try:
-                flock = self.backend
-                if isinstance(flock, filelock.FileLock):
-                    flock.acquire(timeout=eff_timeout)
+                flock.acquire(timeout=eff_timeout)
+                self._tls.held_tier3[key] = 1
                 self._acquired = True
                 return True
             except filelock.Timeout as err:
@@ -606,16 +627,20 @@ class Tier3RegistryLock:
             return
 
         if self._is_filelock:
-            try:
-                flock = self.backend
-                if isinstance(flock, filelock.FileLock):
-                    flock.release()
-            finally:
+            key = str(self.lock_file_path)
+            if not hasattr(self._tls, "held_tier3") or self._tls.held_tier3.get(key, 0) <= 0:
                 self._acquired = False
-                key = str(self.lock_file_path)
-                with self._meta_lock:
-                    thread_rlock = self._local_r_locks.get(key)
-                if thread_rlock is not None:
+                return
+
+            self._tls.held_tier3[key] -= 1
+            self._acquired = False
+
+            if self._tls.held_tier3[key] == 0:
+                del self._tls.held_tier3[key]
+                thread_rlock, flock = self._get_shared_filelock(key, timeout=self.timeout)
+                try:
+                    flock.release()
+                finally:
                     thread_rlock.release()
         else:
             try:

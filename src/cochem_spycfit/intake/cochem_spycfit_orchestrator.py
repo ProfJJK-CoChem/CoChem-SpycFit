@@ -623,11 +623,17 @@ class WallTimeSafetyGuard:
         mem_mb = 0.0
         try:
             import psutil
-            proc = psutil.Process(os.getpid())
-            cpu_pct = float(proc.cpu_percent(interval=None))
-            mem_mb = float(proc.memory_info().rss / (1024.0 * 1024.0))
-        except Exception:
-            pass
+            has_psutil = True
+        except ImportError:
+            has_psutil = False
+
+        if has_psutil:
+            try:
+                proc = psutil.Process(os.getpid())
+                cpu_pct = float(proc.cpu_percent(interval=None))
+                mem_mb = float(proc.memory_info().rss / (1024.0 * 1024.0))
+            except psutil.Error:
+                pass
 
         status = HeartbeatStatus(
             timestamp_utc=datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -1078,7 +1084,7 @@ def orchestrate_spycfit_system(
                 with h5py.File(h5_target, "r") as f:
                     if "geometry" in f:
                         geom_list = f["geometry"][()].tolist()
-            except Exception:
+            except (OSError, ValueError, AttributeError, TypeError):
                 pass
 
         req = TORQRequestPayload(
@@ -1111,7 +1117,7 @@ def orchestrate_spycfit_system(
                         geom = f["geometry"][()]
                     if "dipole_derivatives" in f:
                         d_mu = f["dipole_derivatives"][()]
-            except Exception as exc:
+            except (OSError, KeyError, ValueError, TypeError) as exc:
                 logger.warning(f"HDF5 reading notice during Eckart transformation: {exc}")
         elif len(torq_responses) > 0 and torq_responses[-1].status == "COMPLETED":
             t_data = torq_responses[-1].tensors_data
@@ -1128,7 +1134,7 @@ def orchestrate_spycfit_system(
                     ref_masses=np.array(ref_masses, dtype=np.float64),
                     sub_masses=np.array(sub_masses, dtype=np.float64),
                 )
-            except Exception as exc:
+            except (ValueError, EckartFrameError, np.linalg.LinAlgError, TypeError) as exc:
                 logger.warning(f"Eckart frame transformation notice: {exc}")
 
     # Final heartbeat

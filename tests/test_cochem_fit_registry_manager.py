@@ -495,10 +495,15 @@ def test_hdf5_lustre_fallback_disables_swmr_and_snapshots(tmp_path: Path):
     """
     db_path = tmp_path / "lustre_db.h5"
 
+    import h5py
+    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
+    with h5py.File(h5_path, "r") as f_phys:
+        phys_data = np.array(f_phys["isomer_001"]["hessian"])
+        
     with open_state_tensor(db_path, mode="w", is_lustre=True) as f:
         # In Lustre mode, swmr_mode is not activated
         assert not getattr(f, "swmr_mode", False)
-        f.create_dataset("dense_matrix", data=np.ones((10, 10), dtype=np.float64))
+        f.create_dataset("dense_matrix", data=phys_data)
 
     # Verify atomic snapshot was automatically created in snapshots directory
     snap_dir = db_path.parent / "snapshots"
@@ -509,7 +514,7 @@ def test_hdf5_lustre_fallback_disables_swmr_and_snapshots(tmp_path: Path):
     # Verify snapshot content
     with h5py.File(str(snaps[0]), "r") as f_snap:
         loaded = np.array(f_snap["dense_matrix"])
-        np.testing.assert_array_equal(loaded, np.ones((10, 10)))
+        np.testing.assert_array_equal(loaded, phys_data)
 
 
 # =============================================================================
@@ -566,7 +571,10 @@ def test_fit_registry_manager_spectral_tensors(tmp_env):
         force_lustre=False,
     )
 
-    test_matrix = np.random.RandomState(42).randn(50, 50)
+    import h5py
+    h5_path = Path(__file__).parent.parent / "artifacts_test" / "landscape.h5"
+    with h5py.File(h5_path, "r") as f_phys:
+        test_matrix = np.array(f_phys["isomer_001"]["hessian"])
     meta = {
         "molecule": "Benzonitrile",
         "method": "B3LYP-D3BJ",

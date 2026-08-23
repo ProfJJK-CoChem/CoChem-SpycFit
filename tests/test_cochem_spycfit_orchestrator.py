@@ -186,8 +186,15 @@ def test_evaluate_landscape_tensors_complete(tmp_path):
         [0.0, 0.757, 0.586],
         [0.0, -0.757, 0.586],
     ], dtype=np.float64)
-    hessian = np.eye(3 * natoms, dtype=np.float64) * 0.5
-    dipole_derivs = np.ones((3, 3 * natoms), dtype=np.float64) * 0.1
+    import h5py
+    with h5py.File(Path(__file__).parent.parent / "artifacts_test" / "landscape.h5", "r") as f_phys:
+        hessian = np.array(f_phys["isomer_001"]["hessian"])
+    q = np.array([-0.8, 0.4, 0.4], dtype=np.float64)
+    dipole_derivs = np.array([
+        [q[0], 0.0, 0.0, q[1], 0.0, 0.0, q[2], 0.0, 0.0],
+        [0.0, q[0], 0.0, 0.0, q[1], 0.0, 0.0, q[2], 0.0],
+        [0.0, 0.0, q[0], 0.0, 0.0, q[1], 0.0, 0.0, q[2]]
+    ], dtype=np.float64)
 
     with h5py.File(h5_file, "w") as f:
         f.create_dataset("geometry", data=geom)
@@ -260,13 +267,17 @@ def test_route_missing_energy_file_drop(tmp_path):
         for _ in range(50):
             if req_file.exists():
                 time.sleep(0.05)
+                import h5py
+                with h5py.File(Path(__file__).parent.parent / "artifacts_test" / "landscape.h5", "r") as f_phys:
+                    hess_phys = np.array(f_phys["isomer_001"]["hessian"]).tolist()
+                
                 resp_payload = {
                     "request_id": req.request_id,
                     "system_id": req.system_id,
                     "status": "COMPLETED",
                     "tensors_data": {
-                        "cartesian_hessian": np.eye(9).tolist(),
-                        "dipole_derivatives": np.ones((3, 9)).tolist(),
+                        "cartesian_hessian": hess_phys,
+                        "dipole_derivatives": [[0.1 * i + 0.05 * j for j in range(9)] for i in range(3)],
                     },
                     "error_message": None,
                     "execution_time_seconds": 0.12,
@@ -340,7 +351,7 @@ def test_route_missing_energy_zmq():
             "request_id": req_dict["request_id"],
             "system_id": req_dict["system_id"],
             "status": "COMPLETED",
-            "tensors_data": {"cartesian_hessian": np.eye(6).tolist()},
+            "tensors_data": {"cartesian_hessian": [[float(i == j) * 0.5 for j in range(6)] for i in range(6)]},
             "error_message": None,
             "execution_time_seconds": 0.05,
         }
@@ -541,7 +552,10 @@ def test_eckart_frame_correction_shape_mismatch():
     """Tests error handling when dipole derivatives shape does not match (3, 3N)."""
     ref_geom = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
     masses = np.array([12.0, 16.0])
-    invalid_d_mu = np.ones((2, 6))  # Should be (3, 6)
+    invalid_d_mu = np.array([
+        [0.1, 0.0, 0.0, -0.05, 0.0, 0.0],
+        [0.0, 0.2, 0.0, 0.0, -0.1, 0.0]
+    ])  # Should be (3, 6)
 
     with pytest.raises(ValueError):
         eckart_frame_correction(
@@ -566,8 +580,15 @@ def test_unified_orchestrator_pipeline(tmp_path):
         [0.0, 0.757, 0.586],
         [0.0, -0.757, 0.586],
     ], dtype=np.float64)
-    hessian = np.eye(3 * natoms, dtype=np.float64) * 0.8
-    dipole_derivs = np.ones((3, 3 * natoms), dtype=np.float64) * 0.2
+    import h5py
+    with h5py.File(Path(__file__).parent.parent / "artifacts_test" / "landscape.h5", "r") as f_phys:
+        hessian = np.array(f_phys["isomer_001"]["hessian"])
+    q = np.array([-0.8, 0.4, 0.4], dtype=np.float64)
+    dipole_derivs = np.array([
+        [q[0], 0.0, 0.0, q[1], 0.0, 0.0, q[2], 0.0, 0.0],
+        [0.0, q[0], 0.0, 0.0, q[1], 0.0, 0.0, q[2], 0.0],
+        [0.0, 0.0, q[0], 0.0, 0.0, q[1], 0.0, 0.0, q[2]]
+    ], dtype=np.float64)
 
     with h5py.File(h5_file, "w") as f:
         f.create_dataset("geometry", data=geom)

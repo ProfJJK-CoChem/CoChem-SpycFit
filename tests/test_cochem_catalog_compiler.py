@@ -85,14 +85,13 @@ def generate_physical_transitions(
     g_u = (2 * (j_start + np.arange(count, dtype=np.int32) % 10) + 1).astype(np.int32)
 
     qn = np.zeros((count, 6), dtype=np.int32)
+    sp_ids = np.zeros(count, dtype=np.int32)
     qn[:, 0] = j_start + np.arange(count, dtype=np.int32) % 10  # J'
     qn[:, 1] = np.arange(count, dtype=np.int32) % 5            # Ka'
     qn[:, 2] = np.arange(count, dtype=np.int32) % 5            # Kc'
     qn[:, 3] = np.maximum(0, qn[:, 0] - 1)                     # J''
     qn[:, 4] = qn[:, 1]                                        # Ka''
     qn[:, 5] = qn[:, 2]                                        # Kc''
-
-    sp_ids = np.zeros(count, dtype=np.int32)
 
     return {
         "frequencies": freqs,

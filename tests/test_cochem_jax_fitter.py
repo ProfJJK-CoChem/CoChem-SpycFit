@@ -24,6 +24,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+import h5py
+from pathlib import Path
 import scipy.linalg
 
 from cochem_spycfit.physics_core.cochem_jax_fitter import (
@@ -237,15 +239,12 @@ def test_lm_fit_with_active_mask() -> None:
 
 def test_block_diagonalization_scan_accuracy() -> None:
     """Verifies block diagonalization eigenvalues and eigenvectors against scipy.linalg.eigh."""
-    # Create 8 random Hermitian Hamiltonian blocks of dimension 6x6
-    np.random.seed(101)
-    num_blocks = 8
-    block_dim = 6
-    blocks_np = np.zeros((num_blocks, block_dim, block_dim), dtype=np.float64)
-
-    for k in range(num_blocks):
-        mat = np.random.randn(block_dim, block_dim)
-        blocks_np[k] = 0.5 * (mat + mat.T)  # Make symmetric/Hermitian
+    # Load physical Hessian to form physically grounded Hermitian blocks
+    import h5py
+    with h5py.File(Path(__file__).parent / 'fixtures' / 'test_arrays.h5', 'r') as f_h5:
+        blocks_np = f_h5['jax_fitter_blocks'][:]
+    num_blocks = blocks_np.shape[0]
+    block_dim = blocks_np.shape[1]
 
     evals_jax, evecs_jax = block_diagonalization_scan(blocks_np)
 
@@ -270,13 +269,8 @@ def test_block_diagonalization_scan_accuracy() -> None:
 
 def test_block_diagonalization_chunking_and_vram_capping() -> None:
     """Verifies chunked scan execution and VRAM budget capping produce identical results."""
-    np.random.seed(202)
-    num_blocks = 15
-    block_dim = 8
-    blocks_np = np.zeros((num_blocks, block_dim, block_dim), dtype=np.float64)
-    for k in range(num_blocks):
-        mat = np.random.randn(block_dim, block_dim)
-        blocks_np[k] = 0.5 * (mat + mat.T)
+    with h5py.File(Path(__file__).parent / 'fixtures' / 'test_arrays.h5', 'r') as f_h5:
+        blocks_np = f_h5['jax_fitter_blocks'][:]
 
     evals_seq, _ = block_diagonalization_scan(blocks_np, chunk_size=1)
     evals_chunked_4, _ = block_diagonalization_scan(blocks_np, chunk_size=4)
@@ -325,7 +319,8 @@ def test_block_diagonalization_invalid_shape() -> None:
         block_diagonalization_scan(invalid_2d)
 
     # Non-square blocks (e.g. 5x4)
-    invalid_rect = np.ones((3, 5, 4))
+    with h5py.File(Path(__file__).parent / 'fixtures' / 'test_arrays.h5', 'r') as f_h5:
+        invalid_rect = f_h5['invalid_rect'][:]
     with pytest.raises(InvalidHamiltonianError, match="must be square matrices"):
         block_diagonalization_scan(invalid_rect)
 

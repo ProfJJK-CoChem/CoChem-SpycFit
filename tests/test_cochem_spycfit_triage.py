@@ -30,6 +30,8 @@ from typing import List
 import numpy as np
 from pydantic import ValidationError
 import pytest
+import h5py
+from pathlib import Path
 
 from cochem_spycfit.intake.cochem_spycfit_triage import (
     AU_TO_WAVENUMBER_CONVERSION,
@@ -344,13 +346,12 @@ def test_mass_matrix_transformation_1d_diatomic() -> None:
 
 def test_mass_matrix_transformation_3n_expansion() -> None:
     """Tests that atom masses (length N) are correctly broadcasted to 3N Cartesian coordinates."""
-    n_atoms = 3
-    masses = [1.008, 1.008, 15.999]  # Water atoms
+    n_atoms = 2
+    masses = [1.008, 15.999]  # OH radical
     dim = 3 * n_atoms
 
-    random_state = np.random.RandomState(42)
-    a_mat = random_state.randn(dim, dim)
-    f_cart = np.dot(a_mat.T, a_mat)
+    with h5py.File(Path(__file__).parent / 'fixtures' / 'test_arrays.h5', 'r') as f_h5:
+        f_cart = f_h5['H_H2_TS'][:]
 
     h_mw = mass_matrix_transformation(f_cart, masses)
 
@@ -387,7 +388,8 @@ def test_compute_harmonic_vibrational_frequencies_diatomic_co() -> None:
     mu = (m_c * m_o) / (m_c + m_o)
 
     k = 1.20  # Hartree / bohr^2
-    f_cart = np.zeros((6, 6), dtype=np.float64)
+    with h5py.File(Path(__file__).parent / 'fixtures' / 'test_arrays.h5', 'r') as f_h5:
+        f_cart = f_h5['f_cart_zero'][:]
     f_cart[2, 2] = k
     f_cart[5, 5] = k
     f_cart[2, 5] = -k

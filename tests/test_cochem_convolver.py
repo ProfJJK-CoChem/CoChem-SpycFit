@@ -358,7 +358,9 @@ def test_frequency_chunked_scan_matches_monolithic_2d_multi_temp() -> None:
     n_temps = 4
     freq_grid = jnp.linspace(100.0, 200.0, n_freqs, dtype=jnp.float64)
     line_freqs = jnp.linspace(110.0, 190.0, n_lines, dtype=jnp.float64)
-    multi_intensities = jnp.ones((n_temps, n_lines), dtype=jnp.float64)
+    base_int = jnp.linspace(0.1, 1.0, n_lines, dtype=jnp.float64)
+    temps = jnp.linspace(50.0, 300.0, n_temps, dtype=jnp.float64)
+    multi_intensities = base_int[None, :] * (300.0 / temps[:, None])
     fwhm_g = jnp.full((n_lines,), 0.3, dtype=jnp.float64)
     fwhm_l = jnp.full((n_lines,), 0.2, dtype=jnp.float64)
     profile_code = 2  # Pseudo-Voigt

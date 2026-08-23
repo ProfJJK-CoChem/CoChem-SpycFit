@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 import numpy as np
 import pytest
+import h5py
 
 H_H2O: np.ndarray = np.array([
     [ 5.40821485e+00, -3.34733684e+00,  0.00000000e+00, -5.00151997e+00,  2.82208313e+00,  0.00000000e+00, -4.06694881e-01,  5.25253715e-01,  0.00000000e+00],
@@ -24,11 +25,8 @@ H_H2O: np.ndarray = np.array([
     [ 0.00000000e+00,  0.00000000e+00,  3.14507872e-09,  0.00000000e+00,  0.00000000e+00, -1.08410668e-07,  0.00000000e+00,  0.00000000e+00,  8.75930180e-08]
 ])
 
-H_H2_TS: np.ndarray = np.zeros((6, 6))
-H_H2_TS[2, 2] = -5.0
-H_H2_TS[5, 5] = -5.0
-H_H2_TS[2, 5] = 5.0
-H_H2_TS[5, 2] = 5.0
+with h5py.File(Path(__file__).parent / "fixtures" / "test_arrays.h5", "r") as f:
+    H_H2_TS: np.ndarray = f["H_H2_TS"][:]
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -90,18 +88,15 @@ def test_mass_weighting_exact() -> None:
     np.testing.assert_allclose(mw_h[3, 3], expected_o_weight, rtol=1e-4)
 
 def test_parse_orca_freq_output() -> None:
-    orca_output_text: str = """
-    Rotational constants (MHz): 10234.56   5123.45   2561.78
-    Total Dipole Moment :    1.2345   -0.5678   0.8912
-    """
+    orca_output_text: str = (Path(__file__).parent / "fixtures" / "orca_freq.out").read_text()
     parsed: Any = quantum_extractor.parse_orca_freq_output(orca_output_text)
     assert parsed.rotational_constants.A == 10234.56
     assert getattr(parsed.dipole_moment, 'X', parsed.dipole_moment.mu_a if hasattr(parsed.dipole_moment, 'mu_a') else 1.2345) == 1.2345
 
 def test_vpt2_resonance_trap() -> None:
     freqs: np.ndarray = np.array([100.0, 201.0, 500.0])
-    cubic_k: np.ndarray = np.zeros((3, 3, 3))
-    cubic_k[0, 0, 1] = 0.5
+    with h5py.File(Path(__file__).parent / "fixtures" / "test_arrays.h5", "r") as f:
+        cubic_k: np.ndarray = f["cubic_k"][:]
     res: List[Any] = quantum_extractor.vpt2_resonance_trap(freqs, cubic_k, threshold=5.0)
     assert len(res) == 1
     assert res[0][0] == 'Fermi'
@@ -150,21 +145,14 @@ def test_quantum_extractor_orca_and_gxtb() -> None:
     extractor: QuantumExtractor = QuantumExtractor()
 
     # ORCA test
-    orca_output_text: str = """
-    Program Version 6.0.0
-    Rotational constants (MHz) :  12500.4500   4800.2300   3600.1200
-    Total Dipole Moment :    1.4500    0.8200    0.0000
-    """
+    orca_output_text: str = (Path(__file__).parent / "fixtures" / "orca.out").read_text()
     res_orca: Any = extractor.parse_orca_output(orca_output_text)
     assert res_orca.rotational_constants.A == 12500.45
     assert res_orca.dipole_moment.mu_a == 1.45
     assert res_orca.dipole_moment.mu_b == 0.82
 
     # g-xTB test
-    gxtb_output_text: str = """
-    gfn2-xtb molecular dipole : x = 0.5000 y = 1.2000 z = 0.0000 (Debye)
-    rotational constants (cm-1) : 0.41695 0.16011 0.12008
-    """
+    gxtb_output_text: str = (Path(__file__).parent / "fixtures" / "gxtb.out").read_text()
     res_gxtb: Any = extractor.parse_gxtb_output(gxtb_output_text)
     assert abs(res_gxtb.rotational_constants.A - 12500.0) < 10.0
     assert res_gxtb.dipole_moment.mu_a == 0.5
@@ -210,7 +198,8 @@ def test_spycfit_master_lam_pes_scan() -> None:
 def test_rm2_mass_scaling() -> None:
     rot: np.ndarray = np.array([10000.0, 5000.0, 2500.0])
     symbols: List[str] = ['H', 'O', 'H']
-    rm2: Dict[str, Any] = {'c_params': np.zeros(3), 'd_params': np.array([1.0, 0.5, 0.25])}
+    with h5py.File(Path(__file__).parent / "fixtures" / "test_arrays.h5", "r") as f:
+        rm2: Dict[str, Any] = {'c_params': f["rm2_c"][:], 'd_params': np.array([1.0, 0.5, 0.25])}
     res: Dict[str, Any] = convolver.apply_rm2_mass_scaling(rot, symbols, rm2_params=rm2)
     
     I_A0: float = 505379.008 / 10000.0
@@ -271,16 +260,7 @@ def test_normal_mode_analysis() -> None:
     assert freqs[8] > 1000.0
 
 def test_nbo_parsing() -> None:
-    nbo_output_text: str = """
-    NATURAL POPULATION ANALYSIS
-    ---------------------------
-    C 1  -0.345
-    H 2   0.115
-    H 3   0.115
-    H 4   0.115
-    ---------------------------
-    ==========
-    """
+    nbo_output_text: str = (Path(__file__).parent / "fixtures" / "nbo.out").read_text()
     nbo: Any = quantum_extractor.parse_nbo_analysis(nbo_output_text)
     assert hasattr(nbo, 'natural_charges')
     assert nbo.natural_charges['C1'] == -0.345

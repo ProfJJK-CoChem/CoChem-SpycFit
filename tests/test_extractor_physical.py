@@ -13,7 +13,7 @@ from pathlib import Path
 # 1. Registry Consistency & Air-Gap Enforcement
 # Replaced __file__ static lookup with environment variables / Path.home() dynamic lookup
 MODULE_DIR: Path = Path(os.environ.get("COCHEM_SPYCFIT_DIR", Path(__file__).resolve().parent.parent if "__file__" in globals() else Path.home() / ".cochem" / "CoChem-SpycFit"))
-EXTRACTOR_SCRIPT: Path = MODULE_DIR / "cochem_spycfit" / "quantum_extractor.py"
+EXTRACTOR_SCRIPT: Path = Path(__file__).parent.parent / "src" / "cochem_spycfit" / "quantum_extractor.py"
 REAL_ARTIFACTS_DIR: Path = Path(os.environ.get("COCHEM_ARTIFACTS_DIR", MODULE_DIR / "artifacts_test"))
 
 # 3. Graceful Failure & Subprocess Safety (Zombie Process Sweeping)
@@ -48,6 +48,8 @@ def test_quantum_extractor_execution(tmp_path: Path) -> None:
     
     # Locate real physical HDF5 registry
     real_h5_path: Path = REAL_ARTIFACTS_DIR / "landscape.h5"
+    if not real_h5_path.exists():
+        real_h5_path = REAL_ARTIFACTS_DIR / "artifacts_test" / "landscape.h5"
     if not real_h5_path.exists():
         # Strict failure on missing physical data (No exception deflection)
         raise FileNotFoundError(f"[MISSING DATA] Real physical landscape.h5 not found at {real_h5_path}. Synthetic generation is forbidden.")
