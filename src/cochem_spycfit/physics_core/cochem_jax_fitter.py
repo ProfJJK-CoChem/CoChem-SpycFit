@@ -11,7 +11,7 @@ This module implements:
    strict DLPNO-CCSD(T) prohibition via DLPNOForbiddenError, and air-gapped transport spooling
    with SHA-256 checksums and atomic file locking).
 
-Precision: JAX FP64 precision enabled globally.
+Precision: JAX FP64 precision enabled globally. [E]
 """
 
 from __future__ import annotations
@@ -176,7 +176,10 @@ class ActivePESRefinementConfig(BaseModel):
     viable_residual_threshold_mhz: float = Field(default=5.0, gt=0.0, description="Max acceptable residual RMSE (MHz)")
     target_method: str = Field(default="canonical-CCSD(T)", description="Ab initio quantum chemistry method")
     basis_set: str = Field(default="def2-QZVPP", description="Basis set for PES refinement")
-    spool_directory: Path = Field(default=Path("air_gapped_spool"), description="Directory for air-gapped export")
+    spool_directory: Path = Field(
+        default_factory=lambda: Path(os.environ.get("COCHEM_ARTIFACTS_DIR", str(Path.home() / ".cochem_artifacts"))) / "air_gapped_spool",
+        description="Directory for air-gapped export"
+    )
     lock_timeout_seconds: float = Field(default=10.0, gt=0.0, description="Timeout for atomic file lock acquisition")
 
     @field_validator("target_method")
@@ -492,12 +495,9 @@ def levenberg_marquardt_fit(
     inv_mask_1d = (1.0 - mask_float)
     h_inv_target = h_final * mask_2d + jnp.diag(inv_mask_1d)
 
-    try:
-        cov_raw = jnp.linalg.pinv(h_inv_target) * reduced_chi2
-        cov_masked = cov_raw * mask_2d
-    except Exception as exc:
-        logger.warning("Covariance matrix calculation encountered numerical singularity: %s", exc)
-        cov_masked = jnp.zeros((n_params, n_params), dtype=jnp.float64)
+    # Calculate covariance; if numerical singularity occurs, allow failure to propagate [M]
+    cov_raw = jnp.linalg.pinv(h_inv_target) * reduced_chi2
+    cov_masked = cov_raw * mask_2d
 
     param_uncertainties = [
         float(jnp.sqrt(jnp.maximum(0.0, cov_masked[i, i]))) if active_mask_list[i] else 0.0
@@ -802,7 +802,7 @@ class AirGappedTransportSpool:
                         f.flush()
                         os.fsync(f.fileno())
                     os.replace(temp_file_path, str(target_path))
-                except Exception:
+                except BaseException:
                     if os.path.exists(temp_file_path):
                         os.remove(temp_file_path)
                     raise
@@ -848,7 +848,7 @@ class AirGappedTransportSpool:
 
         try:
             data = json.loads(raw_content)
-        except Exception as exc:
+        except json.JSONDecodeError as exc:
             raise TransportError(f"Corrupted spool JSON structure: {exc}") from exc
 
         stored_checksum = data.get("sha256_checksum", "")
@@ -914,11 +914,7 @@ def check_pes_refinement_trigger(
             f"spectroscopic PES refinement. Canonical CCSD(T) is mandatory."
         )
 
-    coords_list: List[List[float]]
-    if isinstance(cartesian_coords_angstrom, np.ndarray):
-        coords_list = [[float(val) for val in row] for row in cartesian_coords_angstrom]
-    else:
-        coords_list = [[float(val) for val in row] for row in cartesian_coords_angstrom]
+    coords_list: List[List[float]] = [[float(val) for val in row] for row in cartesian_coords_angstrom]
 
     if rmse_residual_mhz <= cfg.viable_residual_threshold_mhz:
         return PESRefinementTriggerResult(

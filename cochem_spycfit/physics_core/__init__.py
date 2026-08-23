@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Theoretical Tensor Gateway & Physics Core.
+CoChem-SpycFit: Theoretical Tensor Gateway & Physics Core Proxy.
 """
 
 from src.cochem_spycfit.physics_core.cochem_quantum_extractor import (
@@ -25,6 +25,39 @@ from src.cochem_spycfit.physics_core.cochem_quantum_extractor import (
     extract_tensors,
     get_atomic_mass,
 )
+from src.cochem_spycfit.physics_core.cochem_jax_builder import (
+    DEFAULT_BUCKET_SIZE as JAX_BUILDER_DEFAULT_BUCKET_SIZE,
+    DEFAULT_HYSTERESIS_DELTA,
+    DEFAULT_LAM_BARRIER_THRESHOLD_CM1,
+    BatchedHamiltonianResult,
+    HamiltonianBlockResult,
+    HamiltonianConfig,
+    HermitianLockViolationError,
+    HPCShardingError,
+    InvalidJValueError,
+    InvalidReductionError,
+    InvalidRepresentationError,
+    JAXBuilderError,
+    JBlockBatch,
+    LAMBreachError,
+    LAMGuardResult,
+    ReductionType,
+    RepresentationType,
+    WatsonConstants,
+    build_j_block_batches,
+    build_wang_transformation_matrix,
+    check_lam_guard,
+    compute_rays_asymmetry_param,
+    construct_hamiltonian,
+    construct_iam_woods_hamiltonian,
+    construct_j_block,
+    construct_watson_a_matrix_jax,
+    construct_watson_s_matrix_jax,
+    determine_representation,
+    diagonalize_j_block,
+    execute_distributed_batches,
+    is_hpc_environment,
+)
 
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
@@ -48,4 +81,36 @@ __all__ = [
     "determine_hamiltonian_routing",
     "extract_tensors",
     "get_atomic_mass",
+    # JAX Builder
+    "JAX_BUILDER_DEFAULT_BUCKET_SIZE",
+    "DEFAULT_HYSTERESIS_DELTA",
+    "DEFAULT_LAM_BARRIER_THRESHOLD_CM1",
+    "BatchedHamiltonianResult",
+    "HamiltonianBlockResult",
+    "HamiltonianConfig",
+    "HermitianLockViolationError",
+    "HPCShardingError",
+    "InvalidJValueError",
+    "InvalidReductionError",
+    "InvalidRepresentationError",
+    "JAXBuilderError",
+    "JBlockBatch",
+    "LAMBreachError",
+    "LAMGuardResult",
+    "ReductionType",
+    "RepresentationType",
+    "WatsonConstants",
+    "build_j_block_batches",
+    "build_wang_transformation_matrix",
+    "check_lam_guard",
+    "compute_rays_asymmetry_param",
+    "construct_hamiltonian",
+    "construct_iam_woods_hamiltonian",
+    "construct_j_block",
+    "construct_watson_a_matrix_jax",
+    "construct_watson_s_matrix_jax",
+    "determine_representation",
+    "diagonalize_j_block",
+    "execute_distributed_batches",
+    "is_hpc_environment",
 ]
