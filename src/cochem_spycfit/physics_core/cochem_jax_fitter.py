@@ -652,7 +652,7 @@ def levenberg_marquardt_fit(
                 loss_n = float(jnp.sum(huber_loss(r_next, delta=cfg.huber_delta)))
                 rel_res_change = abs(loss_c - loss_n) / (loss_c + 1e-18)
             else:
-                rel_res_change = abs(jnp.sum(r_curr**2) - jnp.sum(r_next**2)) / (jnp.sum(r_curr**2) + 1e-18)
+                rel_res_change = float(abs(jnp.sum(r_curr**2) - jnp.sum(r_next**2)) / (jnp.sum(r_curr**2) + 1e-18))
 
             if rel_res_change < cfg.tol_residual:
                 converged = True

@@ -575,20 +575,20 @@ def test_sobol_sensitivity_guard_jit_and_pytree() -> None:
     assert "active_parameters" in guard_output_2d
     assert "frozen_parameters" in guard_output_2d
 
-    active_mask = np.asarray(guard_output_2d["active_mask"])
-    np.testing.assert_array_equal(active_mask, [True, True, False, False])
+    active_mask = np.array(guard_output_2d["active_mask"])
+    np.testing.assert_array_equal(active_mask, np.array([True, True, False, False]))
     assert int(guard_output_2d["active_count"]) == 2
     assert int(guard_output_2d["frozen_count"]) == 2
 
     # Verify frozen parameters are isolated and active parameters preserved
-    active_params = np.asarray(guard_output_2d["active_parameters"])
-    frozen_params = np.asarray(guard_output_2d["frozen_parameters"])
-    assert active_params[0] == 12500.0
-    assert active_params[1] == 6200.0
-    assert active_params[2] == 0.0
-    assert active_params[3] == 0.0
-    assert frozen_params[2] == 0.005
-    assert frozen_params[3] == 0.0001
+    active_params = np.array(guard_output_2d["active_parameters"])
+    frozen_params = np.array(guard_output_2d["frozen_parameters"])
+    assert float(active_params[0]) == 12500.0
+    assert float(active_params[1]) == 6200.0
+    assert float(active_params[2]) == 0.0
+    assert float(active_params[3]) == 0.0
+    assert float(frozen_params[2]) == 0.005
+    assert float(frozen_params[3]) == 0.0001
 
     # Call with 1D variance vector
     guard_output_1d = sobol_sensitivity_guard(
@@ -597,8 +597,8 @@ def test_sobol_sensitivity_guard_jit_and_pytree() -> None:
         threshold=1e-6,
     )
     np.testing.assert_array_equal(
-        np.asarray(guard_output_1d["active_mask"]),
-        [True, True, False, False],
+        np.array(guard_output_1d["active_mask"]),
+        np.array([True, True, False, False]),
     )
 
 

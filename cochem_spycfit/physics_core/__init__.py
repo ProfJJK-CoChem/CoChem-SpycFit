@@ -90,6 +90,23 @@ from src.cochem_spycfit.physics_core.cochem_jax_coupling import (
     import_pytree_dlpack,
 )
 
+from src.cochem_spycfit.physics_core.cochem_assign_ml import (
+    ActivePESHealingConfig,
+    AssignMLError,
+    EmptyCandidateError,
+    InformationCriterion,
+    InformationGainConfig,
+    InvalidCovarianceError,
+    InvalidJacobianError,
+    InvalidResidualError,
+    back_calculate_driving_coordinates,
+    calculate_information_gain,
+    flag_unresolved_residuals,
+    generate_pes_healing_payload,
+    rank_candidate_transitions,
+    update_covariance_after_measurement,
+)
+
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
     "HARTREE_BOHR2_AMU_TO_CM1",
@@ -174,4 +191,19 @@ __all__ = [
     "diagonalize_polyad_block",
     "extract_pytree_dlpack",
     "import_pytree_dlpack",
+    # AI Assigner & Active PES Refinement Trigger (The Healing Loop)
+    "ActivePESHealingConfig",
+    "AssignMLError",
+    "EmptyCandidateError",
+    "InformationCriterion",
+    "InformationGainConfig",
+    "InvalidCovarianceError",
+    "InvalidJacobianError",
+    "InvalidResidualError",
+    "back_calculate_driving_coordinates",
+    "calculate_information_gain",
+    "flag_unresolved_residuals",
+    "generate_pes_healing_payload",
+    "rank_candidate_transitions",
+    "update_covariance_after_measurement",
 ]
