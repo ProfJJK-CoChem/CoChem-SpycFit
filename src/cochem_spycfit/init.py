@@ -300,7 +300,7 @@ def update_swarm_state(status: str) -> None:
     import datetime
     
     # Try project root first if COCHEM_ARTIFACT_DIR is not set
-    root_dir = Path(__file__).resolve().parent.parent
+    root_dir = Path(os.environ.get("COCHEM_PROJECT_ROOT", Path.home() / "CoChem-SpycFit")).resolve()
     swarm_state_path = root_dir / "swarm_state.json"
     
     state_data = {}

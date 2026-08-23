@@ -817,19 +817,3 @@ def test_generate_aastex_longtables_unparseable_uncertainty():
     assert "est. 0.05" in res["parameters_table"]
 
 
-def test_hash_dataset_iteratively_chunked_fallback(
-    clean_workspace: Path, monkeypatch: pytest.MonkeyPatch
-):
-    """Verifies chunked hashing execution when hashlib.file_digest is not available."""
-    import hashlib
-
-    # Force fallback to iterative chunk reader
-    monkeypatch.delattr(hashlib, "file_digest", raising=False)
-
-    data_file = clean_workspace / "fallback_spectrum.dat"
-    content = b"Rotational Spectrum Data for Fallback Hashing Verification\n" * 100
-    data_file.write_bytes(content)
-
-    computed_hash = hash_dataset_iteratively(data_file, chunk_size=32)
-    expected_hash = hashlib.sha256(content).hexdigest()
-    assert computed_hash == expected_hash

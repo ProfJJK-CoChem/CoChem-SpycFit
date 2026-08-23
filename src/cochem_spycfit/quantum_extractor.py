@@ -648,7 +648,7 @@ def trigger_scribe_daemon(output_dir: str | Path) -> None:
 
 def update_swarm_state(status: str, artifacts: List[str], error_code: Optional[str] = None) -> None:
     from datetime import datetime, timezone
-    state_file = Path("D:/__CoChem/GitHub-Repo/CoChem-BASE/swarm_state.json")
+    state_file = Path(os.environ.get("COCHEM_PROJECT_ROOT", Path.home() / "CoChem-SpycFit")).resolve() / "swarm_state.json"
     state = {}
     if state_file.exists():
         try:

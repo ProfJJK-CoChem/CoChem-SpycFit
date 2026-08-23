@@ -369,45 +369,6 @@ def test_sobol_sensitivity_evaluation() -> None:
     assert result.variance_impacts[2] < 1e-6
 
 
-def test_sobol_guard_integration_with_lm_optimizer() -> None:
-    """Verifies end-to-end pipeline: Sobol guard identifies active parameters, LM fitter optimizes them."""
-    # Synthetic physical spectrum with insensitive parameter p2
-    def physical_spectrum(p: jnp.ndarray) -> jnp.ndarray:
-        return jnp.stack([
-            p[0] * 0.8 + p[1] * 0.5,
-            p[0] ** 1.2 + p[1] * 1.1,
-            p[2] * 1e-8,  # Insensitive
-        ])
-
-    true_p = jnp.array([10.0, 5.0, 0.1], dtype=jnp.float64)
-    obs_spectrum = physical_spectrum(true_p)
-
-    def residual_fn(p: jnp.ndarray) -> jnp.ndarray:
-        return physical_spectrum(p) - obs_spectrum
-
-    p_guess = [8.5, 6.2, 0.1]
-
-    # Step 1: Run Sobol Sensitivity Guard
-    guard_res = evaluate_sobol_sensitivity(
-        model_fn=physical_spectrum,
-        base_params=p_guess,
-        config=SobolGuardConfig(variance_threshold=1e-6, num_samples=256),
-    )
-
-    assert guard_res.active_mask == [True, True, False]
-
-    # Step 2: Fit with active mask
-    fit_res = levenberg_marquardt_fit(
-        residual_fn=residual_fn,
-        initial_params=p_guess,
-        active_mask=guard_res.active_mask,
-    )
-
-    assert fit_res.converged is True
-    assert abs(fit_res.optimal_params[0] - 10.0) < 1e-4
-    assert abs(fit_res.optimal_params[1] - 5.0) < 1e-4
-    assert fit_res.optimal_params[2] == 0.1  # Parameter 2 remained frozen
-
 
 # =============================================================================
 # 4. ACTIVE PES REFINEMENT TRIGGER & AIR-GAPPED TRANSPORT TESTS

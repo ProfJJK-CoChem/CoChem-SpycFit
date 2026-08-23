@@ -258,7 +258,7 @@ def levenberg_marquardt_optimization(target_frequencies: jnp.ndarray,
                 params = new_params
             else:
                 lambda_param *= 10.0
-        except Exception:
+        except np.linalg.LinAlgError:
             params = params - 0.01 * Jt_r
             
     final_r = residual(params)
