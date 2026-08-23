@@ -35,7 +35,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+from typing import Any, ContextManager, Dict, Generator, List, Optional, Tuple, Union
 
 import filelock
 import h5py
@@ -230,10 +230,10 @@ def is_lustre_filesystem(path: Optional[Union[str, Path]] = None) -> bool:
 
     # 2. Path inspection
     target_path = Path(path).resolve() if path is not None else Path.cwd().resolve()
-    path_str = str(target_path).lower()
-
-    if "lustre" in path_str:
-        return True
+    for part in target_path.parts:
+        part_clean = part.lower().strip("\\/ ")
+        if part_clean in ("lustre", "lustrefs", "lustre_hpc") or part_clean.startswith("lustre_mount") or part_clean == ".lustre":
+            return True
 
     # 3. Linux/POSIX statvfs magic check
     if hasattr(os, "statvfs"):
@@ -457,18 +457,26 @@ class LustreMkdirLock:
             if not self.lock_dir.exists():
                 return
 
+            now = time.time()
             lock_age = 0.0
+
             if self.owner_file.is_file():
                 try:
                     with open(self.owner_file, "r", encoding="utf-8") as f:
                         data = json.load(f)
                         acquired_at = float(data.get("acquired_at", 0.0))
                         if acquired_at > 0:
-                            lock_age = time.time() - acquired_at
+                            lock_age = now - acquired_at
                 except Exception:
-                    lock_age = time.time() - self.owner_file.stat().st_mtime
+                    try:
+                        lock_age = now - self.owner_file.stat().st_mtime
+                    except OSError:
+                        pass
             else:
-                lock_age = time.time() - self.lock_dir.stat().st_mtime
+                try:
+                    lock_age = now - self.lock_dir.stat().st_mtime
+                except OSError:
+                    pass
 
             if lock_age > self.stale_timeout:
                 logger.warning(
@@ -480,7 +488,8 @@ class LustreMkdirLock:
                 try:
                     if self.owner_file.exists():
                         self.owner_file.unlink(missing_ok=True)
-                    os.rmdir(str(self.lock_dir))
+                    if self.lock_dir.exists():
+                        os.rmdir(str(self.lock_dir))
                 except Exception as e:
                     logger.debug("[LustreMkdirLock] Could not reap stale lock: %s", e)
         except Exception:
@@ -511,16 +520,17 @@ class LustreMkdirLock:
             # Re-entrant lock still held by current thread
             return
 
-        # Last release: remove owner file and rmdir
-        try:
-            if self.owner_file.exists():
-                self.owner_file.unlink(missing_ok=True)
-            if self.lock_dir.exists():
-                os.rmdir(str(self.lock_dir))
-        except Exception as e:
-            logger.debug("[LustreMkdirLock] Release rmdir notice: %s", e)
-        finally:
-            self._cleanup_thread_lock(path_key)
+        # Last release: remove owner file and rmdir with transient retry absorption
+        for _ in range(5):
+            try:
+                if self.owner_file.exists():
+                    self.owner_file.unlink(missing_ok=True)
+                if self.lock_dir.exists():
+                    os.rmdir(str(self.lock_dir))
+                break
+            except Exception:
+                time.sleep(0.005)
+        self._cleanup_thread_lock(path_key)
 
     def __enter__(self) -> LustreMkdirLock:
         self.acquire()
@@ -556,7 +566,14 @@ class StandardFileLock:
         timeout: float = DEFAULT_LOCAL_LOCK_TIMEOUT,
         stale_timeout: float = DEFAULT_STALE_LOCK_TIMEOUT,
     ) -> None:
-        self.lock_path = Path(lock_path).resolve()
+        p = Path(lock_path).resolve()
+        if p.name.endswith(".lock"):
+            self.lock_path = p
+        elif p.name.endswith(".lockdir"):
+            self.lock_path = p.parent / f"{p.stem}.lock"
+        else:
+            self.lock_path = p.parent / f"{p.name}.lock"
+
         self.timeout = float(timeout)
         self.stale_timeout = float(stale_timeout)
         self._depth: int = 0
@@ -891,15 +908,9 @@ def open_state_tensor(
                 yield h5_file
 
             else:
-                # Write / Append mode with SWMR
+                # Write / Append mode with SWMR on standard filesystem
                 try:
                     h5_file = h5py.File(str(p), mode=mode, libver="latest")
-                    # Activate SWMR mode if not already in SWMR mode
-                    if not getattr(h5_file, "swmr_mode", False):
-                        try:
-                            h5_file.swmr_mode = True
-                        except Exception as swmr_err:
-                            logger.debug("[open_state_tensor] Notice on swmr_mode activation: %s", swmr_err)
                 except Exception as e:
                     raise HDF5TensorError(f"Failed to initialize HDF5 SWMR file at {p} with mode '{mode}': {e}") from e
 
@@ -908,6 +919,12 @@ def open_state_tensor(
                 if h5_file is not None:
                     try:
                         h5_file.flush()
+                        if not getattr(h5_file, "swmr_mode", False):
+                            try:
+                                h5_file.swmr_mode = True
+                                h5_file.flush()
+                            except Exception as swmr_err:
+                                logger.debug("[open_state_tensor] Notice on swmr_mode activation: %s", swmr_err)
                     except Exception:
                         pass
 
@@ -1221,7 +1238,7 @@ class FitRegistryManager:
         self,
         mode: str = "r",
         is_lustre: Optional[bool] = None,
-    ) -> Generator[h5py.File, None, None]:
+    ) -> ContextManager[h5py.File]:
         """
         Opens the HDF5 State Tensor database with filesystem-aware SWMR management.
 
@@ -1268,7 +1285,10 @@ class FitRegistryManager:
             fletcher32: Whether to enable Fletcher32 checksum filter.
         """
         # Convert to host RAM NumPy array
-        arr = np.ascontiguousarray(np.asarray(tensor))
+        if isinstance(tensor, np.ndarray):
+            arr = np.ascontiguousarray(tensor)
+        else:
+            arr = np.ascontiguousarray(np.array(tensor))
         if arr.ndim == 0:
             arr = arr.reshape((1,))
 

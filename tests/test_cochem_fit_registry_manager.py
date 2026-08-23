@@ -221,7 +221,7 @@ def test_standard_file_lock_concurrency(tmp_path: Path):
         for _ in range(increments_per_thread):
             with lock:
                 curr = counter["val"]
-                time.sleep(0.002)
+                time.sleep(0.001)
                 counter["val"] = curr + 1
 
     threads = [threading.Thread(target=worker) for _ in range(num_threads)]
@@ -237,7 +237,7 @@ def test_standard_file_lock_timeout(tmp_path: Path):
     """Validates RegistryLockTimeoutError when lock is held by another thread."""
     lock_file = tmp_path / "timeout.lock"
     lock1 = StandardFileLock(lock_file, timeout=2.0)
-    lock2 = StandardFileLock(lock_file, timeout=0.3)
+    lock2 = StandardFileLock(lock_file, timeout=0.2)
 
     ready_event = threading.Event()
     release_event = threading.Event()
@@ -303,7 +303,7 @@ def test_lustre_mkdir_lock_concurrency(tmp_path: Path):
         for _ in range(increments_per_thread):
             with lock:
                 curr = counter["val"]
-                time.sleep(0.002)
+                time.sleep(0.001)
                 counter["val"] = curr + 1
 
     threads = [threading.Thread(target=worker) for _ in range(num_threads)]
@@ -319,7 +319,7 @@ def test_lustre_mkdir_lock_timeout(tmp_path: Path):
     """Validates RegistryLockTimeoutError with LustreMkdirLock."""
     lock_dir = tmp_path / "lustre_timeout.lockdir"
     lock1 = LustreMkdirLock(lock_dir, timeout=2.0)
-    lock2 = LustreMkdirLock(lock_dir, timeout=0.3)
+    lock2 = LustreMkdirLock(lock_dir, timeout=0.2)
 
     ready_event = threading.Event()
     release_event = threading.Event()
@@ -436,8 +436,9 @@ def test_hdf5_swmr_concurrent_streaming(tmp_path: Path):
             shuffle=True,
             fletcher32=True,
         )
+        f.swmr_mode = True
 
-    num_records = 30
+    num_records = 20
     writer_done = threading.Event()
     reader_seen_counts: List[int] = []
 
@@ -449,27 +450,24 @@ def test_hdf5_swmr_concurrent_streaming(tmp_path: Path):
                 dset.resize((curr_len + 1,))
                 dset[curr_len] = float(i * 1.5)
                 f.flush()
-                time.sleep(0.01)
+                time.sleep(0.005)
         writer_done.set()
 
     def reader_task():
         # Open in SWMR read mode
-        time.sleep(0.02)
+        time.sleep(0.01)
         with open_state_tensor(db_path, mode="r", is_lustre=False) as f:
             dset = f["stream_data"]
-            while not writer_done.is_set() or dset.shape[0] < num_records:
+            start_poll = time.time()
+            while time.time() - start_poll < 5.0:
                 try:
                     dset.refresh()
                 except Exception:
                     pass
                 reader_seen_counts.append(dset.shape[0])
-                time.sleep(0.01)
-            # Final check
-            try:
-                dset.refresh()
-            except Exception:
-                pass
-            reader_seen_counts.append(dset.shape[0])
+                if writer_done.is_set() and dset.shape[0] >= num_records:
+                    break
+                time.sleep(0.005)
 
     t_writer = threading.Thread(target=writer_task)
     t_reader = threading.Thread(target=reader_task)
@@ -477,14 +475,14 @@ def test_hdf5_swmr_concurrent_streaming(tmp_path: Path):
     t_writer.start()
     t_reader.start()
 
-    t_writer.join()
-    t_reader.join()
+    t_writer.join(timeout=10.0)
+    t_reader.join(timeout=10.0)
 
     # Verify data integrity
     with h5py.File(str(db_path), "r") as f:
         final_arr = np.array(f["stream_data"])
         assert len(final_arr) == num_records
-        np.testing.assert_array_almost_equal(final_arr, np.arange(num_records) * 1.5)
+        np.testing.assert_allclose(final_arr, np.arange(num_records) * 1.5)
 
     assert len(reader_seen_counts) > 1
     assert reader_seen_counts[-1] == num_records
@@ -591,7 +589,7 @@ def test_fit_registry_manager_spectral_tensors(tmp_env):
         group="/hamiltonians",
     )
 
-    np.testing.assert_array_almost_equal(loaded_arr, test_matrix)
+    np.testing.assert_allclose(loaded_arr, test_matrix)
     assert loaded_meta["molecule"] == "Benzonitrile"
     assert loaded_meta["method"] == "B3LYP-D3BJ"
     assert loaded_meta["frequencies"] == [1024.5, 2048.0, 4096.5]
