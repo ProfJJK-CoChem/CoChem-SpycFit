@@ -30,6 +30,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import jax
 import jax.numpy as jnp
+import jax.scipy.special as jsp
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -527,6 +528,39 @@ def faddeeva_voigt_kernel_jax(
 
 
 @jax.jit
+def true_voigt_profile(
+    x: Union[float, jnp.ndarray, np.ndarray],
+    sigma: Union[float, jnp.ndarray, np.ndarray],
+    gamma: Union[float, jnp.ndarray, np.ndarray],
+) -> jnp.ndarray:
+    """
+    Analytical exact Voigt line profile using pure-JAX Faddeeva evaluation via jax.scipy.special.erfcx.
+
+    Evaluates the exact Voigt profile V(x; sigma, gamma):
+        V(x; sigma, gamma) = Re[erfcx((gamma - i*x) / (sigma * sqrt(2)))] / (sigma * sqrt(2*pi))
+
+    Parameters:
+        x: Frequency displacement (x = nu - nu_0) or array of displacements.
+        sigma: Gaussian standard deviation (sigma > 0).
+        gamma: Lorentzian HWHM (half-width at half-maximum, gamma >= 0).
+
+    Returns:
+        jnp.ndarray: Voigt profile values in FP64 precision.
+    """
+    x_arr = jnp.asarray(x, dtype=jnp.float64)
+    sigma_arr = jnp.asarray(sigma, dtype=jnp.float64)
+    gamma_arr = jnp.asarray(gamma, dtype=jnp.float64)
+
+    safe_sigma = jnp.maximum(sigma_arr, 1e-30)
+    safe_gamma = jnp.maximum(gamma_arr, 0.0)
+
+    u = (safe_gamma - 1j * x_arr) / (safe_sigma * jnp.sqrt(2.0))
+    w_z = jsp.erfcx(u)
+    voigt_val = jnp.real(w_z) / (safe_sigma * jnp.sqrt(2.0 * jnp.pi))
+    return voigt_val
+
+
+@jax.jit
 def evaluate_profile_kernel_jax(
     delta_nu: jnp.ndarray,
     fwhm_g: jnp.ndarray,
@@ -689,6 +723,82 @@ def compute_boltzmann_scaling_grid_jax(
     # Total scaled intensities [N_temps, N_lines]
     scaled_intensities = i_row * partition_ratio * boltzmann_factors * stimulated_factors
     return scaled_intensities, boltzmann_factors, stimulated_factors
+
+
+@jax.jit
+def convolute_multi_temperature(
+    frequencies: jnp.ndarray,
+    intensities: jnp.ndarray,
+    Q_T: jnp.ndarray,
+    temp_grid: jnp.ndarray,
+    lower_energies: Optional[jnp.ndarray] = None,
+    t_ref: float = 296.0,
+    q_ref: float = 1.0,
+    energy_to_k: float = C2_RADIATION_CONST,
+    freq_to_k: float = H_OVER_K_B * 1.0e6,
+) -> jnp.ndarray:
+    """
+    Vectorized multi-temperature Boltzmann scaling with tensor broadcasting [N_lines, N_temperatures].
+
+    Computes the temperature-scaled spectral line intensities for all lines across all target temperatures:
+        S_ij(T_j) = S_i(T_ref) * [Q(T_ref) / Q(T_j)] * exp(- (E_lower_i / k_B) * (1/T_j - 1/T_ref))
+                    * [1 - exp(-h * nu_i / (k_B * T_j))] / [1 - exp(-h * nu_i / (k_B * T_ref))]
+
+    Utilizes JAX tensor broadcasting between lines (N_lines, 1) and temperatures (1, N_temperatures)
+    with numerically stable -jnp.expm1(-x) evaluation.
+
+    Parameters:
+        frequencies: Transition frequencies [N_lines].
+        intensities: Reference intensities S(T_ref) [N_lines].
+        Q_T: Partition function values Q(T) at target temperatures [N_temperatures].
+        temp_grid: Target temperatures in Kelvin [N_temperatures].
+        lower_energies: Lower state energies [N_lines]. If None, assumed 0.0.
+        t_ref: Reference temperature in Kelvin (default 296 K).
+        q_ref: Reference partition function value Q(T_ref) (default 1.0).
+        energy_to_k: Multiplier converting energy unit to Kelvin (default C2_RADIATION_CONST for cm^-1).
+        freq_to_k: Multiplier converting frequency unit to Kelvin (default MHz -> K).
+
+    Returns:
+        jnp.ndarray: Scaled intensities tensor of shape [N_lines, N_temperatures].
+    """
+    f_arr = jnp.asarray(frequencies, dtype=jnp.float64)
+    i_arr = jnp.asarray(intensities, dtype=jnp.float64)
+    q_arr = jnp.asarray(Q_T, dtype=jnp.float64)
+    t_arr = jnp.asarray(temp_grid, dtype=jnp.float64)
+
+    if lower_energies is not None:
+        e_arr = jnp.asarray(lower_energies, dtype=jnp.float64)
+    else:
+        e_arr = jnp.zeros_like(f_arr)
+
+    # Tensor broadcasting:
+    # Lines: (N_lines, 1)
+    # Temps: (1, N_temperatures)
+    f_col = f_arr[:, None]
+    i_col = i_arr[:, None]
+    e_col = e_arr[:, None]
+    q_row = q_arr[None, :]
+    t_row = t_arr[None, :]
+
+    # 1. Partition function ratio: Q(T_ref) / Q(T) -> shape (1, N_temperatures)
+    q_ratio = q_ref / q_row
+
+    # 2. Boltzmann state population factor -> shape (N_lines, N_temperatures)
+    inv_t_diff = (1.0 / t_row) - (1.0 / t_ref)
+    boltzmann = jnp.exp(-energy_to_k * e_col * inv_t_diff)
+
+    # 3. Stimulated emission correction -> shape (N_lines, N_temperatures)
+    x_t = (f_col * freq_to_k) / t_row
+    x_ref = (f_col * freq_to_k) / t_ref
+
+    num_stim = -jnp.expm1(-x_t)
+    den_stim = -jnp.expm1(-x_ref)
+    safe_den_stim = jnp.where(jnp.abs(den_stim) < 1e-30, 1e-30, den_stim)
+    stimulated = num_stim / safe_den_stim
+
+    # Scaled intensities: [N_lines, N_temperatures]
+    scaled_intensities = i_col * q_ratio * boltzmann * stimulated
+    return scaled_intensities
 
 
 # =============================================================================
@@ -898,6 +1008,244 @@ def convolve_spectrum_monolithic_jax(
     else:
         # Multi-temperature (N_temps, N_lines)
         return jnp.matmul(line_intensities, profiles.T)
+
+
+@jax.tree_util.register_pytree_node_class
+class ConvolverPyTree:
+    """
+    Pure JAX PyTree encapsulating micro-batched convolved spectral results and line masks.
+    Guarantees functional purity with zero I/O side effects and full compatibility with JAX transformations.
+    """
+
+    def __init__(
+        self,
+        frequencies: jnp.ndarray,
+        intensities: jnp.ndarray,
+        mask: jnp.ndarray,
+        total_intensity: jnp.ndarray,
+        num_lines: int,
+        chunk_size: int,
+        num_chunks: int,
+        profile_type: str = "voigt",
+    ) -> None:
+        self.frequencies = jnp.asarray(frequencies, dtype=jnp.float64)
+        self.intensities = jnp.asarray(intensities, dtype=jnp.float64)
+        self.mask = jnp.asarray(mask, dtype=jnp.bool_ if getattr(mask, "dtype", None) == jnp.bool_ else jnp.float64)
+        self.total_intensity = jnp.asarray(total_intensity, dtype=jnp.float64)
+        self.num_lines = int(num_lines)
+        self.chunk_size = int(chunk_size)
+        self.num_chunks = int(num_chunks)
+        self.profile_type = str(profile_type)
+
+    def tree_flatten(self) -> Tuple[Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray], Tuple[Any, ...]]:
+        children = (self.frequencies, self.intensities, self.mask, self.total_intensity)
+        aux_data = (self.num_lines, self.chunk_size, self.num_chunks, self.profile_type)
+        return children, aux_data
+
+    @classmethod
+    def tree_unflatten(cls, aux_data: Tuple[Any, ...], children: Tuple[jnp.ndarray, ...]) -> ConvolverPyTree:
+        frequencies, intensities, mask, total_intensity = children
+        num_lines, chunk_size, num_chunks, profile_type = aux_data
+        return cls(
+            frequencies=frequencies,
+            intensities=intensities,
+            mask=mask,
+            total_intensity=total_intensity,
+            num_lines=num_lines,
+            chunk_size=chunk_size,
+            num_chunks=num_chunks,
+            profile_type=profile_type,
+        )
+
+
+@jax.jit
+def _scan_step_masked_kernel(
+    grid: jnp.ndarray,
+    c_freqs: jnp.ndarray,
+    c_intensities: jnp.ndarray,
+    c_mask: jnp.ndarray,
+    c_sigma: jnp.ndarray,
+    c_gamma: jnp.ndarray,
+) -> jnp.ndarray:
+    """
+    Inner jax.lax.scan kernel executing static masked batching over frequency grid.
+
+    Parameters:
+        grid: Frequency domain grid array [N_freqs].
+        c_freqs: [num_chunks, chunk_size] line centers.
+        c_intensities: [num_chunks, chunk_size] line intensities.
+        c_mask: [num_chunks, chunk_size] boolean/float validity mask.
+        c_sigma: [num_chunks, chunk_size] Gaussian standard deviations.
+        c_gamma: [num_chunks, chunk_size] Lorentzian HWHMs.
+
+    Returns:
+        jnp.ndarray: Accumulated convolved spectrum [N_freqs].
+    """
+    chunk_data = (c_freqs, c_intensities, c_mask, c_sigma, c_gamma)
+
+    def scan_body(
+        accumulated_spectrum: jnp.ndarray,
+        chunk_tuple: Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
+    ) -> Tuple[jnp.ndarray, None]:
+        f_k, i_k, m_k, s_k, g_k = chunk_tuple
+        # delta_nu: (N_grid, chunk_size)
+        delta_nu = grid[:, None] - f_k[None, :]
+        profiles = true_voigt_profile(delta_nu, s_k, g_k)
+        effective_i = jnp.where(m_k, i_k, 0.0)
+        chunk_contrib = jnp.dot(profiles, effective_i)
+        next_accum = accumulated_spectrum + chunk_contrib
+        return next_accum, None
+
+    init_spectrum = jnp.zeros_like(grid, dtype=jnp.float64)
+    final_spectrum, _ = jax.lax.scan(scan_body, init_spectrum, chunk_data)
+    return final_spectrum
+
+
+def static_masked_scan(
+    lines: Union[SpectralLines, Tuple[Any, Any], jnp.ndarray, np.ndarray, Dict[str, Any]],
+    chunk_size: int = 10000,
+    freq_grid: Optional[Union[np.ndarray, jnp.ndarray, Sequence[float]]] = None,
+    sigma: Union[float, jnp.ndarray, np.ndarray] = 0.01,
+    gamma: Union[float, jnp.ndarray, np.ndarray] = 0.01,
+    profile_type: Union[ProfileType, str] = ProfileType.VOIGT,
+    cutoff_fwhm: float = 25.0,
+    grid_resolution: Optional[float] = None,
+    grid_points: Optional[int] = None,
+    grid_min: Optional[float] = None,
+    grid_max: Optional[float] = None,
+) -> ConvolverPyTree:
+    """
+    Static masked batching convolution engine via jax.lax.scan returning a pure ConvolverPyTree.
+
+    Pads spectral transition catalogs to fixed chunk multiples to ensure static XLA graph compilation,
+    applying a boolean/float validity mask so padded dummy elements contribute exactly 0.0 to the spectrum.
+
+    Parameters:
+        lines: Transition line catalog (SpectralLines model, (frequencies, intensities) tuple, array, or dict).
+        chunk_size: Static chunk size for micro-batching (default 10000).
+        freq_grid: Optional explicit frequency grid array.
+        sigma: Global or per-line Gaussian standard deviation (default 0.01).
+        gamma: Global or per-line Lorentzian HWHM (default 0.01).
+        profile_type: Profile shape function (default VOIGT).
+        cutoff_fwhm: Boundary margin in units of FWHM for automatic grid construction.
+        grid_resolution: Frequency grid spacing resolution.
+        grid_points: Number of points for frequency domain.
+        grid_min: Lower frequency bound.
+        grid_max: Upper frequency bound.
+
+    Returns:
+        ConvolverPyTree: Pure JAX PyTree holding frequencies, intensities, mask, and metadata.
+    """
+    if chunk_size <= 0:
+        raise MicroBatchError(f"chunk_size ({chunk_size}) must be strictly positive (> 0).")
+
+    # Extract frequencies and intensities from various input formats
+    if isinstance(lines, SpectralLines):
+        freqs_list = lines.frequencies
+        intensities_list = lines.intensities
+        sigma_in = lines.fwhm_gaussian_overrides if lines.fwhm_gaussian_overrides is not None else sigma
+        gamma_in = lines.fwhm_lorentzian_overrides if lines.fwhm_lorentzian_overrides is not None else gamma
+    elif isinstance(lines, tuple) and len(lines) == 2:
+        freqs_list, intensities_list = lines
+        sigma_in = sigma
+        gamma_in = gamma
+    elif isinstance(lines, dict):
+        freqs_list = lines["frequencies"]
+        intensities_list = lines.get("intensities", [1.0] * len(freqs_list))
+        sigma_in = lines.get("sigma", sigma)
+        gamma_in = lines.get("gamma", gamma)
+    else:
+        freqs_list = lines
+        intensities_list = jnp.ones_like(jnp.asarray(lines, dtype=jnp.float64))
+        sigma_in = sigma
+        gamma_in = gamma
+
+    freqs_arr = jnp.asarray(freqs_list, dtype=jnp.float64)
+    intensities_arr = jnp.asarray(intensities_list, dtype=jnp.float64)
+
+    n_lines = freqs_arr.shape[0]
+    if n_lines == 0:
+        raise SpectralDataError("Spectral lines catalog cannot be empty for static_masked_scan.")
+
+    # Validate finite positive frequencies
+    if jnp.any(~jnp.isfinite(freqs_arr)) or jnp.any(freqs_arr <= 0.0):
+        raise SpectralDataError("Transition frequencies must be finite and strictly positive (> 0).")
+
+    sigma_arr = jnp.asarray(sigma_in, dtype=jnp.float64)
+    gamma_arr = jnp.asarray(gamma_in, dtype=jnp.float64)
+
+    # 1. Construct frequency grid if not supplied
+    if freq_grid is not None:
+        grid_jax = jnp.asarray(freq_grid, dtype=jnp.float64)
+        if grid_jax.ndim != 1 or grid_jax.shape[0] < 2:
+            raise InvalidGridError("User-supplied freq_grid must be 1D with at least 2 points.")
+    else:
+        min_f = float(jnp.min(freqs_arr))
+        max_f = float(jnp.max(freqs_arr))
+        eff_fwhm = float(max(float(jnp.max(sigma_arr)) * 2.354820045, float(jnp.max(gamma_arr)) * 2.0))
+        margin = cutoff_fwhm * eff_fwhm
+        g_min = grid_min if grid_min is not None else (min_f - margin)
+        g_max = grid_max if grid_max is not None else (max_f + margin)
+        if g_min >= g_max:
+            raise InvalidGridError(f"Grid minimum ({g_min}) must be strictly less than grid maximum ({g_max}).")
+        if grid_points is not None:
+            n_pts = grid_points
+        elif grid_resolution is not None:
+            n_pts = max(2, int(math.ceil((g_max - g_min) / grid_resolution)) + 1)
+        else:
+            n_pts = max(100, int(math.ceil((g_max - g_min) / (eff_fwhm / 10.0))) + 1)
+        grid_jax = jnp.linspace(g_min, g_max, n_pts, dtype=jnp.float64)
+
+    # 2. Static padding & chunking
+    num_chunks = int(math.ceil(n_lines / chunk_size))
+    padded_len = num_chunks * chunk_size
+    pad_len = padded_len - n_lines
+
+    padded_freqs = jnp.pad(freqs_arr, (0, pad_len), constant_values=freqs_arr[-1])
+    padded_intensities = jnp.pad(intensities_arr, (0, pad_len), constant_values=0.0)
+
+    if sigma_arr.ndim == 1 and sigma_arr.shape[0] == n_lines:
+        padded_sigma = jnp.pad(sigma_arr, (0, pad_len), constant_values=sigma_arr[-1])
+    else:
+        padded_sigma = jnp.full((padded_len,), sigma_arr, dtype=jnp.float64)
+
+    if gamma_arr.ndim == 1 and gamma_arr.shape[0] == n_lines:
+        padded_gamma = jnp.pad(gamma_arr, (0, pad_len), constant_values=gamma_arr[-1])
+    else:
+        padded_gamma = jnp.full((padded_len,), gamma_arr, dtype=jnp.float64)
+
+    mask = jnp.arange(padded_len) < n_lines
+
+    chunked_freqs = padded_freqs.reshape((num_chunks, chunk_size))
+    chunked_intensities = padded_intensities.reshape((num_chunks, chunk_size))
+    chunked_sigma = padded_sigma.reshape((num_chunks, chunk_size))
+    chunked_gamma = padded_gamma.reshape((num_chunks, chunk_size))
+    chunked_mask = mask.reshape((num_chunks, chunk_size))
+
+    # 3. Execute static masked scan
+    final_spectrum = _scan_step_masked_kernel(
+        grid=grid_jax,
+        c_freqs=chunked_freqs,
+        c_intensities=chunked_intensities,
+        c_mask=chunked_mask,
+        c_sigma=chunked_sigma,
+        c_gamma=chunked_gamma,
+    )
+
+    total_intensity = jnp.trapezoid(final_spectrum, grid_jax)
+
+    p_str = str(profile_type).lower().replace("profiletype.", "")
+
+    return ConvolverPyTree(
+        frequencies=grid_jax,
+        intensities=final_spectrum,
+        mask=mask,
+        total_intensity=total_intensity,
+        num_lines=n_lines,
+        chunk_size=chunk_size,
+        num_chunks=num_chunks,
+        profile_type=p_str,
+    )
 
 
 # =============================================================================
@@ -1243,7 +1591,7 @@ __all__ = [
     "MicroBatchError",
     "InvalidGridError",
     "SpectralDataError",
-    # Enums & Models
+    # Enums & Models & PyTrees
     "ProfileType",
     "EnergyUnit",
     "SpectralLines",
@@ -1251,19 +1599,24 @@ __all__ = [
     "PartitionGridConfig",
     "PartitionGridResult",
     "ConvolvedSpectrumResult",
+    "ConvolverPyTree",
     # JAX Kernels
     "faddeeva_rational_jax",
     "gaussian_kernel_jax",
     "lorentzian_kernel_jax",
     "pseudo_voigt_kernel_jax",
     "faddeeva_voigt_kernel_jax",
+    "true_voigt_profile",
     "evaluate_profile_kernel_jax",
     "evaluate_partition_function_jax",
     "compute_boltzmann_scaling_grid_jax",
+    "convolute_multi_temperature",
     "convolve_frequency_chunks_scan_1d_jax",
     "convolve_frequency_chunks_scan_2d_jax",
     "convolve_line_chunks_scan_1d_jax",
     "convolve_spectrum_monolithic_jax",
+    "_scan_step_masked_kernel",
+    "static_masked_scan",
     # High-level Utilities & Engine
     "get_energy_conversion_factor_to_kelvin",
     "get_profile_type_code",

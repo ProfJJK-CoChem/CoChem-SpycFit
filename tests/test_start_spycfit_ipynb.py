@@ -54,7 +54,12 @@ class TestLaunchDashboardFunction:
 
     def test_launch_dashboard_default(self) -> None:
         """Verifies launch_dashboard runs with authentic defaults and returns a valid VBox widget."""
-        widget = launch_dashboard(display_in_notebook=False)
+        base_state = WhatIfParameterState(A_mhz=127484.0, B_mhz=24685.0, C_mhz=23769.0, temperature_k=296.0)
+        spectrum_engine = WhatIfSpectrumEngine(base_peaks=[], base_state=base_state)
+        exp_peaks = [SpectralPeak(peak_id="EXP_H2O_01", frequency=22235.08, intensity=1.85, uncertainty=0.01, quantum_label="6_1,6 -> 5_2,3")]
+        theo_peaks = [SpectralPeak(peak_id="THEO_H2O_01", frequency=22235.10, intensity=1.80, uncertainty=0.01, quantum_label="6_1,6 -> 5_2,3")]
+        manager = HITLAssignmentManager(exp_peaks=exp_peaks, theo_peaks=theo_peaks)
+        widget = launch_dashboard(display_in_notebook=False, spectrum_engine=spectrum_engine, manager=manager)
         assert isinstance(widget, widgets.VBox)
         assert len(widget.children) >= 3
         # First child is controls_box (VBox)
@@ -104,7 +109,9 @@ class TestLaunchDashboardFunction:
         manager = HITLAssignmentManager(exp_peaks=exp_peaks, theo_peaks=theo_peaks)
         cfg = DashboardConfig(title="Custom Water Spectrum HITL", theme="plotly_white", use_webgl=False)
 
-        widget = launch_dashboard(manager=manager, config=cfg, display_in_notebook=False)
+        base_state = WhatIfParameterState(A_mhz=127484.0, B_mhz=24685.0, C_mhz=23769.0, temperature_k=296.0)
+        spectrum_engine = WhatIfSpectrumEngine(base_peaks=[], base_state=base_state)
+        widget = launch_dashboard(manager=manager, config=cfg, display_in_notebook=False, spectrum_engine=spectrum_engine)
         assert isinstance(widget, widgets.VBox)
         assert len(widget.children) == 3
 

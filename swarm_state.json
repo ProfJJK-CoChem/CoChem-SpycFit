@@ -20,15 +20,15 @@
     },
     {
       "agent": "cochem-audit",
-      "conversation_id": "4b0cd886-9f06-4188-8eb6-0a184ad758ec",
+      "conversation_id": "98ef53de-ebaa-428f-ba9a-ea5718fa2016",
       "status": "SUCCESS",
       "verdict": "PASSED QA Standards & Compliance: 0 pass statements, 0 test doubles, JAX FP64 precision, pure PyTree operations, full Pydantic v2 schemas, Method Matrix DLPNO prohibition compliance, and 15/15 tests passing."
     },
     {
       "agent": "adversary",
-      "conversation_id": "a712be00-49c6-440d-a331-0a71a510d389",
+      "conversation_id": "f94fbd2a-5761-4fb6-aea2-7f39e6976da3",
       "status": "SUCCESS",
-      "verdict": "PASSED Adversarial Verification: 0 mocks/stubs, exact analytical agreement on D-optimality (Shannon log-det reduction) and A-optimality (trace variance reduction), exact Sherman-Morrison precision matrix inverse verification, and full Method Matrix adherence."
+      "verdict": "PASSED Adversarial Verification: 0 mocks/stubs, exact analytical agreement on D-optimality (Shannon log-det reduction) and A-optimality (trace variance reduction), exact Sherman-Morrison precision matrix inverse verification (<3.3e-13 deviation across 100 trials), and full Method Matrix adherence."
     }
   ],
   "verification": {
