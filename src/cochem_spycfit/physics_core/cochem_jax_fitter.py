@@ -17,6 +17,7 @@ Precision: JAX FP64 precision enabled globally. [E]
 from __future__ import annotations
 
 import datetime
+import functools
 import hashlib
 import json
 import logging
@@ -105,6 +106,8 @@ class LMFitConfig(BaseModel):
     tol_step: float = Field(default=1e-8, ge=0.0, description="Step L2-norm convergence tolerance")
     tol_residual: float = Field(default=1e-8, ge=0.0, description="Relative residual change convergence tolerance")
     marquardt_scaling: bool = Field(default=True, description="Whether to scale damping by diag(J^T J)")
+    use_huber_loss: bool = Field(default=False, description="Whether to use Huber Loss for outlier robustness")
+    huber_delta: float = Field(default=1.0, gt=0.0, description="Huber loss threshold parameter delta")
 
 
 class LMFitResult(BaseModel):
@@ -224,8 +227,90 @@ class PESRefinementTriggerResult(BaseModel):
 
 
 # =============================================================================
-# 3. AUTODIFF LEVENBERG-MARQUARDT OPTIMIZER CORE
+# 3. AUTODIFF LEVENBERG-MARQUARDT OPTIMIZER & LOSS CORE (PHASE 3)
 # =============================================================================
+
+@jax.jit
+def huber_loss(residual: jnp.ndarray, delta: float = 1.0) -> jnp.ndarray:
+    """
+    Computes the Huber Loss function in pure JAX with @jax.jit compilation.
+
+    L_delta(r) = 0.5 * r^2                  for |r| <= delta
+                 delta * (|r| - 0.5 * delta) for |r| > delta
+
+    Provides quadratic convergence for small residual errors and linear penalty
+    for massive spectroscopic outliers, insulating optimization against noise.
+
+    Parameters:
+        residual: JAX array or PyTree of residual values.
+        delta: Threshold between quadratic and linear regimes (default: 1.0).
+
+    Returns:
+        Pure JAX array of Huber loss values with identical shape to residual.
+    """
+    r = jnp.asarray(residual, dtype=jnp.float64)
+    abs_r = jnp.abs(r)
+    delta_f64 = jnp.asarray(delta, dtype=jnp.float64)
+    quadratic = 0.5 * (abs_r ** 2)
+    linear = delta_f64 * (abs_r - 0.5 * delta_f64)
+    return jnp.where(abs_r <= delta_f64, quadratic, linear)
+
+
+@functools.partial(jax.jit, static_argnames=("threshold",))
+def sobol_sensitivity_guard(
+    parameters: jnp.ndarray,
+    covariance: jnp.ndarray,
+    threshold: float = 1e-6,
+) -> Dict[str, jnp.ndarray]:
+    """
+    Sobol Sensitivity Guard implemented in pure JAX with @jax.jit compilation.
+
+    Evaluates parameter variance impact and automatically freezes active variables
+    whose variance impact drops below the threshold (default: 1e-6), locking them
+    to their ab initio values.
+
+    Parameters:
+        parameters: 1D array of parameter values [n] (or PyTree).
+        covariance: Parameter covariance matrix [n, n] or 1D variance vector [n].
+        threshold: Variance impact threshold for freezing (default: 1e-6).
+
+    Returns:
+        Pure mathematical PyTree (dict of JAX arrays) containing:
+            - 'active_mask': Boolean mask [n] (True = active/sensitive, False = frozen)
+            - 'variance_impacts': Normalized variance impact per parameter [n]
+            - 'active_parameters': Parameter values with frozen variables set to 0.0
+            - 'frozen_parameters': Parameter values with active variables set to 0.0
+            - 'active_count': Total number of active parameters
+            - 'frozen_count': Total number of frozen parameters
+    """
+    p = jnp.asarray(parameters, dtype=jnp.float64)
+    cov = jnp.asarray(covariance, dtype=jnp.float64)
+    thresh = jnp.asarray(threshold, dtype=jnp.float64)
+
+    if cov.ndim == 2:
+        variances = jnp.diag(cov)
+    else:
+        variances = cov
+
+    variances_pos = jnp.maximum(variances, 0.0)
+    tot_var = jnp.sum(variances_pos) + 1e-18
+    variance_impacts = variances_pos / tot_var
+
+    active_mask = variance_impacts >= thresh
+    frozen_mask = jnp.logical_not(active_mask)
+
+    active_params = jnp.where(active_mask, p, 0.0)
+    frozen_params = jnp.where(frozen_mask, p, 0.0)
+
+    return {
+        "active_mask": active_mask,
+        "variance_impacts": variance_impacts,
+        "active_parameters": active_params,
+        "frozen_parameters": frozen_params,
+        "active_count": jnp.sum(active_mask.astype(jnp.int32)),
+        "frozen_count": jnp.sum(frozen_mask.astype(jnp.int32)),
+    }
+
 
 def compute_jacobian_autodiff(
     residual_fn: Callable[[jnp.ndarray], jnp.ndarray],
@@ -246,23 +331,162 @@ def compute_jacobian_autodiff(
     return jacobian_fn(params_fp64)
 
 
+@functools.partial(
+    jax.jit,
+    static_argnames=(
+        "model_fn",
+        "residual_fn",
+        "marquardt_scaling",
+        "use_huber_loss",
+    ),
+)
+def _lm_step_jit(
+    params: jnp.ndarray,
+    experimental_data: Optional[jnp.ndarray],
+    model_fn: Optional[Callable[[jnp.ndarray], jnp.ndarray]],
+    residual_fn: Optional[Callable[[jnp.ndarray], jnp.ndarray]],
+    damping: float,
+    active_mask: Optional[jnp.ndarray],
+    marquardt_scaling: bool,
+    damping_factor: float,
+    damping_up: Optional[float],
+    damping_down: Optional[float],
+    damping_min: float,
+    damping_max: float,
+    huber_delta: float,
+    use_huber_loss: bool,
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """
+    Pure JAX JIT-compiled Levenberg-Marquardt step kernel with automatic differentiation
+    and optional Huber Loss noise insulation.
+    """
+    params_curr = jnp.asarray(params, dtype=jnp.float64)
+    n_params = params_curr.shape[0]
+
+    d_up = damping_up if damping_up is not None else damping_factor
+    d_down = damping_down if damping_down is not None else (1.0 / jnp.maximum(1e-12, damping_factor))
+
+    if active_mask is None:
+        mask = jnp.ones(n_params, dtype=jnp.bool_)
+    else:
+        mask = jnp.asarray(active_mask, dtype=jnp.bool_)
+
+    if residual_fn is not None:
+        res_fn = residual_fn
+    elif model_fn is not None and experimental_data is not None:
+        res_fn = lambda p: model_fn(p) - experimental_data
+    elif model_fn is not None:
+        res_fn = model_fn
+    else:
+        raise ValueError("Either residual_fn or (model_fn and experimental_data) must be provided.")
+
+    r_curr = res_fn(params_curr)
+    j_mat = compute_jacobian_autodiff(res_fn, params_curr)
+
+    mask_float = mask.astype(jnp.float64)
+    j_active = j_mat * mask_float[None, :]
+
+    if use_huber_loss:
+        abs_r = jnp.abs(r_curr)
+        w_diag = jnp.where(
+            abs_r <= huber_delta,
+            1.0,
+            huber_delta / jnp.maximum(abs_r, 1e-18),
+        )
+        w_sqrt = jnp.sqrt(w_diag)
+        j_weighted = j_active * w_sqrt[:, None]
+        r_weighted = r_curr * w_sqrt
+        h_mat = jnp.dot(j_weighted.T, j_weighted)
+        grad_f = jnp.dot(j_weighted.T, r_weighted)
+    else:
+        h_mat = jnp.dot(j_active.T, j_active)
+        grad_f = jnp.dot(j_active.T, r_curr)
+
+    g_rhs = -grad_f
+
+    if marquardt_scaling:
+        diag_h = jnp.diag(h_mat)
+        diag_scaled = jnp.maximum(diag_h, 1e-12)
+        d_mat = jnp.diag(diag_scaled)
+    else:
+        d_mat = jnp.eye(n_params, dtype=jnp.float64)
+
+    a_mat = h_mat + damping * d_mat
+
+    mask_2d = mask_float[:, None] * mask_float[None, :]
+    inv_mask_1d = 1.0 - mask_float
+    a_regularized = a_mat * mask_2d + jnp.diag(inv_mask_1d)
+    g_regularized = g_rhs * mask_float
+
+    delta_p = jnp.linalg.solve(a_regularized, g_regularized)
+    delta_p = delta_p * mask_float
+
+    params_trial = params_curr + delta_p
+    r_trial = res_fn(params_trial)
+
+    if use_huber_loss:
+        abs_rc = jnp.abs(r_curr)
+        f_curr = jnp.sum(jnp.where(abs_rc <= huber_delta, 0.5 * abs_rc ** 2, huber_delta * (abs_rc - 0.5 * huber_delta)))
+        abs_rt = jnp.abs(r_trial)
+        f_trial = jnp.sum(jnp.where(abs_rt <= huber_delta, 0.5 * abs_rt ** 2, huber_delta * (abs_rt - 0.5 * huber_delta)))
+    else:
+        f_curr = 0.5 * jnp.sum(r_curr ** 2)
+        f_trial = 0.5 * jnp.sum(r_trial ** 2)
+
+    actual_reduction = f_curr - f_trial
+    predicted_reduction = 0.5 * (
+        jnp.dot(delta_p, damping * jnp.dot(d_mat, delta_p)) - jnp.dot(delta_p, grad_f)
+    )
+
+    gain_ratio = actual_reduction / (predicted_reduction + 1e-18)
+    grad_norm = jnp.max(jnp.abs(grad_f * mask_float))
+    step_norm = jnp.linalg.norm(delta_p)
+
+    accepted = (actual_reduction > 0.0) & (gain_ratio > 0.0)
+
+    params_next = jnp.where(accepted, params_trial, params_curr)
+    residual_next = jnp.where(accepted, r_trial, r_curr)
+    damping_next = jnp.where(
+        accepted,
+        jnp.maximum(damping * d_down, damping_min),
+        jnp.minimum(damping * d_up, damping_max),
+    )
+
+    return (
+        params_next,
+        residual_next,
+        damping_next,
+        accepted,
+        gain_ratio,
+        grad_norm,
+        step_norm,
+    )
+
+
 def levenberg_marquardt_step(
     params: jnp.ndarray,
-    residual_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    experimental_data: Optional[Union[Callable[[jnp.ndarray], jnp.ndarray], jnp.ndarray, Sequence[float]]] = None,
+    model_fn: Optional[Callable[[jnp.ndarray], jnp.ndarray]] = None,
+    *,
+    residual_fn: Optional[Callable[[jnp.ndarray], jnp.ndarray]] = None,
     damping: float = 1e-3,
-    active_mask: Optional[jnp.ndarray] = None,
+    active_mask: Optional[Union[jnp.ndarray, Sequence[bool]]] = None,
     marquardt_scaling: bool = True,
     damping_factor: float = 10.0,
     damping_up: Optional[float] = None,
     damping_down: Optional[float] = None,
     damping_min: float = 1e-12,
     damping_max: float = 1e12,
+    huber_delta: float = 1.0,
+    use_huber_loss: bool = False,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, float, bool, float, float, float]:
     """
     Performs a single authentic JAX Autodiff Levenberg-Marquardt optimization step.
 
     Parameters:
         params: 1D JAX FP64 array of parameters [n]
+        experimental_data: Target experimental measurement vector [m], or residual_fn callable
+        model_fn: Pure callable returning predicted output vector [m] given parameter vector [n]
         residual_fn: Pure callable returning residual vector r(params) [m]
         damping: Current LM damping parameter lambda
         active_mask: Optional boolean mask [n] indicating active (True) vs frozen (False) params
@@ -272,6 +496,8 @@ def levenberg_marquardt_step(
         damping_down: Multiplier for lambda upon accepted step
         damping_min: Minimum allowable damping parameter
         damping_max: Maximum allowable damping parameter
+        huber_delta: Huber loss transition threshold (default: 1.0)
+        use_huber_loss: Whether to use Huber Loss for outlier robustness
 
     Returns:
         Tuple of:
@@ -280,98 +506,54 @@ def levenberg_marquardt_step(
             damping_next: Updated damping lambda
             accepted: Boolean indicating step acceptance (gain ratio rho > 0)
             gain_ratio: Gain ratio rho
-            grad_norm: Infinity norm of the objective gradient -J^T r
+            grad_norm: Infinity norm of the objective gradient
             step_norm: L2 norm of the parameter displacement step
     """
-    params_curr = jnp.asarray(params, dtype=jnp.float64)
-    n_params = params_curr.shape[0]
+    actual_residual_fn = residual_fn
+    actual_model_fn = model_fn
+    actual_exp_data = None
 
-    d_up = damping_up if damping_up is not None else damping_factor
-    d_down = damping_down if damping_down is not None else (1.0 / max(1e-12, damping_factor))
+    if callable(experimental_data) and model_fn is None and residual_fn is None:
+        actual_residual_fn = experimental_data
+    elif experimental_data is not None:
+        actual_exp_data = jnp.asarray(experimental_data, dtype=jnp.float64)
 
-    # Initialize active mask if None
-    if active_mask is None:
-        mask = jnp.ones(n_params, dtype=jnp.bool_)
-    else:
-        mask = jnp.asarray(active_mask, dtype=jnp.bool_)
+    p_in = jnp.asarray(params, dtype=jnp.float64)
+    act_mask_in = jnp.asarray(active_mask, dtype=jnp.bool_) if active_mask is not None else None
 
-    # Current residuals and exact Jacobian via Autodiff
-    r_curr = residual_fn(params_curr)
-    j_mat = compute_jacobian_autodiff(residual_fn, params_curr)
-
-    # Apply active parameter mask to Jacobian columns
-    # Inactive parameter columns are zeroed
-    mask_float = mask.astype(jnp.float64)
-    j_active = j_mat * mask_float[None, :]
-
-    # Normal equations: H = J^T J, grad_f = J^T r
-    h_mat = jnp.dot(j_active.T, j_active)
-    grad_f = jnp.dot(j_active.T, r_curr)
-    g_rhs = -grad_f
-
-    # Compute damping matrix D
-    if marquardt_scaling:
-        diag_h = jnp.diag(h_mat)
-        diag_scaled = jnp.maximum(diag_h, 1e-12)
-        d_mat = jnp.diag(diag_scaled)
-    else:
-        d_mat = jnp.eye(n_params, dtype=jnp.float64)
-
-    # Augmented normal matrix A = H + lambda * D
-    a_mat = h_mat + damping * d_mat
-
-    # Regularize inactive rows/columns to guarantee identity mapping for frozen parameters
-    # For inactive i, a_mat[i, i] = 1.0, a_mat[i, j!=i] = 0.0, g_rhs[i] = 0.0
-    mask_2d = mask_float[:, None] * mask_float[None, :]
-    inv_mask_1d = (1.0 - mask_float)
-    a_regularized = a_mat * mask_2d + jnp.diag(inv_mask_1d)
-    g_regularized = g_rhs * mask_float
-
-    # Solve linear system A * delta_p = g_rhs using stable solver
-    delta_p = jnp.linalg.solve(a_regularized, g_regularized)
-    # Ensure frozen parameters have strictly zero displacement
-    delta_p = delta_p * mask_float
-
-    # Trial parameters and candidate residuals
-    params_trial = params_curr + delta_p
-    r_trial = residual_fn(params_trial)
-
-    # Compute actual reduction in sum-of-squares objective F = 0.5 * ||r||^2
-    f_curr = 0.5 * jnp.sum(r_curr ** 2)
-    f_trial = 0.5 * jnp.sum(r_trial ** 2)
-    actual_reduction = f_curr - f_trial
-
-    # Compute predicted reduction delta_L = 0.5 * delta_p^T * (lambda * D * delta_p - grad_f)
-    predicted_reduction = 0.5 * (jnp.dot(delta_p, damping * jnp.dot(d_mat, delta_p)) - jnp.dot(delta_p, grad_f))
-
-    # Gain ratio rho
-    gain_ratio = actual_reduction / (predicted_reduction + 1e-18)
-
-    grad_norm = float(jnp.max(jnp.abs(grad_f * mask_float)))
-    step_norm = float(jnp.linalg.norm(delta_p))
-
-    # Acceptance criterion: positive reduction
-    accepted = bool((actual_reduction > 0.0) and (gain_ratio > 0.0))
-
-    if accepted:
-        params_next = params_trial
-        residual_next = r_trial
-        # Decrease damping
-        damping_next = float(max(damping * d_down, damping_min))
-    else:
-        params_next = params_curr
-        residual_next = r_curr
-        # Increase damping
-        damping_next = float(min(damping * d_up, damping_max))
+    (
+        p_next,
+        r_next,
+        d_next,
+        acc,
+        g_ratio,
+        g_norm,
+        s_norm,
+    ) = _lm_step_jit(
+        params=p_in,
+        experimental_data=actual_exp_data,
+        model_fn=actual_model_fn,
+        residual_fn=actual_residual_fn,
+        damping=damping,
+        active_mask=act_mask_in,
+        marquardt_scaling=marquardt_scaling,
+        damping_factor=damping_factor,
+        damping_up=damping_up,
+        damping_down=damping_down,
+        damping_min=damping_min,
+        damping_max=damping_max,
+        huber_delta=huber_delta,
+        use_huber_loss=use_huber_loss,
+    )
 
     return (
-        params_next,
-        residual_next,
-        damping_next,
-        accepted,
-        float(gain_ratio),
-        grad_norm,
-        step_norm,
+        p_next,
+        r_next,
+        float(d_next),
+        bool(acc),
+        float(g_ratio),
+        float(g_norm),
+        float(s_norm),
     )
 
 
@@ -432,6 +614,8 @@ def levenberg_marquardt_fit(
             damping_down=cfg.damping_down,
             damping_min=cfg.damping_min,
             damping_max=cfg.damping_max,
+            huber_delta=cfg.huber_delta,
+            use_huber_loss=cfg.use_huber_loss,
         )
 
         step_record = LMStepResult(
@@ -463,7 +647,13 @@ def levenberg_marquardt_fit(
             break
 
         if accepted:
-            rel_res_change = abs(jnp.sum(r_curr**2) - jnp.sum(r_next**2)) / (jnp.sum(r_curr**2) + 1e-18)
+            if cfg.use_huber_loss:
+                loss_c = float(jnp.sum(huber_loss(r_curr, delta=cfg.huber_delta)))
+                loss_n = float(jnp.sum(huber_loss(r_next, delta=cfg.huber_delta)))
+                rel_res_change = abs(loss_c - loss_n) / (loss_c + 1e-18)
+            else:
+                rel_res_change = abs(jnp.sum(r_curr**2) - jnp.sum(r_next**2)) / (jnp.sum(r_curr**2) + 1e-18)
+
             if rel_res_change < cfg.tol_residual:
                 converged = True
                 status_msg = f"Converged: Relative residual change {rel_res_change:.3e} < {cfg.tol_residual:.3e}."

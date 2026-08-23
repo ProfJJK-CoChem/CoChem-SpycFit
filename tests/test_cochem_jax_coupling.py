@@ -83,6 +83,7 @@ def test_vibrational_state_pydantic_validation() -> None:
     assert state.state_index == 0
     assert state.label == "nu1"
     assert math.isclose(state.vibrational_energy_cm1, 1000.0, abs_tol=1e-8)
+    assert state.vibrational_energy_mhz is not None
     assert math.isclose(state.vibrational_energy_mhz, 1000.0 * CM1_TO_MHZ, abs_tol=1e-4)
     assert state.quanta == [1, 0, 0]
     assert state.symmetry == "A1"
@@ -112,6 +113,7 @@ def test_fermi_coupling_parameter_validation() -> None:
     assert param.state_i == 0
     assert param.state_j == 1
     assert math.isclose(param.w_fermi_cm1, 45.0, abs_tol=1e-8)
+    assert param.w_fermi_mhz is not None
     assert math.isclose(param.w_fermi_mhz, 45.0 * CM1_TO_MHZ, abs_tol=1e-4)
     assert math.isclose(param.w_j_mhz, 0.05, abs_tol=1e-8)
     assert math.isclose(param.w_k_mhz, 0.10, abs_tol=1e-8)
@@ -143,6 +145,7 @@ def test_darling_dennison_parameter_validation() -> None:
     assert param.state_i == 0
     assert param.state_j == 1
     assert math.isclose(param.gamma_cm1, -12.5, abs_tol=1e-8)
+    assert param.gamma_mhz is not None
     assert math.isclose(param.gamma_mhz, -12.5 * CM1_TO_MHZ, abs_tol=1e-4)
 
 
@@ -608,6 +611,96 @@ def test_extractor_resonance_report_bridge() -> None:
     assert polyad_block.total_dim == 6
 
 
+def test_polyad_darling_dennison_coupling() -> None:
+    """Verifies polyad block construction with Darling-Dennison anharmonic resonance."""
+    wc1 = WatsonConstants(A=290000.0, B=60000.0, C=48000.0)
+    wc2 = WatsonConstants(A=285000.0, B=59500.0, C=47800.0)
+
+    s1 = VibrationalState(state_index=0, label="2nu1", vibrational_energy_cm1=3000.0, watson_constants=wc1)
+    s2 = VibrationalState(state_index=1, label="2nu3", vibrational_energy_cm1=3050.0, watson_constants=wc2)
+
+    config = PolyadCouplingConfig(
+        states=[s1, s2],
+        darling_dennison_couplings=[DarlingDennisonParam(state_i=0, state_j=1, gamma_cm1=-15.0)],
+    )
+
+    block = construct_polyad_block(config, J=1)
+    assert block.num_states == 2
+    assert block.total_dim == 6
+
+    # Diagonalize and verify eigensystem
+    eigensystem = diagonalize_polyad_block(block)
+    assert eigensystem.eigenvalues_cm1.shape == (6,)
+    assert eigensystem.state_mixing_weights.shape == (6, 2)
+
+
+def test_polyad_watson_s_reduction() -> None:
+    """Verifies polyad block construction using Watson S-reduction Hamiltonian."""
+    wc1 = WatsonConstants(A=180000.0, B=45000.0, C=36000.0, d1=-0.002, d2=-0.0005)
+    wc2 = WatsonConstants(A=178000.0, B=44800.0, C=35800.0, d1=-0.002, d2=-0.0005)
+
+    s1 = VibrationalState(state_index=0, label="v1", vibrational_energy_cm1=1200.0, watson_constants=wc1)
+    s2 = VibrationalState(state_index=1, label="v2", vibrational_energy_cm1=1210.0, watson_constants=wc2)
+
+    config = PolyadCouplingConfig(
+        states=[s1, s2],
+        fermi_couplings=[FermiCouplingParam(state_i=0, state_j=1, w_fermi_cm1=10.0)],
+        reduction="S",
+    )
+
+    block = construct_polyad_block(config, J=2)
+    assert block.total_dim == 10
+    assert block.reduction == "S"
+
+    eigensystem = diagonalize_polyad_block(block)
+    assert eigensystem.eigenvalues_cm1.shape == (10,)
+
+
+def test_compute_polyad_transition_dipoles_2d_and_3d() -> None:
+    """Verifies intensity-borrowing perturbed transition dipole projection for 2D and 3D tensors."""
+    wc = WatsonConstants(A=100000.0, B=50000.0, C=25000.0)
+    s0 = VibrationalState(state_index=0, label="v0", vibrational_energy_cm1=1000.0, watson_constants=wc)
+    s1 = VibrationalState(state_index=1, label="v1", vibrational_energy_cm1=1020.0, watson_constants=wc)
+
+    config = PolyadCouplingConfig(
+        states=[s0, s1],
+        fermi_couplings=[FermiCouplingParam(state_i=0, state_j=1, w_fermi_cm1=15.0)],
+    )
+
+    block = construct_polyad_block(config, J=0)
+    eigensystem = diagonalize_polyad_block(block)
+
+    # 2D scalar transition dipoles
+    dip_2d = jnp.array([[1.0, 0.0], [0.0, 0.1]], dtype=jnp.float64)
+    res_2d = compute_polyad_transition_dipoles(eigensystem, eigensystem, dip_2d)
+    assert res_2d.shape == (2, 2)
+
+    # 3D vector transition dipoles (x, y, z components)
+    dip_3d = jnp.ones((2, 2, 3), dtype=jnp.float64)
+    res_3d = compute_polyad_transition_dipoles(eigensystem, eigensystem, dip_3d)
+    assert res_3d.shape == (2, 2, 3)
+
+
+def test_complex_coriolis_dlpack_roundtrip() -> None:
+    """Verifies zero-copy DLPack extraction and reconstruction of complex Coriolis Hamiltonian."""
+    wc1 = WatsonConstants(A=100000.0, B=50000.0, C=25000.0)
+    wc2 = WatsonConstants(A=100000.0, B=50000.0, C=25000.0)
+
+    s1 = VibrationalState(state_index=0, label="v1", vibrational_energy_cm1=1000.0, watson_constants=wc1)
+    s2 = VibrationalState(state_index=1, label="v2", vibrational_energy_cm1=1020.0, watson_constants=wc2)
+
+    config = PolyadCouplingConfig(
+        states=[s1, s2],
+        coriolis_couplings=[CoriolisCouplingParam(state_i=0, state_j=1, zeta_z=0.5, xi_z_mhz=5000.0)],
+    )
+
+    block = construct_polyad_block(config, J=1)
+    payload = extract_pytree_dlpack(block)
+    restored = import_pytree_dlpack(payload, block)
+
+    assert jnp.allclose(block.hamiltonian_matrix, restored.hamiltonian_matrix)
+
+
 # =============================================================================
 # 8. MENDELEEV & ZERO-MOCK COMPLIANCE VERIFICATION
 # =============================================================================
@@ -647,3 +740,21 @@ def test_anti_spoofing_no_pass_and_no_mock() -> None:
         elif isinstance(node, ast.Name):
             for b in banned:
                 assert b not in node.id.lower(), f"Banned token '{b}' in variable name: {node.id}"
+
+
+# =============================================================================
+# 9. RUNTIME TYPE HINTS & INTROSPECTION COMPLIANCE
+# =============================================================================
+
+def test_get_type_hints_compliance() -> None:
+    """Verifies that typing.get_type_hints succeeds without NameError across all module functions."""
+    import typing
+    import cochem_spycfit.physics_core.cochem_jax_coupling as mod
+
+    for name, obj in inspect.getmembers(mod, inspect.isfunction):
+        if obj.__module__ == mod.__name__:
+            hints = typing.get_type_hints(obj)
+            assert isinstance(hints, dict)
+
+
+

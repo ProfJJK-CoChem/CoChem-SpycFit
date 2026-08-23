@@ -50,8 +50,10 @@ from cochem_spycfit.physics_core.cochem_jax_fitter import (
     check_pes_refinement_trigger,
     compute_jacobian_autodiff,
     evaluate_sobol_sensitivity,
+    huber_loss,
     levenberg_marquardt_fit,
     levenberg_marquardt_step,
+    sobol_sensitivity_guard,
 )
 
 # Enable JAX FP64 precision
@@ -512,3 +514,163 @@ def test_air_gapped_transport_tamper_detection(tmp_path: Path) -> None:
     # Attempt import: should fail with TransportError
     with pytest.raises(TransportError, match="SHA-256 Checksum Mismatch"):
         AirGappedTransportSpool.import_payload(spool_path)
+
+
+# =============================================================================
+# 5. PHASE 3 EXTENSIONS: HUBER LOSS, SOBOL SENSITIVITY GUARD, JIT LM TESTS
+# =============================================================================
+
+def test_huber_loss_jit_and_mathematics() -> None:
+    """Verifies @jax.jit Huber Loss implementation across quadratic and linear regimes."""
+    # 1. Quadratic regime: |r| <= delta
+    delta = 1.5
+    small_r = jnp.array([0.0, 0.5, -0.75, 1.5], dtype=jnp.float64)
+    expected_quad = 0.5 * (small_r ** 2)
+    computed_quad = huber_loss(small_r, delta=delta)
+    diff_quad = float(jnp.max(jnp.abs(computed_quad - expected_quad)))
+    assert diff_quad < 1e-12, f"Quadratic regime deviation: {diff_quad}"
+
+    # 2. Linear regime: |r| > delta
+    large_r = jnp.array([2.0, -3.5, 10.0, -100.0], dtype=jnp.float64)
+    expected_lin = delta * (jnp.abs(large_r) - 0.5 * delta)
+    computed_lin = huber_loss(large_r, delta=delta)
+    diff_lin = float(jnp.max(jnp.abs(computed_lin - expected_lin)))
+    assert diff_lin < 1e-12, f"Linear regime deviation: {diff_lin}"
+
+    # 3. Differentiability via JAX Autodiff
+    # d/dr Huber(r) = r for |r| <= delta, delta * sgn(r) for |r| > delta
+    grad_huber_fn = jax.grad(lambda r: jnp.sum(huber_loss(r, delta=delta)))
+    test_vec = jnp.array([-3.0, -0.5, 0.0, 0.5, 3.0], dtype=jnp.float64)
+    computed_grads = grad_huber_fn(test_vec)
+    expected_grads = jnp.array([-delta, -0.5, 0.0, 0.5, delta], dtype=jnp.float64)
+    diff_grad = float(jnp.max(jnp.abs(computed_grads - expected_grads)))
+    assert diff_grad < 1e-12, f"Huber loss gradient mismatch: {diff_grad}"
+
+    # 4. Verification that Huber loss dampens massive outliers compared to squared loss
+    outlier_r = jnp.array([50.0], dtype=jnp.float64)
+    l2_loss = float(0.5 * (outlier_r[0] ** 2))
+    h_loss = float(huber_loss(outlier_r, delta=1.0)[0])
+    assert h_loss < l2_loss
+    assert h_loss == 1.0 * (50.0 - 0.5)
+
+
+def test_sobol_sensitivity_guard_jit_and_pytree() -> None:
+    """Verifies @jax.jit Sobol Sensitivity Guard parameter freezing and pure PyTree structure."""
+    # 4 parameters: p0, p1 (sensitive, variance impact > 1e-6); p2, p3 (insensitive, impact < 1e-6)
+    initial_params = jnp.array([12500.0, 6200.0, 0.005, 0.0001], dtype=jnp.float64)
+    cov_diag = jnp.array([4.0, 2.0, 1e-8, 1e-10], dtype=jnp.float64)
+    cov_matrix = jnp.diag(cov_diag)
+
+    # Call with 2D covariance matrix
+    guard_output_2d = sobol_sensitivity_guard(
+        parameters=initial_params,
+        covariance=cov_matrix,
+        threshold=1e-6,
+    )
+
+    # Verify return type is pure mathematical PyTree / dict of JAX arrays
+    assert isinstance(guard_output_2d, dict)
+    assert "active_mask" in guard_output_2d
+    assert "variance_impacts" in guard_output_2d
+    assert "active_parameters" in guard_output_2d
+    assert "frozen_parameters" in guard_output_2d
+
+    active_mask = np.asarray(guard_output_2d["active_mask"])
+    np.testing.assert_array_equal(active_mask, [True, True, False, False])
+    assert int(guard_output_2d["active_count"]) == 2
+    assert int(guard_output_2d["frozen_count"]) == 2
+
+    # Verify frozen parameters are isolated and active parameters preserved
+    active_params = np.asarray(guard_output_2d["active_parameters"])
+    frozen_params = np.asarray(guard_output_2d["frozen_parameters"])
+    assert active_params[0] == 12500.0
+    assert active_params[1] == 6200.0
+    assert active_params[2] == 0.0
+    assert active_params[3] == 0.0
+    assert frozen_params[2] == 0.005
+    assert frozen_params[3] == 0.0001
+
+    # Call with 1D variance vector
+    guard_output_1d = sobol_sensitivity_guard(
+        parameters=initial_params,
+        covariance=cov_diag,
+        threshold=1e-6,
+    )
+    np.testing.assert_array_equal(
+        np.asarray(guard_output_1d["active_mask"]),
+        [True, True, False, False],
+    )
+
+
+def test_levenberg_marquardt_step_model_fn_signature_jit() -> None:
+    """Verifies levenberg_marquardt_step with (params, experimental_data, model_fn) signature."""
+    # Synthetic physical transition model: y_i = p0 * sin(p1 * x_i) + p2
+    x_pts = jnp.array([0.1, 0.5, 1.0, 1.5, 2.0], dtype=jnp.float64)
+    true_p = jnp.array([3.2, 1.4, 0.8], dtype=jnp.float64)
+
+    def model_fn(p: jnp.ndarray) -> jnp.ndarray:
+        return p[0] * jnp.sin(p[1] * x_pts) + p[2]
+
+    exp_data = model_fn(true_p)
+
+    # Initial perturbed guess
+    p_guess = jnp.array([2.8, 1.6, 1.0], dtype=jnp.float64)
+
+    # Step via (params, experimental_data, model_fn)
+    p_next, r_next, d_next, accepted, gain_ratio, grad_norm, step_norm = levenberg_marquardt_step(
+        params=p_guess,
+        experimental_data=exp_data,
+        model_fn=model_fn,
+        damping=1e-2,
+    )
+
+    assert accepted is True
+    assert gain_ratio > 0.0
+    assert step_norm > 0.0
+    initial_res_norm = float(jnp.linalg.norm(model_fn(p_guess) - exp_data))
+    next_res_norm = float(jnp.linalg.norm(r_next))
+    assert next_res_norm < initial_res_norm
+
+
+def test_levenberg_marquardt_step_huber_loss_noise_robustness() -> None:
+    """Verifies that Huber loss insulates LM optimization against extreme outlier noise."""
+    x_pts = jnp.linspace(0.1, 2.0, 10, dtype=jnp.float64)
+    true_p = jnp.array([2.5, 1.2], dtype=jnp.float64)
+
+    def clean_model(p: jnp.ndarray) -> jnp.ndarray:
+        return p[0] * x_pts + p[1]
+
+    exp_clean = clean_model(true_p)
+
+    # Inject massive ghost outlier at index 4 (e.g. spurious spectrometer RF glitch)
+    exp_corrupted = exp_clean.at[4].set(exp_clean[4] + 500.0)
+
+    def corrupted_residual(p: jnp.ndarray) -> jnp.ndarray:
+        return clean_model(p) - exp_corrupted
+
+    # Run LM step with Huber loss vs standard L2 loss
+    p_start = jnp.array([2.4, 1.1], dtype=jnp.float64)
+
+    p_huber, r_huber, _, acc_huber, _, _, _ = levenberg_marquardt_step(
+        params=p_start,
+        residual_fn=corrupted_residual,
+        damping=1e-3,
+        use_huber_loss=True,
+        huber_delta=1.0,
+    )
+
+    # Huber loss step should remain bounded and not diverge toward the massive 500 MHz outlier
+    assert acc_huber is True
+    assert abs(float(p_huber[0]) - 2.5) < 0.5
+    assert abs(float(p_huber[1]) - 1.2) < 0.5
+
+
+def test_cochem_jax_fitter_zero_pass_statements() -> None:
+    """Strict AST audit verifying zero pass statements in cochem_jax_fitter.py."""
+    import cochem_spycfit.physics_core.cochem_jax_fitter as fitter_mod
+
+    source = inspect.getsource(fitter_mod)
+    tree = ast.parse(source)
+    passes = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Pass)]
+    assert passes == [], f"Forbidden pass statements detected at lines: {passes}"
+
