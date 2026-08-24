@@ -175,6 +175,48 @@ def fortran_float_converter(val: Union[str, float, int, np.number]) -> float:
         raise ValueError(f"Failed to parse Fortran double precision float from {val!r}: {exc}") from exc
 
 
+def format_fortran_double(
+    value: Union[float, int, str, np.number],
+    width: int = 10,
+    precision: int = 4,
+) -> str:
+    """
+    Strict fixed-width Fortran double precision formatter for legacy Pickett formats.
+    Actively formats floating point values using scientific notation and replaces
+    Python 'E'/'e' exponent indicator with Fortran 'D' notation (e.g. '1.2500D-05').
+    Guarantees output string length is exactly equal to `width` through dynamic precision
+    adjustment and right-alignment.
+
+    Args:
+        value: Numeric value or string representation.
+        width: Exact character width of the output field (default: 10).
+        precision: Digits after the decimal point (default: 4).
+
+    Returns:
+        str: Fixed-width formatted string guaranteed to have len == width.
+    """
+    try:
+        val_float = fortran_float_converter(value)
+    except (ValueError, TypeError):
+        s_val = str(value)
+        if len(s_val) > width:
+            return s_val[:width]
+        return s_val.rjust(width)
+
+    # Format using standard scientific notation with precision
+    formatted = f"{val_float:.{precision}E}"
+    formatted = formatted.replace("E", "D").replace("e", "D")
+
+    if len(formatted) > width:
+        excess = len(formatted) - width
+        adj_precision = max(0, precision - excess)
+        formatted = f"{val_float:.{adj_precision}E}".replace("E", "D").replace("e", "D")
+        if len(formatted) > width:
+            formatted = formatted[:width]
+
+    return formatted.rjust(width)
+
+
 def format_pickett_line(
     value: Union[float, int, str, np.number],
     width: int = 10,
@@ -186,8 +228,8 @@ def format_pickett_line(
     in legacy 1980s Pickett formats (.var, .par, .int, .lin).
 
     Formats floating point numbers with scientific notation (%10.4E) and replaces
-    the exponent character ('E' -> 'D'). Enforces exact field width by right-aligning
-    and precision adjusting or truncating on overflow.
+    the exponent character ('E' -> exponent_char, default 'D'). Enforces exact field width
+    by right-aligning and precision adjusting or truncating on overflow.
 
     Args:
         value: Numeric value or string representation.
@@ -198,27 +240,10 @@ def format_pickett_line(
     Returns:
         str: Fixed-width formatted string guaranteed to have len == width.
     """
-    try:
-        val_float = float(value)
-    except (ValueError, TypeError):
-        s_val = str(value)
-        if len(s_val) > width:
-            return s_val[:width]
-        return s_val.rjust(width)
-
-    # Format using scientific notation
-    formatted = f"{val_float:.{precision}E}"
-    formatted = formatted.replace("E", exponent_char).replace("e", exponent_char)
-
-    if len(formatted) > width:
-        # Dynamically adjust precision if exponent or sign widened the string
-        excess = len(formatted) - width
-        adj_precision = max(0, precision - excess)
-        formatted = f"{val_float:.{adj_precision}E}".replace("E", exponent_char).replace("e", exponent_char)
-        if len(formatted) > width:
-            formatted = formatted[:width]
-
-    return formatted.rjust(width)
+    res = format_fortran_double(value=value, width=width, precision=precision)
+    if exponent_char != "D":
+        res = res.replace("D", exponent_char).replace("d", exponent_char)
+    return res
 
 
 def decode_pickett_quantum(qn_str: str) -> int:
@@ -1064,7 +1089,7 @@ class PickettScratchContext:
     def __init__(
         self,
         base_dir: Optional[Union[str, Path]] = None,
-        prefix: str = "spcat_scratch_",
+        prefix: str = "pickett_scratch_",
     ) -> None:
         if base_dir is not None:
             self._parent_dir = Path(base_dir).resolve()
@@ -1113,30 +1138,90 @@ class PickettScratchContext:
 
 
 # =============================================================================
-# 7. PROCESS ISOLATION, SEGFAULT TRAPPING & HEX-DUMP TELEMETRY
+# 7. PROCESS ISOLATION, SEGFAULT TRAPPING, ORPHAN SWEEPING & HEX TELEMETRY
 # =============================================================================
 
 def is_segfault_exit_code(return_code: int) -> bool:
     """
-    Identifies whether a process termination return code corresponds to a segmentation fault
-    or memory access violation.
+    Identifies whether a process termination return code corresponds to a segmentation fault,
+    memory access violation, or abnormal crash signal across POSIX and Windows.
 
-    POSIX: 139 (SIGSEGV), 134 (SIGABRT), -11, -6
-    Windows: 0xC0000005, -1073741819, 3221225477 (STATUS_ACCESS_VIOLATION)
+    POSIX: 139 (SIGSEGV), 134 (SIGABRT), 138 (SIGBUS), -11 (SIGSEGV), -6 (SIGABRT), -7 (SIGBUS)
+    Windows: 0xC0000005, -1073741819, 3221225477 (STATUS_ACCESS_VIOLATION),
+             0xC00000FD, -1073741571 (STATUS_STACK_OVERFLOW),
+             0xC0000028, 0xC0000374 (STATUS_HEAP_CORRUPTION)
     """
-    posix_codes = {139, 134, -11, -6}
-    windows_codes = {0xC0000005, -1073741819, 3221225477, -1073741571}
+    posix_codes = {139, 134, 138, -11, -6, -7}
+    windows_codes = {
+        0xC0000005,
+        -1073741819,
+        3221225477,
+        0xC00000FD,
+        -1073741571,
+        0xC0000028,
+        0xC0000374,
+    }
     return return_code in posix_codes or return_code in windows_codes
 
 
-def capture_hex_telemetry(data_bytes: bytes, max_bytes: int = 256) -> str:
+def capture_hex_telemetry(data_bytes: Union[bytes, str], max_bytes: int = 256) -> str:
     """
-    Extracts the tail bytes of a stream and formats them as a hex trace.
+    Extracts trailing bytes of a stream (up to max_bytes, default 256) and formats them
+    as a hexadecimal trace string.
+
+    Args:
+        data_bytes: Raw bytes or text string from stderr/stdout.
+        max_bytes: Maximum number of tail bytes to capture (default: 256).
+
+    Returns:
+        str: Space-separated uppercase hexadecimal byte values.
     """
     if not data_bytes:
         return ""
-    tail = data_bytes[-max_bytes:]
-    return " ".join(f"{b:02X}" for b in tail)
+    if isinstance(data_bytes, str):
+        b = data_bytes.encode("utf-8", errors="replace")
+    else:
+        b = data_bytes
+    tail = b[-max_bytes:]
+    return " ".join(f"{byte:02X}" for byte in tail)
+
+
+def sweep_orphan_process(process_or_pid: Union[subprocess.Popen, int]) -> None:
+    """
+    Explicitly terminates an orphaned subprocess and all of its spawned child processes.
+    Uses 'taskkill /F /T /PID' on Windows and process-group SIGKILL on POSIX.
+
+    Args:
+        process_or_pid: Subprocess Popen instance or integer process ID (PID).
+    """
+    if isinstance(process_or_pid, subprocess.Popen):
+        pid = process_or_pid.pid
+    else:
+        pid = int(process_or_pid)
+
+    if pid <= 0:
+        return
+
+    if platform.system().lower() == "windows":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                check=True,
+                timeout=5.0,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            logger.debug("Windows taskkill orphan sweep failed for PID %d: %s", pid, exc)
+    else:
+        try:
+            import signal
+            try:
+                pgid = os.getpgid(pid)
+                os.killpg(pgid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError) as exc:
+            logger.debug("POSIX SIGKILL orphan sweep failed for PID %d: %s", pid, exc)
 
 
 def write_spycfit_telemetry(
@@ -1168,6 +1253,51 @@ def write_spycfit_telemetry(
         f.write(json.dumps(entry) + "\n")
 
     return t_path
+
+
+def trap_and_log_segfault(
+    stderr_output: Union[str, bytes],
+    task_id: Optional[str] = None,
+    executable: Optional[str] = None,
+    return_code: Optional[int] = None,
+    telemetry_file: Optional[Union[str, Path]] = None,
+) -> Dict[str, Any]:
+    """
+    Captures trailing 256-byte hex telemetry from stderr output, checks whether return_code
+    indicates a segfault or access violation, and records the telemetry incident.
+
+    Args:
+        stderr_output: Captured stderr text or raw bytes.
+        task_id: Optional task identifier UUID.
+        executable: Optional executable binary path/command.
+        return_code: Optional process exit code.
+        telemetry_file: Optional path override for telemetry log file.
+
+    Returns:
+        Dict[str, Any]: Telemetry incident record including hex trace and segfault status.
+    """
+    tid = task_id or str(uuid.uuid4())
+    exe = executable or "spcat"
+    rc = return_code if return_code is not None else 0
+    segfault = is_segfault_exit_code(rc)
+    hex_trace = capture_hex_telemetry(stderr_output, max_bytes=256)
+
+    record: Dict[str, Any] = {
+        "task_id": tid,
+        "executable": exe,
+        "return_code": rc,
+        "segfault_detected": segfault,
+        "stderr_tail_hex": hex_trace,
+    }
+
+    try:
+        write_spycfit_telemetry(record, telemetry_file=telemetry_file)
+        record["telemetry_logged"] = True
+    except Exception as exc:
+        logger.warning("Failed to persist segfault telemetry: %s", exc)
+        record["telemetry_logged"] = False
+
+    return record
 
 
 # =============================================================================
@@ -1284,9 +1414,10 @@ class FortranBridgeDispatcher:
         exec_env.update(task.env_vars)
 
         scratch_ctx: Optional[PickettScratchContext] = None
+        proc: Optional[subprocess.Popen] = None
         try:
             if task.working_directory is None:
-                scratch_ctx = PickettScratchContext()
+                scratch_ctx = PickettScratchContext(prefix="pickett_scratch_")
                 scratch_ctx.__enter__()
                 work_dir = scratch_ctx.scratch_path
             else:
@@ -1304,18 +1435,23 @@ class FortranBridgeDispatcher:
             cmd = [exe_str] + task.arguments
 
             try:
-                proc = subprocess.run(
+                proc = subprocess.Popen(
                     cmd,
                     cwd=str(work_dir),
                     env=exec_env,
-                    capture_output=True,
-                    timeout=task.timeout_sec,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     **proc_kwargs,
                 )
+                stdout_bytes, stderr_bytes = proc.communicate(timeout=task.timeout_sec)
                 return_code = proc.returncode
-                stdout_bytes = proc.stdout
-                stderr_bytes = proc.stderr
             except subprocess.TimeoutExpired as exc:
+                if proc is not None:
+                    sweep_orphan_process(proc)
+                    try:
+                        proc.kill()
+                    except Exception as kill_err:
+                        logger.debug("Proc kill after sweep suppressed: %s", kill_err)
                 duration = time.time() - start_time
                 stdout_bytes = exc.stdout or b""
                 stderr_bytes = exc.stderr or b""
@@ -1336,6 +1472,12 @@ class FortranBridgeDispatcher:
                 raise FortranExecutionTimeoutError(
                     f"Fortran task {task_id} running '{exe_str}' timed out after {task.timeout_sec:.2f}s"
                 ) from exc
+            except FileNotFoundError as fnf_exc:
+                raise FortranBinaryNotFoundError(f"Binary not found: {exe_str}") from fnf_exc
+            except Exception as proc_exc:
+                if proc is not None:
+                    sweep_orphan_process(proc)
+                raise FortranExecutionError(f"Subprocess execution error for '{exe_str}': {proc_exc}") from proc_exc
 
             duration = time.time() - start_time
             stdout_text = stdout_bytes.decode("utf-8", errors="replace")
@@ -1461,6 +1603,58 @@ class FortranBridgeDispatcher:
         return results
 
 
+def execute_spcat_safely(
+    executable_path: Union[str, Path],
+    scratch_dir: Optional[Union[str, Path]] = None,
+    timeout_sec: float = 60.0,
+    input_files: Optional[Dict[str, Union[str, bytes]]] = None,
+    expected_output_files: Optional[List[str]] = None,
+    arguments: Optional[List[str]] = None,
+    env_vars: Optional[Dict[str, str]] = None,
+    raise_on_segfault: bool = False,
+    telemetry_file: Optional[Union[str, Path]] = None,
+) -> FortranExecutionResult:
+    """
+    High-level, process-isolated, segfault-trapped, ephemeral scratch-managed execution
+    entry point for Pickett SPCAT.
+
+    Provisions an ephemeral 'pickett_scratch/' directory, stages input files, enforces
+    OS process isolation, sweeps orphaned processes on timeout, captures 256-byte hex
+    telemetry, and guarantees cleanup of scratch files upon completion.
+
+    Args:
+        executable_path: Path or command for spcat binary.
+        scratch_dir: Optional custom scratch directory. If None, an ephemeral
+                     'pickett_scratch/' directory is provisioned and purged automatically.
+        timeout_sec: Maximum execution timeout in seconds.
+        input_files: Mapping of filenames to string or bytes content to stage.
+        expected_output_files: List of expected output filenames to collect.
+        arguments: Command line arguments passed to binary (e.g. ['mol']).
+        env_vars: Environment variables dictionary.
+        raise_on_segfault: If True, raises FortranExecutionSegfaultError on segfault.
+        telemetry_file: Optional custom telemetry log destination.
+
+    Returns:
+        FortranExecutionResult: Result containing exit code, stdout, stderr, collected outputs,
+                                segfault detection flag, and hex telemetry.
+    """
+    task = FortranExecutionTask(
+        executable_path=str(executable_path),
+        arguments=arguments or [],
+        input_files=input_files or {},
+        expected_output_files=expected_output_files or [],
+        timeout_sec=timeout_sec,
+        env_vars=env_vars or {},
+        working_directory=str(scratch_dir) if scratch_dir is not None else None,
+    )
+    dispatcher = FortranBridgeDispatcher(
+        default_timeout_sec=timeout_sec,
+        log_telemetry=True,
+        telemetry_file=telemetry_file,
+    )
+    return dispatcher.dispatch_task(task, raise_on_segfault=raise_on_segfault)
+
+
 def dispatch_fortran_binary(
     executable_path: Union[str, Path],
     input_files: Dict[str, Union[str, bytes]],
@@ -1481,3 +1675,52 @@ def dispatch_fortran_binary(
         timeout_sec=timeout_sec,
         raise_on_segfault=raise_on_segfault,
     )
+
+
+__all__ = [
+    "FortranBridgeError",
+    "PickettFormatError",
+    "FortranExecutionError",
+    "FortranExecutionTimeoutError",
+    "FortranExecutionSegfaultError",
+    "FortranBinaryNotFoundError",
+    "get_isotopic_mass",
+    "calculate_reduced_mass",
+    "fortran_float_converter",
+    "format_fortran_double",
+    "format_pickett_line",
+    "decode_pickett_quantum",
+    "encode_pickett_quantum",
+    "PickettParameterRecord",
+    "PickettVarFile",
+    "PickettDipoleRecord",
+    "PickettIntFile",
+    "PickettLinRecord",
+    "PickettLinFile",
+    "PickettCatRecord",
+    "PickettCatFile",
+    "PickettEgyRecord",
+    "PickettEgyFile",
+    "PickettFitResidual",
+    "PickettFitResult",
+    "parse_pickett_cat",
+    "parse_pickett_egy",
+    "parse_pickett_fit",
+    "parse_pickett_var",
+    "parse_pickett_int",
+    "parse_pickett_lin",
+    "get_fortran_deployment_dir",
+    "resolve_fortran_binary",
+    "PickettScratchContext",
+    "is_segfault_exit_code",
+    "capture_hex_telemetry",
+    "sweep_orphan_process",
+    "write_spycfit_telemetry",
+    "trap_and_log_segfault",
+    "FortranExecutionTask",
+    "FortranExecutionResult",
+    "FortranTaskQueue",
+    "FortranBridgeDispatcher",
+    "execute_spcat_safely",
+    "dispatch_fortran_binary",
+]

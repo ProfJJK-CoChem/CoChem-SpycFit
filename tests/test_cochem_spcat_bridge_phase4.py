@@ -221,10 +221,10 @@ class TestSegfaultTrapPhase4:
 
     def test_trap_and_log_segfault_function(self, phase4_workspace: Path) -> None:
         t_file = phase4_workspace / "telemetry_trap.json"
-        fake_stderr = b"SPCAT calculation fatal fault at address 0x7FFF12345678"
+        simulated_stderr = b"SPCAT calculation fatal fault at address 0x7FFF12345678"
 
         rec_seg = trap_and_log_segfault(
-            stderr_output=fake_stderr,
+            stderr_output=simulated_stderr,
             task_id="task-seg-001",
             executable="spcat.exe",
             return_code=139,
