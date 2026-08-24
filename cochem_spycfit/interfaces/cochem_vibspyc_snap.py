@@ -311,13 +311,14 @@ def generate_provenance_lock(
         hashes_dict = dict(metrics.get("dataset_hashes", {}))
         hashes_dict[file_key] = h5_hash
 
-        chi_squared = float(
-            metrics.get(
-                "chi_squared",
-                metrics.get("chi2", metrics.get("chi_sq", 1.0)),
-            )
+        raw_chi = metrics.get(
+            "chi_squared",
+            metrics.get("chi2", metrics.get("chi_sq", 1.0)),
         )
-        rms_mhz = float(metrics.get("rms_mhz", metrics.get("rms", 0.0)))
+        chi_squared = float(1.0 if raw_chi is None else raw_chi)
+
+        raw_rms = metrics.get("rms_mhz", metrics.get("rms", 0.0))
+        rms_mhz = float(0.0 if raw_rms is None else raw_rms)
 
         raw_rms_cm_inv = metrics.get("rms_cm_inv")
         if raw_rms_cm_inv is not None:
@@ -328,7 +329,7 @@ def generate_provenance_lock(
         raw_cond = metrics.get(
             "jacobian_condition_number", metrics.get("condition_number", 1.0)
         )
-        jacobian_condition_number = float(raw_cond)
+        jacobian_condition_number = float(1.0 if raw_cond is None else raw_cond)
 
         raw_huber = metrics.get("huber_loss_delta")
         huber_loss_delta = float(raw_huber) if raw_huber is not None else None
@@ -345,18 +346,23 @@ def generate_provenance_lock(
                 str(k): bool(v) for k, v in metrics["sobol_audit"].items()
             }
         else:
-            for param_name in metrics.get("active_parameters", []):
+            raw_active = metrics.get("active_parameters", []) or []
+            raw_frozen = metrics.get("frozen_parameters", []) or []
+            for param_name in raw_active:
                 sobol_audit[str(param_name)] = True
-            for param_name in metrics.get("frozen_parameters", []):
+            for param_name in raw_frozen:
                 sobol_audit[str(param_name)] = False
 
-        raw_history = metrics.get(
-            "semantic_git_history",
-            metrics.get("git_history", metrics.get("history", [])),
+        raw_history = (
+            metrics.get(
+                "semantic_git_history",
+                metrics.get("git_history", metrics.get("history", [])),
+            )
+            or []
         )
         semantic_git_history = [str(item) for item in raw_history]
 
-        raw_models = metrics.get("active_models", metrics.get("models", []))
+        raw_models = metrics.get("active_models", metrics.get("models", [])) or []
         active_models = [str(m) for m in raw_models]
 
         additional_metadata = metrics.get(
