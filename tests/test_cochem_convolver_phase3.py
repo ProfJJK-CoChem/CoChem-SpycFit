@@ -504,3 +504,30 @@ def test_zero_pass_and_ast_integrity_mandate() -> None:
     for node in ast.walk(tree):
         if isinstance(node, ast.Pass):
             pytest.fail(f"Forbidden 'pass' statement found in cochem_convolver.py at line {getattr(node, 'lineno', '?')}.")
+
+
+def test_robust_nan_and_negative_input_validation() -> None:
+    """Validate that NaN/Inf and unphysical values in energies and degeneracies are rejected."""
+    # NaN in lower_state_energies
+    with pytest.raises(SpectralDataError):
+        SpectralLines(frequencies=[100.0], intensities=[1.0], lower_state_energies=[float("nan")])
+
+    # Negative lower_state_energies
+    with pytest.raises(SpectralDataError):
+        SpectralLines(frequencies=[100.0], intensities=[1.0], lower_state_energies=[-5.0])
+
+    # NaN in energy_levels
+    with pytest.raises(ThermalScalingError):
+        PartitionGridConfig(temperatures=[100.0], energy_levels=[float("nan")], degeneracies=[1.0])
+
+    # Negative energy_levels
+    with pytest.raises(ThermalScalingError):
+        PartitionGridConfig(temperatures=[100.0], energy_levels=[-10.0], degeneracies=[1.0])
+
+    # Zero or negative degeneracies
+    with pytest.raises(ThermalScalingError):
+        PartitionGridConfig(temperatures=[100.0], energy_levels=[0.0], degeneracies=[0.0])
+
+    with pytest.raises(ThermalScalingError):
+        PartitionGridConfig(temperatures=[100.0], energy_levels=[0.0], degeneracies=[-1.0])
+

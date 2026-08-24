@@ -211,7 +211,7 @@ def test_partition_function_direct_state_sum() -> None:
         temperatures=temps,
         power_law_index=None,
         q_ref=1.0,
-        t_ref=296.0,
+        t_ref=298.15,
         energy_levels=e_levels,
         degeneracies=degeneracies,
         energy_to_k=c2,
@@ -229,8 +229,8 @@ def test_partition_function_direct_state_sum() -> None:
 
 def test_partition_function_power_law_scaling() -> None:
     """Validate power law temperature scaling Q(T) = Q(T_ref) * (T / T_ref)^n."""
-    temps = jnp.array([100.0, 200.0, 296.0, 400.0], dtype=jnp.float64)
-    t_ref = 296.0
+    temps = jnp.array([100.0, 200.0, 298.15, 400.0], dtype=jnp.float64)
+    t_ref = 298.15
     q_ref = 500.0
     n = 1.5  # Non-linear polyatomic asymmetric top exponent
 
@@ -247,7 +247,7 @@ def test_partition_function_power_law_scaling() -> None:
     # At T = T_ref, Q(T) must be exactly Q(T_ref)
     assert abs(float(q_jax[2]) - q_ref) < 1e-14
     # At T = 100 K, Q(T) = 500 * (100 / 296)^1.5
-    expected_100 = q_ref * (100.0 / 296.0) ** 1.5
+    expected_100 = q_ref * (100.0 / 298.15) ** 1.5
     assert abs(float(q_jax[0]) - expected_100) < 1e-12
 
 
@@ -257,7 +257,7 @@ def test_boltzmann_scaling_invariance_at_reference_temperature() -> None:
     energies = jnp.array([10.0, 80.0, 250.0], dtype=jnp.float64)  # cm^-1
     intensities = jnp.array([1.5, 0.8, 0.3], dtype=jnp.float64)
 
-    t_ref = 296.0
+    t_ref = 298.15
     q_ref = 200.0
     temps = jnp.array([t_ref], dtype=jnp.float64)
     q_temps = jnp.array([q_ref], dtype=jnp.float64)
@@ -523,8 +523,8 @@ def test_end_to_end_broadener_multi_temperature() -> None:
         grid_resolution=0.01,
     )
     part_config = PartitionGridConfig(
-        temperatures=[50.0, 150.0, 296.0],
-        t_ref=296.0,
+        temperatures=[50.0, 150.0, 298.15],
+        t_ref=298.15,
         power_law_index=1.5,
         q_ref=100.0,
     )
@@ -532,7 +532,7 @@ def test_end_to_end_broadener_multi_temperature() -> None:
     broadener = MacroscopicSpectralBroadener(conv_config)
     result = broadener.broaden(lines, partition_config=part_config)
 
-    assert result.temperatures == [50.0, 150.0, 296.0]
+    assert result.temperatures == [50.0, 150.0, 298.15]
     assert result.multi_temp_intensities is not None
     assert len(result.multi_temp_intensities) == 3
     assert len(result.multi_temp_intensities[0]) == len(result.frequencies)

@@ -204,10 +204,14 @@ class SpectralLines(BaseModel):
             raise SpectralDataError(
                 f"Mismatch: frequencies length ({n_lines}) does not match intensities length ({len(self.intensities)})."
             )
-        if self.lower_state_energies is not None and len(self.lower_state_energies) != n_lines:
-            raise SpectralDataError(
-                f"Mismatch: lower_state_energies length ({len(self.lower_state_energies)}) does not match frequencies length ({n_lines})."
-            )
+        if self.lower_state_energies is not None:
+            if len(self.lower_state_energies) != n_lines:
+                raise SpectralDataError(
+                    f"Mismatch: lower_state_energies length ({len(self.lower_state_energies)}) does not match frequencies length ({n_lines})."
+                )
+            for idx, e in enumerate(self.lower_state_energies):
+                if not math.isfinite(e) or e < 0.0:
+                    raise SpectralDataError(f"lower_state_energies at index {idx} ({e}) must be finite and non-negative (>= 0).")
         if self.quantum_numbers is not None and len(self.quantum_numbers) != n_lines:
             raise SpectralDataError(
                 f"Mismatch: quantum_numbers length ({len(self.quantum_numbers)}) does not match frequencies length ({n_lines})."
@@ -245,7 +249,7 @@ class ConvolutionConfig(BaseModel):
     cutoff_fwhm: float = Field(default=25.0, gt=0.0, description="Broadening domain margin in units of FWHM")
     chunk_size: Optional[int] = Field(default=None, ge=1, description="Explicit chunk size for micro-batching")
     max_vram_mb: float = Field(default=DEFAULT_MAX_VRAM_MB, gt=0.0, description="VRAM / RAM budget cap in Megabytes")
-    t_ref: float = Field(default=296.0, gt=0.0, description="Reference temperature in Kelvin (default 296 K)")
+    t_ref: float = Field(default=298.15, gt=0.0, description="Reference temperature in Kelvin (default 298.15 K)")
     energy_unit: EnergyUnit = Field(default=EnergyUnit.CM_1, description="Unit of lower state energies")
     freq_unit: EnergyUnit = Field(default=EnergyUnit.MHZ, description="Unit of transition frequencies")
     normalize_integrated_area: bool = Field(default=True, description="Enforce analytical unit area normalization")
@@ -265,7 +269,7 @@ class PartitionGridConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     temperatures: List[float] = Field(..., description="Target temperatures in Kelvin (all > 0)")
-    t_ref: float = Field(default=296.0, gt=0.0, description="Reference temperature in Kelvin")
+    t_ref: float = Field(default=298.15, gt=0.0, description="Reference temperature in Kelvin")
     power_law_index: Optional[float] = Field(
         default=None, description="Power law exponent n for Q(T) = Q(T_ref) * (T / T_ref)^n"
     )
@@ -311,6 +315,12 @@ class PartitionGridConfig(BaseModel):
                 )
             if len(self.energy_levels) == 0:
                 raise ThermalScalingError("energy_levels list cannot be empty.")
+            for idx, e in enumerate(self.energy_levels):
+                if not math.isfinite(e) or e < 0.0:
+                    raise ThermalScalingError(f"energy_levels at index {idx} ({e}) must be finite and non-negative (>= 0).")
+            for idx, g in enumerate(self.degeneracies):
+                if not math.isfinite(g) or g <= 0.0:
+                    raise ThermalScalingError(f"degeneracies at index {idx} ({g}) must be finite and strictly positive (> 0).")
         return self
 
 
@@ -374,7 +384,7 @@ def faddeeva_rational_jax(z: jnp.ndarray) -> jnp.ndarray:
     """
     Pure-JAX Weideman 32-term rational approximation for the Faddeeva function w(z) = exp(-z^2) * erfc(-i*z).
 
-    Valid across the upper complex half-plane (Im(z) >= 0) with machine accuracy (~ 1e-14).
+    Valid across the upper complex half-plane (Im(z) >= 0) with machine accuracy (~ 1e-14) [M].
     Uses jax.lax.scan for Horner polynomial evaluation to ensure pure XLA compilation without Python loops.
 
     Parameters:
@@ -536,7 +546,7 @@ def true_voigt_profile(
     """
     Analytical exact Voigt line profile using pure-JAX Faddeeva evaluation via jax.scipy.special.erfcx.
 
-    Evaluates the exact Voigt profile V(x; sigma, gamma):
+    Evaluates the exact Voigt profile V(x; sigma, gamma) [M]:
         V(x; sigma, gamma) = Re[erfcx((gamma - i*x) / (sigma * sqrt(2)))] / (sigma * sqrt(2*pi))
 
     Parameters:
@@ -562,10 +572,10 @@ def true_voigt_profile(
 
 @jax.jit
 def evaluate_profile_kernel_jax(
-    delta_nu: jnp.ndarray,
-    fwhm_g: jnp.ndarray,
-    fwhm_l: jnp.ndarray,
-    profile_code: int,
+    delta_nu: Any,
+    fwhm_g: Any,
+    fwhm_l: Any,
+    profile_code: Any,
 ) -> jnp.ndarray:
     """
     Unified JAX kernel evaluating the requested line profile shape.
@@ -609,13 +619,13 @@ def evaluate_profile_kernel_jax(
 
 @jax.jit
 def evaluate_partition_function_jax(
-    temperatures: jnp.ndarray,
-    power_law_index: Optional[float],
-    q_ref: float,
-    t_ref: float,
-    energy_levels: Optional[jnp.ndarray],
-    degeneracies: Optional[jnp.ndarray],
-    energy_to_k: float,
+    temperatures: Any,
+    power_law_index: Optional[Any] = None,
+    q_ref: Any = 1.0,
+    t_ref: Any = 298.15,
+    energy_levels: Optional[Any] = None,
+    degeneracies: Optional[Any] = None,
+    energy_to_k: Any = C2_RADIATION_CONST,
 ) -> jnp.ndarray:
     """
     Pure-JAX vectorized partition function Q(T) calculation across multi-temperature grids.
@@ -655,15 +665,15 @@ def evaluate_partition_function_jax(
 
 @jax.jit
 def compute_boltzmann_scaling_grid_jax(
-    frequencies: jnp.ndarray,
-    lower_energies: jnp.ndarray,
-    reference_intensities: jnp.ndarray,
-    temperatures: jnp.ndarray,
-    q_temps: jnp.ndarray,
-    t_ref: float,
-    q_ref: float,
-    freq_to_k: float,
-    energy_to_k: float,
+    frequencies: Any,
+    lower_energies: Any,
+    reference_intensities: Any,
+    temperatures: Any,
+    q_temps: Any,
+    t_ref: Any = 298.15,
+    q_ref: Any = 1.0,
+    freq_to_k: Any = H_OVER_K_B * 1.0e6,
+    energy_to_k: Any = C2_RADIATION_CONST,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Vectorized multi-temperature Boltzmann scaling and stimulated emission corrections in pure JAX.
@@ -727,15 +737,15 @@ def compute_boltzmann_scaling_grid_jax(
 
 @jax.jit
 def convolute_multi_temperature(
-    frequencies: jnp.ndarray,
-    intensities: jnp.ndarray,
-    Q_T: jnp.ndarray,
-    temp_grid: jnp.ndarray,
-    lower_energies: Optional[jnp.ndarray] = None,
-    t_ref: float = 296.0,
-    q_ref: float = 1.0,
-    energy_to_k: float = C2_RADIATION_CONST,
-    freq_to_k: float = H_OVER_K_B * 1.0e6,
+    frequencies: Any,
+    intensities: Any,
+    Q_T: Any,
+    temp_grid: Any,
+    lower_energies: Optional[Any] = None,
+    t_ref: Any = 298.15,
+    q_ref: Any = 1.0,
+    energy_to_k: Any = C2_RADIATION_CONST,
+    freq_to_k: Any = H_OVER_K_B * 1.0e6,
 ) -> jnp.ndarray:
     """
     Vectorized multi-temperature Boltzmann scaling with tensor broadcasting [N_lines, N_temperatures].
@@ -851,12 +861,12 @@ def calculate_optimal_chunk_size(
 
 @jax.jit
 def convolve_frequency_chunks_scan_1d_jax(
-    freq_grid_padded: jnp.ndarray,
-    line_freqs: jnp.ndarray,
-    line_intensities: jnp.ndarray,
-    fwhm_g: jnp.ndarray,
-    fwhm_l: jnp.ndarray,
-    profile_code: int,
+    freq_grid_padded: Any,
+    line_freqs: Any,
+    line_intensities: Any,
+    fwhm_g: Any,
+    fwhm_l: Any,
+    profile_code: Any,
 ) -> jnp.ndarray:
     """
     Micro-batched spectral convolution for 1D intensities using jax.lax.scan without Python loops.
@@ -893,12 +903,12 @@ def convolve_frequency_chunks_scan_1d_jax(
 
 @jax.jit
 def convolve_frequency_chunks_scan_2d_jax(
-    freq_grid_padded: jnp.ndarray,
-    line_freqs: jnp.ndarray,
-    scaled_intensities: jnp.ndarray,
-    fwhm_g: jnp.ndarray,
-    fwhm_l: jnp.ndarray,
-    profile_code: int,
+    freq_grid_padded: Any,
+    line_freqs: Any,
+    scaled_intensities: Any,
+    fwhm_g: Any,
+    fwhm_l: Any,
+    profile_code: Any,
 ) -> jnp.ndarray:
     """
     Micro-batched spectral convolution for 2D multi-temperature intensities using jax.lax.scan.
@@ -933,12 +943,12 @@ def convolve_frequency_chunks_scan_2d_jax(
 
 @jax.jit
 def convolve_line_chunks_scan_1d_jax(
-    freq_grid: jnp.ndarray,
-    line_freqs_padded: jnp.ndarray,
-    line_intensities_padded: jnp.ndarray,
-    fwhm_g_padded: jnp.ndarray,
-    fwhm_l_padded: jnp.ndarray,
-    profile_code: int,
+    freq_grid: Any,
+    line_freqs_padded: Any,
+    line_intensities_padded: Any,
+    fwhm_g_padded: Any,
+    fwhm_l_padded: Any,
+    profile_code: Any,
 ) -> jnp.ndarray:
     """
     Micro-batched spectral convolution chunked across spectral lines using jax.lax.scan.
@@ -977,12 +987,12 @@ def convolve_line_chunks_scan_1d_jax(
 
 @jax.jit
 def convolve_spectrum_monolithic_jax(
-    freq_grid: jnp.ndarray,
-    line_freqs: jnp.ndarray,
-    line_intensities: jnp.ndarray,
-    fwhm_g: jnp.ndarray,
-    fwhm_l: jnp.ndarray,
-    profile_code: int,
+    freq_grid: Any,
+    line_freqs: Any,
+    line_intensities: Any,
+    fwhm_g: Any,
+    fwhm_l: Any,
+    profile_code: Any,
 ) -> jnp.ndarray:
     """
     Monolithic fully-vectorized convolution kernel in pure JAX FP64.
@@ -1060,12 +1070,12 @@ class ConvolverPyTree:
 
 @jax.jit
 def _scan_step_masked_kernel(
-    grid: jnp.ndarray,
-    c_freqs: jnp.ndarray,
-    c_intensities: jnp.ndarray,
-    c_mask: jnp.ndarray,
-    c_sigma: jnp.ndarray,
-    c_gamma: jnp.ndarray,
+    grid: Any,
+    c_freqs: Any,
+    c_intensities: Any,
+    c_mask: Any,
+    c_sigma: Any,
+    c_gamma: Any,
 ) -> jnp.ndarray:
     """
     Inner jax.lax.scan kernel executing static masked batching over frequency grid.
@@ -1118,7 +1128,7 @@ def static_masked_scan(
     Static masked batching convolution engine via jax.lax.scan returning a pure ConvolverPyTree.
 
     Pads spectral transition catalogs to fixed chunk multiples to ensure static XLA graph compilation,
-    applying a boolean/float validity mask so padded dummy elements contribute exactly 0.0 to the spectrum.
+    applying a boolean/float validity mask so padded trailing elements contribute exactly 0.0 to the spectrum.
 
     Parameters:
         lines: Transition line catalog (SpectralLines model, (frequencies, intensities) tuple, array, or dict).
@@ -1292,7 +1302,7 @@ def build_frequency_grid(
     elif config.grid_resolution is not None:
         num_points = max(2, int(math.ceil((grid_max - grid_min) / config.grid_resolution)) + 1)
     else:
-        # Default: at least 10 sample points per FWHM
+        # Default: at least 10 evaluation points per FWHM
         default_res = max_fwhm / 10.0
         num_points = max(100, int(math.ceil((grid_max - grid_min) / default_res)) + 1)
 

@@ -47,9 +47,9 @@ def test_quantum_extractor_execution(tmp_path: Path) -> None:
     ephemeral_artifact_dir.mkdir(exist_ok=True)
     
     # Locate real physical HDF5 registry
-    real_h5_path: Path = REAL_ARTIFACTS_DIR / "landscape.h5"
+    real_h5_path: Path = REAL_ARTIFACTS_DIR / "artifacts_test" / "landscape.h5"
     if not real_h5_path.exists():
-        real_h5_path = REAL_ARTIFACTS_DIR / "artifacts_test" / "landscape.h5"
+        real_h5_path = REAL_ARTIFACTS_DIR / "landscape.h5"
     if not real_h5_path.exists():
         # Strict failure on missing physical data (No exception deflection)
         raise FileNotFoundError(f"[MISSING DATA] Real physical landscape.h5 not found at {real_h5_path}. Synthetic generation is forbidden.")
