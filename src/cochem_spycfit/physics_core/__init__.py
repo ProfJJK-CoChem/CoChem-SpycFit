@@ -206,6 +206,12 @@ from .cochem_assign_ml import (
     rank_candidate_transitions,
     update_covariance_after_measurement,
 )
+from .cochem_spycfit_auditor import (
+    ParityAuditor,
+    ParityStatus,
+    ParityWarning,
+    format_contrast_dataframe,
+)
 
 __all__ = [
     # Extractor & Tensor Core
@@ -396,4 +402,10 @@ __all__ = [
     "generate_pes_healing_payload",
     "rank_candidate_transitions",
     "update_covariance_after_measurement",
+    # Mathematical Parity Auditor Core
+    "ParityAuditor",
+    "ParityStatus",
+    "ParityWarning",
+    "format_contrast_dataframe",
 ]
+

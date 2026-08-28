@@ -106,6 +106,12 @@ from src.cochem_spycfit.physics_core.cochem_assign_ml import (
     rank_candidate_transitions,
     update_covariance_after_measurement,
 )
+from src.cochem_spycfit.physics_core.cochem_spycfit_auditor import (
+    ParityAuditor,
+    ParityStatus,
+    ParityWarning,
+    format_contrast_dataframe,
+)
 
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
@@ -206,4 +212,10 @@ __all__ = [
     "generate_pes_healing_payload",
     "rank_candidate_transitions",
     "update_covariance_after_measurement",
+    # Mathematical Parity Auditor
+    "ParityAuditor",
+    "ParityStatus",
+    "ParityWarning",
+    "format_contrast_dataframe",
 ]
+
