@@ -206,6 +206,9 @@ from .cochem_assign_ml import (
     rank_candidate_transitions,
     update_covariance_after_measurement,
 )
+from .cochem_spycfit_jax_driver import (
+    JaxHamiltonianDriver,
+)
 from .cochem_spycfit_auditor import (
     ParityAuditor,
     ParityStatus,
@@ -418,6 +421,8 @@ __all__ = [
     "generate_pes_healing_payload",
     "rank_candidate_transitions",
     "update_covariance_after_measurement",
+    # JAX Autodiff Hamiltonian Driver Core
+    "JaxHamiltonianDriver",
     # Mathematical Parity Auditor Core
     "ParityAuditor",
     "ParityStatus",

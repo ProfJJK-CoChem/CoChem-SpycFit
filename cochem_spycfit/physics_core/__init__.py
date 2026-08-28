@@ -106,25 +106,28 @@ from src.cochem_spycfit.physics_core.cochem_assign_ml import (
     rank_candidate_transitions,
     update_covariance_after_measurement,
 )
-from src.cochem_spycfit.physics_core.cochem_spycfit_auditor import (
+from cochem_spycfit.physics_core.cochem_spycfit_jax_driver import (
+    JaxHamiltonianDriver,
+)
+from cochem_spycfit.physics_core.cochem_spycfit_auditor import (
     ParityAuditor,
     ParityStatus,
     ParityWarning,
     format_contrast_dataframe,
 )
-from src.cochem_spycfit.physics_core.cochem_spycfit_features import (
+from cochem_spycfit.physics_core.cochem_spycfit_features import (
     QuantumFeatureExtractor,
 )
-from src.cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
+from cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
     ProvenanceTag,
     ResidualPrediction,
     SpycFitGPRegressor,
 )
-from src.cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
+from cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
     ResolvabilityFilter,
     ResolvabilityScore,
 )
-from src.cochem_spycfit.physics_core.cochem_spycfit_navigator import (
+from cochem_spycfit.physics_core.cochem_spycfit_navigator import (
     ScanRecommendation,
     SmartScanNavigator,
 )
@@ -228,6 +231,8 @@ __all__ = [
     "generate_pes_healing_payload",
     "rank_candidate_transitions",
     "update_covariance_after_measurement",
+    # JAX Autodiff Hamiltonian Driver Core
+    "JaxHamiltonianDriver",
     # Mathematical Parity Auditor
     "ParityAuditor",
     "ParityStatus",
