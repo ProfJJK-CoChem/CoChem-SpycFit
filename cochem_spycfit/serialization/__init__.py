@@ -70,6 +70,9 @@ from cochem_spycfit.serialization.cochem_spcat_bridge import (
     resolve_fortran_binary,
     write_spycfit_telemetry,
 )
+from cochem_spycfit.serialization.cochem_spycfit_export import (
+    FairExporter,
+)
 from cochem_spycfit.serialization.cochem_spycfit_spcat_wrapper import (
     PARAM_ID_TO_NAME_MAP,
     SPFIT_WATSON_A_PARAM_MAP,
@@ -86,6 +89,7 @@ __all__ = [
     "CatalogManifestRecord",
     "CatalogSchemaError",
     "CatalogStreamingError",
+    "FairExporter",
     "FortranBinaryNotFoundError",
     "FortranBridgeDispatcher",
     "FortranBridgeError",
@@ -143,3 +147,4 @@ __all__ = [
     "SPFIT_WATSON_A_PARAM_MAP",
     "PARAM_ID_TO_NAME_MAP",
 ]
+
