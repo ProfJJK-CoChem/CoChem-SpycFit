@@ -48,6 +48,12 @@ from .cochem_spycfit_ui_viewport import (
     SpectrumLoadError,
     ViewportError,
 )
+from .cochem_spycfit_ui_provenance import (
+    GraphBuildError,
+    ProvenanceGraphError,
+    ProvenanceGraphRenderer,
+    StateReversionError,
+)
 from .cochem_vibspyc_snap import (
     FitProvenancePayload,
     evaluate_compression_strategy,
@@ -107,6 +113,11 @@ __all__ = [
     "SpectralViewport",
     "SpectrumLoadError",
     "ViewportError",
+    # DAG Provenance Graph
+    "GraphBuildError",
+    "ProvenanceGraphError",
+    "ProvenanceGraphRenderer",
+    "StateReversionError",
     # Snapshot & Export
     "FitProvenancePayload",
     "evaluate_compression_strategy",

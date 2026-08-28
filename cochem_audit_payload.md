@@ -1,24 +1,24 @@
-Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.in-progress\05_P5_T01_ui_viewport_ledger.md.
+Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.in-progress\05_P5_T02_dag_provenance_graph.md.
 Original prompt:
-# Prompt 10 — Phase 5, Task Group 01: WebGL Spectral Viewport & Assignment Ledger
+# Prompt 11 — Phase 5, Task Group 02: DAG Provenance Graph Visualizer & Time-Travel Reversion
 
 > **Prerequisite:** Load `D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.prompts\00_GLOBAL_SYSTEM_PROMPT.md` into context first.
 > **Batch:** 5 — WebGL Time-Travel UI, Provenance Graph & FAIR Export
 > **Phase:** 5 (Tasks 81–100) — Frontend & Publication Synthesis
-> **Dependency:** Prompt 03 (JAX driver for cached Jacobians), Prompt 07 (GPR for ML predictions), Prompt 01 (CommitManager)
+> **Dependency:** Prompt 01 (CommitManager/FitState), Prompt 02 (TensorCache for state restoration)
 
 ---
 
 ## Objective
 
-Construct the 3-Zone Interactive Dashboard's Zone A (Spectral Viewport) and Zone B (Assignment Ledger) using `ipywidgets` and `plotly-resampler`. Zone A provides a WebGL spectral overlay with drag-to-shift mechanics, and Zone B provides a virtualized assignment table with rapid triage buttons. All UI interactions must reflect local O−C error updates in <50 ms using cached Jacobians on host CPU memory (no full JAX diagonalization on drag).
+Build Zone C of the Interactive Dashboard — the DAG Time-Travel visualizer that renders every `FitState` commit as a node in a Provenance Graph. Users can click any historical node to instantly revert the UI and memory states. Nodes are color-coded by convergence health. Branch edges display deltas ("+4 ML assignments, −1 User deletion"). The reversion mechanic guarantees non-destructive exploratory workflows.
 
 ---
 
 ## Target File
 
 ```
-D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\interfaces\cochem_spycfit_ui_viewport.py
+D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\interfaces\cochem_spycfit_ui_provenance.py
 ```
 
 > **Scope:** This prompt targets ONLY the file above.
@@ -30,451 +30,247 @@ D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\interfaces\cochem_spycfit_
 ### 1. Required Imports
 
 ```python
-"""WebGL Spectral Viewport and Assignment Ledger for interactive spectral assignment."""
+"""DAG Provenance Graph visualizer with Time-Travel reversion mechanics."""
 from __future__ import annotations
 
 import logging
-from enum import Enum
 from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
-import ipywidgets as widgets
-from IPython.display import display
 
 logger = logging.getLogger(__name__)
 
-# Plotly with resampler for massive datasets
 try:
-    from plotly_resampler import FigureWidgetResampler
+    import networkx as nx
     import plotly.graph_objects as go
-    _HAS_PLOTLY = True
+    _HAS_GRAPH_DEPS = True
 except ImportError:
-    _HAS_PLOTLY = False
-    logger.warning("plotly-resampler not available. Viewport will use fallback rendering.")
+    _HAS_GRAPH_DEPS = False
+    logger.warning("networkx/plotly not available. Provenance graph disabled.")
+
+try:
+    import ipywidgets as widgets
+    _HAS_WIDGETS = True
+except ImportError:
+    _HAS_WIDGETS = False
 ```
 
-### 2. `AssignmentAction` Enum
+### 2. `ProvenanceGraphRenderer` Class
 
 ```python
-class AssignmentAction(Enum):
-    """User actions on assignment ledger rows."""
-    LOCK = "LOCK"       # ✅ Lock this assignment
-    DELETE = "DELETE"    # ❌ Delete this assignment
-    IGNORE = "IGNORE"   # 👁 Ignore from current cycle
-```
+class ProvenanceGraphRenderer:
+    """Renders the FitState DAG as an interactive provenance graph."""
 
-### 3. `SpectralViewport` Class — Full Implementation
-
-```python
-class SpectralViewport:
-    """WebGL spectral overlay with drag-to-shift assignment mechanics."""
+    # Color mapping for convergence health
+    HEALTH_COLORS: dict[str, str] = {
+        "improving": "#2ecc71",    # Green — RMSD decreasing
+        "stable": "#f39c12",       # Orange — RMSD stable
+        "diverging": "#e74c3c",    # Red — RMSD increasing
+    }
 
     def __init__(
         self,
-        experimental_csv_path: Path,
-        cached_jacobian: np.ndarray,
-        parameter_names: list[str],
+        commit_manager: object,  # CommitManager from Prompt 01
+        tensor_cache: object,    # TensorCache from Prompt 02
+        on_revert_callback: Callable[[str], None] = lambda _: None,
     ) -> None:
         """
         Parameters
         ----------
-        experimental_csv_path : Path
-            Absolute path to the raw experimental .csv spectrum file (Tier 1 read-only).
-        cached_jacobian : np.ndarray
-            Shape (N_transitions, N_params). Pre-computed Jacobian from JAX driver.
-            Used for instant O-C estimation on host CPU without full re-fit.
-        parameter_names : list[str]
-            Parameter names matching Jacobian columns (e.g., ['A', 'B', 'C', ...]).
+        commit_manager : CommitManager
+            The DAG state manager holding all FitState nodes.
+        tensor_cache : TensorCache
+            The HDF5 tensor cache for restoring heavy state matrices.
+        on_revert_callback : callable
+            Callback invoked with state_id when user clicks a historical node.
+            Responsible for updating the UI viewport and ledger.
         """
-        self._csv_path: Path = experimental_csv_path
-        self._jacobian: np.ndarray = cached_jacobian
-        self._param_names: list[str] = parameter_names
-        self._experimental_freqs: Optional[np.ndarray] = None
-        self._experimental_intensities: Optional[np.ndarray] = None
-        self._current_predictions: list = []
-        self._fig: Optional[object] = None
-        self._load_experimental_data()
+        self._commit_mgr = commit_manager
+        self._tensor_cache = tensor_cache
+        self._on_revert = on_revert_callback
+        self._graph: Optional[nx.DiGraph] = None
 
-    def _load_experimental_data(self) -> None:
-        """Load experimental spectrum CSV into NumPy arrays."""
-        import csv
-        freqs, intensities = [], []
-        with open(self._csv_path, "r") as f:
-            reader = csv.reader(f)
-            next(reader, None)  # Skip header
-            for row in reader:
-                freqs.append(float(row[0]))
-                intensities.append(float(row[1]))
-        self._experimental_freqs = np.array(freqs, dtype=np.float64)
-        self._experimental_intensities = np.array(intensities, dtype=np.float64)
-
-    def build_figure(
-        self,
-        predicted_transitions: list,
-        locked_assignments: tuple[tuple[int, int, int, int, int, int, float], ...],
-    ) -> None:
+    def build_graph(self) -> None:
         """
-        Build the Plotly WebGL figure with experimental trace + theoretical sticks.
+        Build a NetworkX DiGraph from the CommitManager's state registry.
 
-        Parameters
-        ----------
-        predicted_transitions : list[ResidualPrediction]
-            Predicted transitions with provenance tags.
-        locked_assignments : tuple
-            Currently locked assignments from FitState.
+        Each node is a FitState (keyed by state_id).
+        Each directed edge points from parent → child.
+        Node attributes include: global_rmsd, timestamp, n_assignments.
+        Edge attributes include: delta description string.
         """
-        self._current_predictions = predicted_transitions
-        if not _HAS_PLOTLY:
-            logger.error("plotly-resampler required for SpectralViewport.")
+        if not _HAS_GRAPH_DEPS:
+            logger.error("Cannot build graph: networkx/plotly not installed.")
             return
-        # Build FigureWidgetResampler with experimental scatter trace
-        # Add vertical stick markers for each predicted transition
-        # Color-code by provenance: [TORQ]=blue, [ML]=orange, [USER]=green
 
-    def _on_drag_shift(self, trace_index: int, new_frequency_mhz: float) -> None:
-        """
-        Handle drag-to-shift: snap to nearest peak, update O-C, set tag to [USER].
+        self._graph = nx.DiGraph()
+        states = self._commit_mgr._states  # Access internal registry
 
-        Parameters
-        ----------
-        trace_index : int
-            Index of the dragged transition in self._current_predictions.
-        new_frequency_mhz : float
-            The frequency position where the user released the drag.
-        """
-        from scipy.signal import find_peaks
-        snapped_freq = self._snap_to_peak(
-            new_frequency_mhz,
-            self._experimental_freqs,
-            self._experimental_intensities,
-        )
-        oc_error = self._update_local_oc(trace_index, snapped_freq)
-        logger.info(f"Drag-shift: transition {trace_index} snapped to {snapped_freq:.4f} MHz, O-C = {oc_error:.4f} MHz")
-
-    def _snap_to_peak(
-        self,
-        target_freq_mhz: float,
-        experimental_freqs: np.ndarray,
-        experimental_intensities: np.ndarray,
-    ) -> float:
-        """
-        Find nearest experimental peak apex via scipy.signal.find_peaks centroid.
-
-        Parameters
-        ----------
-        target_freq_mhz : float
-            Target frequency from user drag position.
-        experimental_freqs : np.ndarray
-            Experimental frequency axis.
-        experimental_intensities : np.ndarray
-            Experimental intensity axis.
-
-        Returns
-        -------
-        float
-            Frequency of the nearest experimental peak apex in MHz.
-        """
-        from scipy.signal import find_peaks
-        peak_indices, _ = find_peaks(experimental_intensities, height=0)
-        if len(peak_indices) == 0:
-            return target_freq_mhz
-        peak_freqs = experimental_freqs[peak_indices]
-        nearest_idx = np.argmin(np.abs(peak_freqs - target_freq_mhz))
-        return float(peak_freqs[nearest_idx])
-
-    def _update_local_oc(self, transition_index: int, nu_exp: float) -> float:
-        """
-        Estimate local O-C using cached Jacobian on host CPU (NumPy, NOT JAX).
-
-        Uses first-order approximation: O-C = ν_exp − ν_calc.
-        The Jacobian is available for sensitivity display but the primary
-        update is the direct frequency difference for <50 ms latency.
-
-        Parameters
-        ----------
-        transition_index : int
-            Index into self._current_predictions.
-        nu_exp : float
-            Observed (snapped) frequency in MHz.
-
-        Returns
-        -------
-        float
-            O-C residual in MHz.
-        """
-        nu_calc = self._current_predictions[transition_index].nu_calc_physical_mhz
-        return nu_exp - nu_calc
-
-    def get_widget(self) -> "widgets.VBox":
-        """Return the assembled SpectralViewport as an ipywidgets container."""
-        if self._fig is None:
-            return widgets.VBox([widgets.HTML("<p>No figure built. Call build_figure() first.</p>")])
-        return widgets.VBox([
-            widgets.HTML("<h3>🔬 Spectral Viewport</h3>"),
-            self._fig,
-        ])
-```
-
-### 4. `AssignmentLedger` Class — Full Implementation
-
-```python
-class AssignmentLedger:
-    """Virtualized assignment table with rapid triage action buttons."""
-
-    def __init__(
-        self,
-        on_action_callback: Callable[[int, AssignmentAction], None],
-        on_row_select_callback: Callable[[int], None],
-    ) -> None:
-        """
-        Parameters
-        ----------
-        on_action_callback : callable
-            Called with (row_index, AssignmentAction) when a triage button is pressed.
-        on_row_select_callback : callable
-            Called with (row_index) when a ledger row is clicked for viewport panning.
-        """
-        self._on_action = on_action_callback
-        self._on_select = on_row_select_callback
-        self._rows_container: Optional[widgets.VBox] = None
-
-    def update_rows(self, predictions: list) -> None:
-        """
-        Update the ledger with current predictions.
-
-        Parameters
-        ----------
-        predictions : list[ResidualPrediction]
-            Current transition predictions with provenance tags.
-        """
-        row_widgets = []
-        for i, pred in enumerate(predictions):
-            qn = pred.quantum_numbers
-            qn_str = f"{qn[0]}({qn[1]},{qn[2]})←{qn[3]}({qn[4]},{qn[5]})"
-            row_label = widgets.HTML(
-                f"<span>{qn_str} | ν={pred.nu_proposed_mhz:.4f} MHz | "
-                f"[{pred.provenance.value}] | Conf: {pred.probable_correctness:.0%}</span>"
+        for state_id, state in states.items():
+            health = self._classify_health(state, states)
+            self._graph.add_node(
+                state_id,
+                rmsd=state.global_rmsd,
+                timestamp=state.timestamp,
+                n_assignments=len(state.locked_assignments),
+                health=health,
+                color=self.HEALTH_COLORS[health],
             )
-            buttons = self._build_action_buttons(i)
-            row = widgets.HBox([row_label, buttons])
-            row_widgets.append(row)
-        self._rows_container = widgets.VBox(row_widgets)
+            if state.parent_id and state.parent_id in states:
+                parent = states[state.parent_id]
+                delta_n = len(state.locked_assignments) - len(parent.locked_assignments)
+                delta_rmsd = state.global_rmsd - parent.global_rmsd
+                edge_label = f"Δn={delta_n:+d}, ΔRMSD={delta_rmsd:+.2f} kHz"
+                self._graph.add_edge(state.parent_id, state_id, label=edge_label)
 
-    def _build_action_buttons(self, row_index: int) -> "widgets.HBox":
+    def _classify_health(
+        self,
+        state: object,  # FitState
+        all_states: dict,
+    ) -> str:
+        """Classify node health based on RMSD trend relative to parent."""
+        if state.parent_id is None or state.parent_id not in all_states:
+            return "stable"
+        parent = all_states[state.parent_id]
+        if state.global_rmsd < parent.global_rmsd * 0.95:
+            return "improving"
+        elif state.global_rmsd > parent.global_rmsd * 1.05:
+            return "diverging"
+        return "stable"
+
+    def render_plotly_figure(self) -> "go.FigureWidget":
         """
-        Create [✅ Lock], [❌ Delete], [👁 Ignore] buttons for a ledger row.
+        Render the provenance DAG as a Plotly FigureWidget with click callbacks.
 
-        Parameters
-        ----------
-        row_index : int
-            Index of the row in the predictions list.
+        Uses a hierarchical layout (dot/tree) to display DAG topology.
+        Node color = convergence health. Node size = number of locked assignments.
+        Click callback triggers reversion via on_revert_callback.
 
         Returns
         -------
-        widgets.HBox
-            Container with three action buttons.
+        go.FigureWidget
+            Interactive Plotly figure with click event handlers.
         """
-        lock_btn = widgets.Button(description="✅ Lock", button_style="success")
-        del_btn = widgets.Button(description="❌ Delete", button_style="danger")
-        ignore_btn = widgets.Button(description="👁 Ignore", button_style="info")
+        if self._graph is None:
+            self.build_graph()
 
-        lock_btn.on_click(lambda _: self._on_action(row_index, AssignmentAction.LOCK))
-        del_btn.on_click(lambda _: self._on_action(row_index, AssignmentAction.DELETE))
-        ignore_btn.on_click(lambda _: self._on_action(row_index, AssignmentAction.IGNORE))
+        # Use graphviz-style hierarchical layout
+        pos = nx.drawing.nx_agraph.graphviz_layout(
+            self._graph, prog="dot"
+        ) if nx.drawing.nx_agraph else nx.spring_layout(self._graph)
 
-        return widgets.HBox([lock_btn, del_btn, ignore_btn])
+        # Build node trace
+        node_x, node_y, node_colors, node_sizes, node_text, node_ids = [], [], [], [], [], []
+        for node_id, attrs in self._graph.nodes(data=True):
+            x, y = pos[node_id]
+            node_x.append(x)
+            node_y.append(y)
+            node_colors.append(attrs["color"])
+            node_sizes.append(max(10, attrs["n_assignments"]))
+            node_text.append(
+                f"State: {node_id[:12]}...<br>"
+                f"RMSD: {attrs['rmsd']:.2f} kHz<br>"
+                f"Assignments: {attrs['n_assignments']}<br>"
+                f"Time: {attrs['timestamp']}"
+            )
+            node_ids.append(node_id)
+
+        # Build edge trace
+        edge_x, edge_y = [], []
+        for u, v in self._graph.edges():
+            x0, y0 = pos[u]
+            x1, y1 = pos[v]
+            edge_x.extend([x0, x1, None])
+            edge_y.extend([y0, y1, None])
+
+        fig = go.FigureWidget()
+        fig.add_trace(go.Scatter(
+            x=edge_x, y=edge_y, mode="lines",
+            line=dict(width=1, color="#888"), hoverinfo="none",
+        ))
+        fig.add_trace(go.Scatter(
+            x=node_x, y=node_y, mode="markers+text",
+            marker=dict(size=node_sizes, color=node_colors, line=dict(width=1)),
+            text=[nid[:8] for nid in node_ids],
+            hovertext=node_text, hoverinfo="text",
+            textposition="top center",
+        ))
+        fig.update_layout(
+            title="Provenance Graph — Decision Tree",
+            showlegend=False,
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        )
+
+        # Click callback for reversion
+        def _on_click(trace, points, state):
+            if points.point_inds:
+                idx = points.point_inds[0]
+                selected_state_id = node_ids[idx]
+                logger.info(f"Time-travel reversion to state: {selected_state_id}")
+                self._on_revert(selected_state_id)
+
+        fig.data[1].on_click(_on_click)
+        return fig
+
+    def revert_to_state(self, state_id: str) -> dict[str, np.ndarray]:
+        """
+        Execute the Time-Travel reversion.
+
+        1. Set CommitManager HEAD to the target state_id
+        2. Restore heavy tensors from HDF5 cache via TensorCache
+        3. Return the restored matrices for UI update
+
+        Parameters
+        ----------
+        state_id : str
+            SHA-256 hash of the target state.
+
+        Returns
+        -------
+        dict[str, np.ndarray]
+            Restored tensors: covariance, hamiltonian, gp_weights.
+        """
+        self._commit_mgr.branch_from(state_id)
+        tensors = self._tensor_cache.restore_state_tensors(state_id)
+        logger.info(f"Reverted to state {state_id[:12]}... ({len(tensors)} tensors restored)")
+        return tensors
 
     def get_widget(self) -> "widgets.VBox":
-        """Return the assembled AssignmentLedger as an ipywidgets container."""
-        if self._rows_container is None:
-            return widgets.VBox([widgets.HTML("<p>No predictions loaded.</p>")])
+        """Return the provenance graph as an ipywidgets container."""
+        fig = self.render_plotly_figure()
         return widgets.VBox([
-            widgets.HTML("<h3>📋 Assignment Ledger</h3>"),
-            self._rows_container,
+            widgets.HTML("<h3>🕰️ Provenance Graph — Time-Travel</h3>"),
+            fig,
         ])
-```
-
-### 5. Master Action Buttons
-
-Add master buttons at the top level:
-- **[Commit & Recalculate]**: Triggers full JAX + SPFIT fit, updates ML model, creates new FitState commit
-- **[Propose More Assignments]**: Trains GP on new commits, generates new ML predictions
-- **[Save & Commit]**: Finalizes the fit, triggers FAIR export (handled by Prompt 12)
-
-Each button connects to a callback that the orchestrating notebook/application provides.
-
-### 6. Performance Constraint
-
-The drag-to-shift interaction MUST NOT trigger a full JAX Hamiltonian diagonalization. Instead, use the cached Jacobian (NumPy array on host CPU) for instant O−C estimation:
-
-```python
-def _update_local_oc(self, transition_index: int, nu_exp: float) -> float:
-    """
-    Estimate local O-C using cached Jacobian without full re-fit.
-    
-    Uses: δ(O-C) ≈ J[i, :] · δp  (first-order Taylor approximation)
-    This runs on host CPU via NumPy for <50 ms latency.
-    """
-    nu_calc = self._current_predictions[transition_index].nu_calc_physical_mhz
-    return nu_exp - nu_calc  # Simple O-C, enhanced by Jacobian sensitivity display
 ```
 
 ---
 
 ## Validation Test Specification
 
-1. Create a `SpectralViewport` with:
-   - An authentic H₂O experimental spectrum CSV file (containing real frequency vs. intensity columns for the 10 water transitions from Prompt 01's table, written to a `tempfile.TemporaryDirectory()`)
-   - A cached 10×6 Jacobian matrix with physically meaningful sensitivities derived from the H₂O Watson A-reduction Hamiltonian
-2. Dispatch a programmatic drag-to-shift event via widget traitlet callback
-3. **Assertions:**
-   - O−C error updates on host CPU memory without triggering JAX diagonalization
-   - Assignment tag updates from `[TORQ]` or `[ML]` to `[USER]` after shift
-   - `AssignmentLedger` renders correct columns: quantum numbers, ν_exp, ν_calc, O−C, provenance, confidence
-   - Action buttons trigger correct callbacks
+1. Create a `CommitManager` with 10 commits in a temp directory
+2. Branch off commit #5 and add 3 more commits (diverging RMSD)
+3. Build a `ProvenanceGraphRenderer`
+4. **Assertions:**
+   - `build_graph()` creates a NetworkX DiGraph with 13 nodes (10 + 3) and 12 edges
+   - Health classification: early commits with decreasing RMSD → "improving" (green)
+   - Branch commits with increasing RMSD → "diverging" (red)
+   - `revert_to_state(commit_5_id)` correctly sets HEAD to commit 5
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] WebGL rendering via `plotly-resampler` for 1M+ point spectra without DOM lag
-- [ ] Drag-to-shift snaps to nearest experimental peak via `scipy.signal.find_peaks`
-- [ ] Local O−C update uses cached Jacobian on CPU, not full JAX re-fit
-- [ ] UI interactions reflect updates in <50 ms
-- [ ] Assignment Ledger has [✅ Lock], [❌ Delete], [👁 Ignore] action buttons
-- [ ] Master buttons: [Commit & Recalculate], [Propose More], [Save & Commit]
-- [ ] Graceful fallback when plotly-resampler is not installed
+- [ ] NetworkX DiGraph faithfully represents the DAG from CommitManager
+- [ ] Nodes color-coded by convergence health (green/orange/red)
+- [ ] Edge labels show assignment deltas and RMSD changes
+- [ ] Click callback triggers reversion via `on_revert_callback`
+- [ ] `revert_to_state()` restores tensors from HDF5 in <100 ms
+- [ ] Graceful degradation when networkx/plotly not installed
 
 Modified files content:
-
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\interfaces\__init__.py ---
-"""
-CoChem-SpycFit Interfaces Module.
-
-Exports:
-- cochem_spycfit_ui: Decision Dashboard (HITL), Plotly WebGL dual-pane residuals, bipartite Hungarian auto-propose, offline PDF/HTML rendering, What-If parameter sliders, semantic commits.
-- cochem_vibspyc_snap: Publication-ready snapshot export, AASTeX/LaTeX longtable rendering, CrossRef BibTeX citations, dataset hashing, and artifact packaging.
-"""
-
-from .cochem_spycfit_ui import (
-    AssignmentStatus,
-    BipartiteConfig,
-    BipartiteMatchingError,
-    DashboardConfig,
-    HITLApprovalError,
-    HITLAssignmentManager,
-    OfflineRenderError,
-    PeakAssignment,
-    RenderBackend,
-    SemanticCommit,
-    SemanticCommitError,
-    SliderComputationError,
-    SpectralPeak,
-    SpycFitInteractiveDashboard,
-    SpycFitZMQClient,
-    SpycFitZMQServer,
-    UIDashboardError,
-    WhatIfParameterState,
-    WhatIfSpectrumEngine,
-    ZMQBridgeError,
-    auto_propose_assignments,
-    compute_bipartite_cost_matrix,
-    compute_huber_loss_excluding_ghosts,
-    create_spycfit_dashboard_widget,
-    render_dual_pane_dashboard,
-    render_static_offline_html,
-    render_static_offline_pdf,
-    run_lttb_decimation,
-    translate_mathematical_change_to_git_commit,
-    update_ui_state_hash,
-)
-from .cochem_spycfit_ui_viewport import (
-    AssignmentAction,
-    AssignmentLedger,
-    InteractiveSpectralDashboard,
-    InvalidJacobianError,
-    MasterControlBar,
-    SpectralViewport,
-    SpectrumLoadError,
-    ViewportError,
-)
-from .cochem_vibspyc_snap import (
-    FitProvenancePayload,
-    evaluate_compression_strategy,
-    export_spycfit_snapshot,
-    format_citations_to_bib,
-    generate_aastex_longtable,
-    generate_aastex_longtables,
-    generate_provenance_lock,
-    get_element_atomic_weight,
-    get_isotope_mass,
-    get_required_dois,
-    get_spycfit_processed_dir,
-    hash_dataset_iteratively,
-    package_fit_artifacts,
-    resolve_processed_workspace_dir,
-    seal_artifact_read_only,
-)
-
-__all__ = [
-    # UI Dashboard
-    "AssignmentStatus",
-    "BipartiteConfig",
-    "BipartiteMatchingError",
-    "DashboardConfig",
-    "HITLApprovalError",
-    "HITLAssignmentManager",
-    "OfflineRenderError",
-    "PeakAssignment",
-    "RenderBackend",
-    "SemanticCommit",
-    "SemanticCommitError",
-    "SliderComputationError",
-    "SpectralPeak",
-    "SpycFitInteractiveDashboard",
-    "SpycFitZMQClient",
-    "SpycFitZMQServer",
-    "UIDashboardError",
-    "WhatIfParameterState",
-    "WhatIfSpectrumEngine",
-    "ZMQBridgeError",
-    "auto_propose_assignments",
-    "compute_bipartite_cost_matrix",
-    "compute_huber_loss_excluding_ghosts",
-    "create_spycfit_dashboard_widget",
-    "render_dual_pane_dashboard",
-    "render_static_offline_html",
-    "render_static_offline_pdf",
-    "run_lttb_decimation",
-    "translate_mathematical_change_to_git_commit",
-    "update_ui_state_hash",
-    # UI Viewport & Assignment Ledger
-    "AssignmentAction",
-    "AssignmentLedger",
-    "InteractiveSpectralDashboard",
-    "InvalidJacobianError",
-    "MasterControlBar",
-    "SpectralViewport",
-    "SpectrumLoadError",
-    "ViewportError",
-    # Snapshot & Export
-    "FitProvenancePayload",
-    "evaluate_compression_strategy",
-    "export_spycfit_snapshot",
-    "format_citations_to_bib",
-    "generate_aastex_longtable",
-    "generate_aastex_longtables",
-    "generate_provenance_lock",
-    "get_element_atomic_weight",
-    "get_isotope_mass",
-    "get_required_dois",
-    "get_spycfit_processed_dir",
-    "hash_dataset_iteratively",
-    "package_fit_artifacts",
-    "resolve_processed_workspace_dir",
-    "seal_artifact_read_only",
-]
 
 --- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\interfaces\__init__.py ---
 """
@@ -524,6 +320,12 @@ from src.cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (
     SpectralViewport,
     SpectrumLoadError,
     ViewportError,
+)
+from src.cochem_spycfit.interfaces.cochem_spycfit_ui_provenance import (
+    GraphBuildError,
+    ProvenanceGraphError,
+    ProvenanceGraphRenderer,
+    StateReversionError,
 )
 from src.cochem_spycfit.interfaces.cochem_vibspyc_snap import (
     FitProvenancePayload,
@@ -584,6 +386,11 @@ __all__ = [
     "SpectralViewport",
     "SpectrumLoadError",
     "ViewportError",
+    # DAG Provenance Graph
+    "GraphBuildError",
+    "ProvenanceGraphError",
+    "ProvenanceGraphRenderer",
+    "StateReversionError",
     # Snapshot & Export
     "FitProvenancePayload",
     "evaluate_compression_strategy",
@@ -602,35 +409,114 @@ __all__ = [
     "seal_artifact_read_only",
 ]
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\interfaces\cochem_spycfit_ui_viewport.py ---
-"""CoChem-SpycFit: WebGL Spectral Viewport & Assignment Ledger Proxy Re-export."""
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\interfaces\__init__.py ---
+"""
+CoChem-SpycFit Interfaces Module.
 
-from __future__ import annotations
+Exports:
+- cochem_spycfit_ui: Decision Dashboard (HITL), Plotly WebGL dual-pane residuals, bipartite Hungarian auto-propose, offline PDF/HTML rendering, What-If parameter sliders, semantic commits.
+- cochem_vibspyc_snap: Publication-ready snapshot export, AASTeX/LaTeX longtable rendering, CrossRef BibTeX citations, dataset hashing, and artifact packaging.
+"""
 
-try:
-    from src.cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (
-        AssignmentAction,
-        AssignmentLedger,
-        InteractiveSpectralDashboard,
-        InvalidJacobianError,
-        MasterControlBar,
-        SpectralViewport,
-        SpectrumLoadError,
-        ViewportError,
-    )
-except ImportError:
-    from cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (  # type: ignore[no-redef]
-        AssignmentAction,
-        AssignmentLedger,
-        InteractiveSpectralDashboard,
-        InvalidJacobianError,
-        MasterControlBar,
-        SpectralViewport,
-        SpectrumLoadError,
-        ViewportError,
-    )
+from .cochem_spycfit_ui import (
+    AssignmentStatus,
+    BipartiteConfig,
+    BipartiteMatchingError,
+    DashboardConfig,
+    HITLApprovalError,
+    HITLAssignmentManager,
+    OfflineRenderError,
+    PeakAssignment,
+    RenderBackend,
+    SemanticCommit,
+    SemanticCommitError,
+    SliderComputationError,
+    SpectralPeak,
+    SpycFitInteractiveDashboard,
+    SpycFitZMQClient,
+    SpycFitZMQServer,
+    UIDashboardError,
+    WhatIfParameterState,
+    WhatIfSpectrumEngine,
+    ZMQBridgeError,
+    auto_propose_assignments,
+    compute_bipartite_cost_matrix,
+    compute_huber_loss_excluding_ghosts,
+    create_spycfit_dashboard_widget,
+    render_dual_pane_dashboard,
+    render_static_offline_html,
+    render_static_offline_pdf,
+    run_lttb_decimation,
+    translate_mathematical_change_to_git_commit,
+    update_ui_state_hash,
+)
+from .cochem_spycfit_ui_viewport import (
+    AssignmentAction,
+    AssignmentLedger,
+    InteractiveSpectralDashboard,
+    InvalidJacobianError,
+    MasterControlBar,
+    SpectralViewport,
+    SpectrumLoadError,
+    ViewportError,
+)
+from .cochem_spycfit_ui_provenance import (
+    GraphBuildError,
+    ProvenanceGraphError,
+    ProvenanceGraphRenderer,
+    StateReversionError,
+)
+from .cochem_vibspyc_snap import (
+    FitProvenancePayload,
+    evaluate_compression_strategy,
+    export_spycfit_snapshot,
+    format_citations_to_bib,
+    generate_aastex_longtable,
+    generate_aastex_longtables,
+    generate_provenance_lock,
+    get_element_atomic_weight,
+    get_isotope_mass,
+    get_required_dois,
+    get_spycfit_processed_dir,
+    hash_dataset_iteratively,
+    package_fit_artifacts,
+    resolve_processed_workspace_dir,
+    seal_artifact_read_only,
+)
 
 __all__ = [
+    # UI Dashboard
+    "AssignmentStatus",
+    "BipartiteConfig",
+    "BipartiteMatchingError",
+    "DashboardConfig",
+    "HITLApprovalError",
+    "HITLAssignmentManager",
+    "OfflineRenderError",
+    "PeakAssignment",
+    "RenderBackend",
+    "SemanticCommit",
+    "SemanticCommitError",
+    "SliderComputationError",
+    "SpectralPeak",
+    "SpycFitInteractiveDashboard",
+    "SpycFitZMQClient",
+    "SpycFitZMQServer",
+    "UIDashboardError",
+    "WhatIfParameterState",
+    "WhatIfSpectrumEngine",
+    "ZMQBridgeError",
+    "auto_propose_assignments",
+    "compute_bipartite_cost_matrix",
+    "compute_huber_loss_excluding_ghosts",
+    "create_spycfit_dashboard_widget",
+    "render_dual_pane_dashboard",
+    "render_static_offline_html",
+    "render_static_offline_pdf",
+    "run_lttb_decimation",
+    "translate_mathematical_change_to_git_commit",
+    "update_ui_state_hash",
+    # UI Viewport & Assignment Ledger
     "AssignmentAction",
     "AssignmentLedger",
     "InteractiveSpectralDashboard",
@@ -639,1236 +525,1082 @@ __all__ = [
     "SpectralViewport",
     "SpectrumLoadError",
     "ViewportError",
+    # DAG Provenance Graph
+    "GraphBuildError",
+    "ProvenanceGraphError",
+    "ProvenanceGraphRenderer",
+    "StateReversionError",
+    # Snapshot & Export
+    "FitProvenancePayload",
+    "evaluate_compression_strategy",
+    "export_spycfit_snapshot",
+    "format_citations_to_bib",
+    "generate_aastex_longtable",
+    "generate_aastex_longtables",
+    "generate_provenance_lock",
+    "get_element_atomic_weight",
+    "get_isotope_mass",
+    "get_required_dois",
+    "get_spycfit_processed_dir",
+    "hash_dataset_iteratively",
+    "package_fit_artifacts",
+    "resolve_processed_workspace_dir",
+    "seal_artifact_read_only",
 ]
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\interfaces\cochem_spycfit_ui_viewport.py ---
-"""WebGL Spectral Viewport and Assignment Ledger for interactive spectral assignment.
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\interfaces\cochem_spycfit_ui_provenance.py ---
+"""CoChem-SpycFit: DAG Provenance Graph & Time-Travel Proxy Re-export."""
 
-Phase 5, Task Group 01 Implementation:
-- Zone A: WebGL Spectral Viewport using Plotly / plotly-resampler.
-- Zone B: Virtualized Assignment Ledger using ipywidgets.
-- Real-time drag-to-shift peak snapping via scipy.signal.find_peaks.
-- Instant CPU-bound first-order O-C residual updates (<50 ms latency).
-- Provenance tag state transitions ([TORQ]/[ML] -> [USER]).
-- Rapid triage action buttons: [Lock], [Delete], [Ignore].
-- Master control actions: [Commit & Recalculate], [Propose More], [Save & Commit].
-- 3-Zone interactive dashboard integration.
+from __future__ import annotations
 
-Strict Zero-Mock Mandate: Authentic spectrum CSV loading, physical Jacobians, zero stubs.
+try:
+    from src.cochem_spycfit.interfaces.cochem_spycfit_ui_provenance import (
+        GraphBuildError,
+        ProvenanceGraphError,
+        ProvenanceGraphRenderer,
+        StateReversionError,
+    )
+except ImportError:
+    from cochem_spycfit.interfaces.cochem_spycfit_ui_provenance import (  # type: ignore[no-redef]
+        GraphBuildError,
+        ProvenanceGraphError,
+        ProvenanceGraphRenderer,
+        StateReversionError,
+    )
+
+__all__ = [
+    "GraphBuildError",
+    "ProvenanceGraphError",
+    "ProvenanceGraphRenderer",
+    "StateReversionError",
+]
+
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\interfaces\cochem_spycfit_ui_provenance.py ---
+"""DAG Provenance Graph visualizer with Time-Travel reversion mechanics.
+
+Zone C of the SpycFit Interactive Dashboard:
+- Directed Acyclic Graph (DAG) state visualization using NetworkX and Plotly.
+- Convergence health classification (improving, stable, diverging) based on RMSD differentials.
+- Directed edge labels displaying locked assignment count deltas and RMSD shifts.
+- Interactive node-click callbacks triggering instant time-travel state reversion.
+- High-precision tensor restoration (<100 ms) from SWMR HDF5 Tier 2 cache.
+- Ipywidgets container integration for full Jupyter notebook dashboard embedding.
 """
 
 from __future__ import annotations
 
-import csv
-from enum import Enum
 import logging
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-import ipywidgets as widgets
 import numpy as np
-from scipy.signal import find_peaks
-
-# Sibling import for provenance and prediction models
-try:
-    from ..physics_core.cochem_spycfit_ml_core import (
-        ProvenanceTag,
-        ResidualPrediction,
-    )
-except (ImportError, ValueError):
-    from cochem_spycfit.physics_core.cochem_spycfit_ml_core import (  # type: ignore[no-redef]
-        ProvenanceTag,
-        ResidualPrediction,
-    )
 
 logger = logging.getLogger(__name__)
 
-# Plotly with resampler for massive datasets
+# Graph and visualization dependencies with graceful degradation
 try:
-    from plotly_resampler import FigureWidgetResampler
+    import networkx as nx
     import plotly.graph_objects as go
 
-    _HAS_PLOTLY = True
-    _HAS_RESAMPLER = True
+    _HAS_GRAPH_DEPS = True
 except ImportError:
-    _HAS_RESAMPLER = False
-    try:
-        import plotly.graph_objects as go
+    _HAS_GRAPH_DEPS = False
+    logger.warning("networkx or plotly not available. Provenance graph rendering disabled.")
 
-        _HAS_PLOTLY = True
-    except ImportError:
-        _HAS_PLOTLY = False
-        logger.warning(
-            "plotly-resampler not available. Viewport will use fallback rendering."
-        )
+try:
+    import ipywidgets as widgets
 
-
-# =============================================================================
-# 1. TYPED EXCEPTION HIERARCHY
-# =============================================================================
-
-
-class ViewportError(Exception):
-    """Base exception for all spectral viewport and assignment ledger operations."""
-
-
-class SpectrumLoadError(ViewportError):
-    """Raised when loading or parsing experimental spectrum CSV fails."""
-
-
-class InvalidJacobianError(ViewportError):
-    """Raised when cached Jacobian dimension mismatches transitions or parameters."""
+    _HAS_WIDGETS = True
+except ImportError:
+    _HAS_WIDGETS = False
+    logger.warning("ipywidgets not available. Interactive widget container disabled.")
 
 
 # =============================================================================
-# 2. ENUMS
+# 1. EXCEPTION HIERARCHY
 # =============================================================================
 
 
-class AssignmentAction(Enum):
-    """User actions on assignment ledger rows."""
+class ProvenanceGraphError(Exception):
+    """Base exception for all DAG provenance graph operations."""
 
-    LOCK = "LOCK"  # ✅ Lock this assignment
-    DELETE = "DELETE"  # ❌ Delete this assignment
-    IGNORE = "IGNORE"  # 👁 Ignore from current cycle
+
+class GraphBuildError(ProvenanceGraphError):
+    """Raised when DAG graph construction from CommitManager fails."""
+
+
+class StateReversionError(ProvenanceGraphError):
+    """Raised when time-travel reversion to historical FitState fails."""
 
 
 # =============================================================================
-# 3. SPECTRAL VIEWPORT CLASS (ZONE A)
+# 2. PROVENANCE GRAPH RENDERER CLASS (ZONE C)
 # =============================================================================
 
 
-class SpectralViewport:
-    """WebGL spectral overlay with drag-to-shift assignment mechanics."""
+class ProvenanceGraphRenderer:
+    """Renders the FitState DAG as an interactive provenance graph with time-travel."""
+
+    # Color mapping for convergence health
+    HEALTH_COLORS: dict[str, str] = {
+        "improving": "#2ecc71",  # Green — RMSD decreasing (< 0.95x parent)
+        "stable": "#f39c12",     # Orange — RMSD stable (0.95x to 1.05x parent)
+        "diverging": "#e74c3c",  # Red — RMSD increasing (> 1.05x parent)
+    }
 
     def __init__(
         self,
-        experimental_csv_path: Union[str, Path],
-        cached_jacobian: np.ndarray,
-        parameter_names: list[str],
+        commit_manager: object,
+        tensor_cache: object,
+        on_revert_callback: Callable[[str], None] = lambda _: None,
     ) -> None:
-        """Parameters
+        """Initialize the ProvenanceGraphRenderer.
+
+        Parameters
         ----------
-        experimental_csv_path : Path or str
-            Absolute path to the raw experimental .csv spectrum file (Tier 1 read-only).
-        cached_jacobian : np.ndarray
-            Shape (N_transitions, N_params). Pre-computed Jacobian from JAX driver.
-            Used for instant O-C estimation on host CPU without full re-fit.
-        parameter_names : list[str]
-            Parameter names matching Jacobian columns (e.g., ['A', 'B', 'C', ...]).
+        commit_manager : object
+            The DAG state manager holding all FitState nodes.
+        tensor_cache : object
+            The HDF5 tensor cache for restoring heavy state matrices.
+        on_revert_callback : Callable[[str], None], optional
+            Callback invoked with state_id when user selects a historical node.
+            Defaults to a no-op lambda.
         """
-        self._csv_path: Path = Path(experimental_csv_path).resolve()
-        self._jacobian: np.ndarray = np.asarray(
-            cached_jacobian, dtype=np.float64
-        )
-        self._param_names: list[str] = list(parameter_names)
-        self._experimental_freqs: Optional[np.ndarray] = None
-        self._experimental_intensities: Optional[np.ndarray] = None
-        self._current_predictions: list[ResidualPrediction] = []
-        self._locked_assignments: tuple = ()
+        self._commit_mgr = commit_manager
+        self._tensor_cache = tensor_cache
+        self._on_revert: Callable[[str], None] = on_revert_callback
+        self._graph: Optional[nx.DiGraph] = None
         self._fig: Optional[Any] = None
-
-        self._load_experimental_data()
-
-    @property
-    def experimental_freqs(self) -> Optional[np.ndarray]:
-        """Return experimental frequency axis array."""
-        return self._experimental_freqs
+        self._node_id_registry: List[str] = []
 
     @property
-    def experimental_intensities(self) -> Optional[np.ndarray]:
-        """Return experimental intensity axis array."""
-        return self._experimental_intensities
+    def commit_manager(self) -> object:
+        """Return the bound CommitManager instance."""
+        return self._commit_mgr
 
     @property
-    def current_predictions(self) -> list[ResidualPrediction]:
-        """Return currently loaded predictions."""
-        return self._current_predictions
+    def tensor_cache(self) -> object:
+        """Return the bound TensorCache instance."""
+        return self._tensor_cache
 
     @property
-    def jacobian(self) -> np.ndarray:
-        """Return cached Jacobian sensitivity matrix."""
-        return self._jacobian
-
-    @property
-    def parameter_names(self) -> list[str]:
-        """Return parameter names matching Jacobian columns."""
-        return self._param_names
+    def graph(self) -> Optional[nx.DiGraph]:
+        """Return the underlying NetworkX DiGraph representation."""
+        return self._graph
 
     @property
     def fig(self) -> Optional[Any]:
-        """Return the internal Plotly figure object."""
+        """Return the cached Plotly figure object."""
         return self._fig
 
-    def _load_experimental_data(self) -> None:
-        """Load experimental spectrum CSV into NumPy arrays."""
-        if not self._csv_path.exists() or not self._csv_path.is_file():
-            raise SpectrumLoadError(
-                f"Experimental spectrum file not found: {self._csv_path}"
-            )
+    @property
+    def on_revert_callback(self) -> Callable[[str], None]:
+        """Return the registered state reversion callback."""
+        return self._on_revert
 
-        freqs: list[float] = []
-        intensities: list[float] = []
+    def build_graph(self) -> None:
+        """Build a NetworkX DiGraph from the CommitManager state registry.
 
-        try:
-            with open(self._csv_path, "r", encoding="utf-8") as f:
-                reader = csv.reader(f)
-                for row in reader:
-                    if not row or len(row) < 2:
-                        continue
-                    try:
-                        freq_val = float(row[0].strip())
-                        int_val = float(row[1].strip())
-                        freqs.append(freq_val)
-                        intensities.append(int_val)
-                    except ValueError:
-                        # Skip non-numeric header row
-                        continue
-        except Exception as err:
-            raise SpectrumLoadError(
-                f"Failed to read CSV spectrum at {self._csv_path}: {err}"
-            ) from err
-
-        if len(freqs) == 0:
-            raise SpectrumLoadError(
-                f"No valid spectral data rows found in CSV: {self._csv_path}"
-            )
-
-        self._experimental_freqs = np.asarray(freqs, dtype=np.float64)
-        self._experimental_intensities = np.asarray(
-            intensities, dtype=np.float64
-        )
-
-    def build_figure(
-        self,
-        predicted_transitions: Sequence[ResidualPrediction],
-        locked_assignments: tuple[
-            tuple[int, int, int, int, int, int, float], ...
-        ] = (),
-    ) -> None:
-        """Build the Plotly WebGL figure with experimental trace + theoretical sticks.
-
-        Parameters
-        ----------
-        predicted_transitions : Sequence[ResidualPrediction]
-            Predicted transitions with provenance tags.
-        locked_assignments : tuple
-            Currently locked assignments from FitState.
+        Each node is a FitState (keyed by state_id).
+        Each directed edge points from parent -> child.
+        Node attributes include: rmsd, timestamp, n_assignments, health, color.
+        Edge attributes include: label, delta_n, delta_rmsd.
         """
-        self._current_predictions = list(predicted_transitions)
-        self._locked_assignments = tuple(locked_assignments)
-
-        if not _HAS_PLOTLY:
-            logger.error("plotly required for SpectralViewport.")
-            self._fig = None
+        if not _HAS_GRAPH_DEPS:
+            logger.error("Cannot build graph: networkx/plotly dependencies are missing.")
             return
 
-        fig = go.Figure()
+        self._graph = nx.DiGraph()
 
-        # 1. Experimental Spectrum Trace
-        if (
-            self._experimental_freqs is not None
-            and self._experimental_intensities is not None
-        ):
-            fig.add_trace(
-                go.Scattergl(
-                    x=self._experimental_freqs,
-                    y=self._experimental_intensities,
-                    mode="lines",
-                    name="Experimental Spectrum",
-                    line=dict(color="#1f77b4", width=1.5),
-                    hoverinfo="x+y",
+        # Retrieve state dictionary from commit manager
+        raw_states = getattr(self._commit_mgr, "states", None)
+        if raw_states is None:
+            raw_states = getattr(self._commit_mgr, "_states", {})
+        states_dict: Dict[str, Any] = dict(raw_states)
+
+        for state_id, state in states_dict.items():
+            health = self._classify_health(state, states_dict)
+            locked = getattr(state, "locked_assignments", ()) or ()
+            n_assign = len(locked)
+            rmsd_val = float(getattr(state, "global_rmsd", 0.0))
+            ts_str = str(getattr(state, "timestamp", ""))
+
+            self._graph.add_node(
+                state_id,
+                rmsd=rmsd_val,
+                timestamp=ts_str,
+                n_assignments=n_assign,
+                health=health,
+                color=self.HEALTH_COLORS.get(health, self.HEALTH_COLORS["stable"]),
+            )
+
+            parent_id = getattr(state, "parent_id", None)
+            if parent_id and parent_id in states_dict:
+                parent_state = states_dict[parent_id]
+                parent_locked = getattr(parent_state, "locked_assignments", ()) or ()
+                delta_n = n_assign - len(parent_locked)
+                parent_rmsd = float(getattr(parent_state, "global_rmsd", 0.0))
+                delta_rmsd = rmsd_val - parent_rmsd
+                edge_label = f"Δn={delta_n:+d}, ΔRMSD={delta_rmsd:+.2f} kHz"
+                self._graph.add_edge(
+                    parent_id,
+                    state_id,
+                    label=edge_label,
+                    delta_n=delta_n,
+                    delta_rmsd=delta_rmsd,
                 )
-            )
 
-        # 2. Predicted Transitions Sticks
-        max_int = (
-            float(np.max(self._experimental_intensities))
-            if (
-                self._experimental_intensities is not None
-                and len(self._experimental_intensities) > 0
-            )
-            else 100.0
-        )
-        stick_height = 0.85 * max_int
+    def _classify_health(
+        self,
+        state: object,
+        all_states: Dict[str, Any],
+    ) -> str:
+        """Classify node convergence health based on RMSD trend relative to parent.
 
-        # Color mapping by provenance
-        prov_colors = {
-            ProvenanceTag.TORQ: "#3399ff",  # Pure ab initio
-            ProvenanceTag.ML: "#ff7f0e",  # ML shifted
-            ProvenanceTag.USER: "#2ca02c",  # User assigned
-        }
+        Parameters
+        ----------
+        state : object
+            FitState to evaluate.
+        all_states : dict
+            Full dictionary of state objects in DAG.
 
-        for pred in self._current_predictions:
-            qn = pred.quantum_numbers
-            qn_str = f"{qn[0]}({qn[1]},{qn[2]})←{qn[3]}({qn[4]},{qn[5]})"
-            color = prov_colors.get(pred.provenance, "#7f7f7f")
-            prov_label = (
-                pred.provenance.value
-                if hasattr(pred.provenance, "value")
-                else str(pred.provenance)
-            )
+        Returns
+        -------
+        str
+            'improving', 'diverging', or 'stable'.
+        """
+        parent_id = getattr(state, "parent_id", None)
+        if parent_id is None or parent_id not in all_states:
+            return "stable"
 
-            # Draw stick as vertical segment + marker top
-            fig.add_trace(
-                go.Scattergl(
-                    x=[pred.nu_proposed_mhz, pred.nu_proposed_mhz],
-                    y=[0.0, stick_height],
-                    mode="lines+markers",
-                    marker=dict(size=[0, 8], color=color),
-                    line=dict(color=color, width=2.0),
-                    name=f"[{prov_label}] {qn_str}",
-                    hovertext=(
-                        f"<b>Transition:</b> {qn_str}<br>"
-                        f"<b>ν_proposed:</b> {pred.nu_proposed_mhz:.4f} MHz<br>"
-                        f"<b>ν_calc:</b> {pred.nu_calc_physical_mhz:.4f} MHz<br>"
-                        f"<b>ML Shift:</b> {pred.delta_nu_ml_shift_mhz:+.4f} MHz<br>"
-                        f"<b>Provenance:</b> [{prov_label}]<br>"
-                        f"<b>Confidence:</b> {pred.probable_correctness:.1%}"
-                    ),
-                    hoverinfo="text",
-                    showlegend=False,
-                )
-            )
+        parent_state = all_states[parent_id]
+        current_rmsd = float(getattr(state, "global_rmsd", 0.0))
+        parent_rmsd = float(getattr(parent_state, "global_rmsd", 0.0))
 
-        # 3. Locked Assignments Markers
-        for locked in self._locked_assignments:
-            nu_locked = float(locked[6])
-            fig.add_trace(
-                go.Scattergl(
-                    x=[nu_locked, nu_locked],
-                    y=[0.0, stick_height * 0.95],
-                    mode="lines+markers",
-                    marker=dict(symbol="cross", size=[0, 10], color="#00cc96"),
-                    line=dict(color="#00cc96", width=2.5, dash="dot"),
-                    name="✅ Locked",
-                    hovertext=f"<b>Locked Assignment:</b> {nu_locked:.4f} MHz",
-                    hoverinfo="text",
-                    showlegend=False,
-                )
-            )
+        if current_rmsd < parent_rmsd * 0.95:
+            return "improving"
+        elif current_rmsd > parent_rmsd * 1.05:
+            return "diverging"
+        return "stable"
 
-        # 4. Figure Layout
-        fig.update_layout(
-            title="🔬 SpycFit WebGL Spectral Viewport (Zone A)",
-            xaxis_title="Frequency (MHz)",
-            yaxis_title="Intensity (arb. units)",
-            hovermode="closest",
-            template="plotly_white",
-            margin=dict(l=50, r=30, t=50, b=50),
-        )
+    def _compute_dag_layout(
+        self,
+        graph: nx.DiGraph,
+    ) -> Dict[str, Tuple[float, float]]:
+        """Compute 2D coordinates for DAG nodes using hierarchical tree layout.
 
-        if _HAS_RESAMPLER:
+        Attempts Graphviz dot layout if available, falling back to a deterministic
+        topological level arrangement.
+
+        Parameters
+        ----------
+        graph : nx.DiGraph
+            Directed acyclic graph to position.
+
+        Returns
+        -------
+        dict
+            Mapping from node_id to (x, y) coordinate tuple.
+        """
+        pos_dict: Optional[Dict[str, Tuple[float, float]]] = None
+
+        if hasattr(nx, "drawing") and hasattr(nx.drawing, "nx_agraph"):
             try:
-                self._fig = FigureWidgetResampler(fig)
-            except Exception:
-                self._fig = fig
-        else:
-            self._fig = fig
+                raw_pos = nx.drawing.nx_agraph.graphviz_layout(graph, prog="dot")
+                if raw_pos and isinstance(raw_pos, dict):
+                    pos_dict = {
+                        str(k): (float(v[0]), float(v[1])) for k, v in raw_pos.items()
+                    }
+            except Exception as layout_err:
+                logger.debug("Graphviz layout unavailable: %s", layout_err)
+                pos_dict = None
 
-    def _on_drag_shift(
-        self, trace_index: int, new_frequency_mhz: float
-    ) -> float:
-        """Handle drag-to-shift: snap to nearest peak, update O-C, set tag to [USER].
+        if pos_dict is not None:
+            return pos_dict
 
-        Parameters
-        ----------
-        trace_index : int
-            Index of the dragged transition in self._current_predictions.
-        new_frequency_mhz : float
-            The frequency position where the user released the drag.
+        # Deterministic hierarchical topological layout fallback
+        pos_dict = {}
+        if len(graph) == 0:
+            return pos_dict
+
+        # Identify root nodes (in-degree == 0)
+        roots = [n for n, deg in graph.in_degree() if deg == 0]
+        if not roots:
+            roots = list(graph.nodes())[:1]
+
+        # Compute depth from root nodes using longest path
+        node_depths: Dict[str, int] = {}
+        for node in graph.nodes():
+            node_depths[node] = 0
+
+        try:
+            topo_order = list(nx.topological_sort(graph))
+            for u in topo_order:
+                for v in graph.successors(u):
+                    if node_depths[v] < node_depths[u] + 1:
+                        node_depths[v] = node_depths[u] + 1
+        except Exception:
+            # Fallback if cycles present
+            for r in roots:
+                for target, length in nx.single_source_shortest_path_length(graph, r).items():
+                    if length > node_depths.get(target, 0):
+                        node_depths[target] = length
+
+        # Group nodes by depth
+        levels: Dict[int, List[str]] = {}
+        for n, d in node_depths.items():
+            if d not in levels:
+                levels[d] = []
+            levels[d].append(n)
+
+        for depth_lvl, nodes_at_lvl in levels.items():
+            total_at_lvl = len(nodes_at_lvl)
+            for idx, n in enumerate(nodes_at_lvl):
+                x_coord = (float(idx) - (float(total_at_lvl) - 1.0) / 2.0) * 2.0
+                y_coord = -float(depth_lvl) * 2.0
+                pos_dict[n] = (x_coord, y_coord)
+
+        return pos_dict
+
+    def render_plotly_figure(self) -> Any:
+        """Render the provenance DAG as an interactive Plotly FigureWidget.
+
+        Node color corresponds to convergence health (green/orange/red).
+        Node size scales with number of locked assignments.
+        Edges show assignment count deltas and RMSD changes.
+        Click event triggers instant time-travel state reversion.
 
         Returns
         -------
-        float
-            The updated O-C residual in MHz.
+        go.FigureWidget or go.Figure
+            Interactive Plotly visualization.
         """
-        if (
-            self._experimental_freqs is None
-            or self._experimental_intensities is None
-        ):
-            raise SpectrumLoadError("Experimental spectrum data is not loaded")
+        if not _HAS_GRAPH_DEPS:
+            logger.error("Cannot render plotly figure: networkx/plotly missing.")
+            return None
 
-        snapped_freq = self._snap_to_peak(
-            new_frequency_mhz,
-            self._experimental_freqs,
-            self._experimental_intensities,
+        if self._graph is None:
+            self.build_graph()
+
+        if self._graph is None or len(self._graph) == 0:
+            fig_empty = go.Figure()
+            fig_empty.update_layout(
+                title="🕰️ Provenance Graph — (Empty DAG)",
+                template="plotly_white",
+            )
+            self._fig = fig_empty
+            return fig_empty
+
+        pos = self._compute_dag_layout(self._graph)
+
+        # Build node coordinates and styling
+        node_x: List[float] = []
+        node_y: List[float] = []
+        node_colors: List[str] = []
+        node_sizes: List[float] = []
+        node_labels: List[str] = []
+        hover_descriptions: List[str] = []
+        self._node_id_registry = []
+
+        for node_id, attrs in self._graph.nodes(data=True):
+            coord = pos.get(node_id, (0.0, 0.0))
+            node_x.append(coord[0])
+            node_y.append(coord[1])
+            node_colors.append(attrs.get("color", self.HEALTH_COLORS["stable"]))
+            n_assign = attrs.get("n_assignments", 0)
+            size_val = max(14.0, min(36.0, 12.0 + float(n_assign) * 2.0))
+            node_sizes.append(size_val)
+            node_labels.append(node_id[:8])
+            self._node_id_registry.append(node_id)
+
+            rmsd_disp = attrs.get("rmsd", 0.0)
+            health_disp = attrs.get("health", "stable")
+            ts_disp = attrs.get("timestamp", "")
+            hover_descriptions.append(
+                f"<b>Commit:</b> {node_id[:12]}...<br>"
+                f"<b>RMSD:</b> {rmsd_disp:.2f} kHz<br>"
+                f"<b>Assignments:</b> {n_assign}<br>"
+                f"<b>Health:</b> {health_disp.upper()}<br>"
+                f"<b>Created:</b> {ts_disp}"
+            )
+
+        # Build edge paths and mid-point hover markers
+        edge_x: List[Optional[float]] = []
+        edge_y: List[Optional[float]] = []
+        edge_mid_x: List[float] = []
+        edge_mid_y: List[float] = []
+        edge_hover_labels: List[str] = []
+
+        for u, v, edge_data in self._graph.edges(data=True):
+            p0 = pos.get(u, (0.0, 0.0))
+            p1 = pos.get(v, (0.0, 0.0))
+            edge_x.extend([p0[0], p1[0], None])
+            edge_y.extend([p0[1], p1[1], None])
+            edge_mid_x.append((p0[0] + p1[0]) / 2.0)
+            edge_mid_y.append((p0[1] + p1[1]) / 2.0)
+            edge_hover_labels.append(edge_data.get("label", ""))
+
+        try:
+            fig = go.FigureWidget()
+        except Exception:
+            fig = go.Figure()
+
+        # 1. Edge lines trace
+        fig.add_trace(
+            go.Scatter(
+                x=edge_x,
+                y=edge_y,
+                mode="lines",
+                line=dict(width=1.5, color="#888888"),
+                hoverinfo="none",
+                showlegend=False,
+            )
         )
-        oc_error = self._update_local_oc(trace_index, snapped_freq)
 
-        old_pred = self._current_predictions[trace_index]
-        updated_pred = ResidualPrediction(
-            quantum_numbers=old_pred.quantum_numbers,
-            nu_calc_physical_mhz=old_pred.nu_calc_physical_mhz,
-            delta_nu_ml_shift_mhz=snapped_freq - old_pred.nu_calc_physical_mhz,
-            nu_proposed_mhz=snapped_freq,
-            sigma_predict_mhz=0.0,
-            probable_correctness=1.0,
-            provenance=ProvenanceTag.USER,
+        # 2. Edge delta mid-point hover trace
+        if edge_mid_x:
+            fig.add_trace(
+                go.Scatter(
+                    x=edge_mid_x,
+                    y=edge_mid_y,
+                    mode="markers",
+                    marker=dict(size=6, color="#888888", opacity=0.0),
+                    hovertext=edge_hover_labels,
+                    hoverinfo="text",
+                    showlegend=False,
+                )
+            )
+
+        # 3. Node markers trace
+        fig.add_trace(
+            go.Scatter(
+                x=node_x,
+                y=node_y,
+                mode="markers+text",
+                marker=dict(
+                    size=node_sizes,
+                    color=node_colors,
+                    line=dict(width=1.5, color="#2c3e50"),
+                ),
+                text=node_labels,
+                hovertext=hover_descriptions,
+                hoverinfo="text",
+                textposition="top center",
+                showlegend=False,
+            )
         )
-        self._current_predictions[trace_index] = updated_pred
 
+        # Layout styling
+        fig.update_layout(
+            title="🕰️ Provenance Graph — Decision Tree & Time-Travel",
+            showlegend=False,
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            template="plotly_white",
+            margin=dict(l=40, r=40, t=50, b=40),
+            hovermode="closest",
+        )
+
+        # Attach click event listener for time-travel state reversion
+        if len(fig.data) > 0 and hasattr(fig.data[-1], "on_click"):
+            fig.data[-1].on_click(self._handle_node_click)
+
+        self._fig = fig
+        return fig
+
+    def _handle_node_click(self, trace: Any, points: Any, state: Any) -> None:
+        """Handle user click on a graph node to dispatch state reversion."""
+        if points and hasattr(points, "point_inds") and points.point_inds:
+            idx = int(points.point_inds[0])
+            if 0 <= idx < len(self._node_id_registry):
+                target_state_id = self._node_id_registry[idx]
+                logger.info("Time-travel reversion initiated to state: %s", target_state_id)
+                self._on_revert(target_state_id)
+
+    def revert_to_state(self, state_id: str) -> Dict[str, np.ndarray]:
+        """Execute Time-Travel state reversion.
+
+        1. Set CommitManager HEAD to target historical state_id.
+        2. Restore high-precision tensors from HDF5 cache via TensorCache.
+        3. Return restored tensor dictionary.
+
+        Parameters
+        ----------
+        state_id : str
+            SHA-256 hash of target historical FitState.
+
+        Returns
+        -------
+        dict[str, np.ndarray]
+            Restored tensors (covariance, hamiltonian, gp_weights, etc.).
+
+        Raises
+        ------
+        KeyError
+            If state_id does not exist in CommitManager or TensorCache.
+        StateReversionError
+            If commit manager or tensor cache interface is invalid.
+        """
+        if not hasattr(self._commit_mgr, "branch_from"):
+            raise StateReversionError(
+                "CommitManager does not implement required branch_from method."
+            )
+
+        self._commit_mgr.branch_from(state_id)
+
+        if not hasattr(self._tensor_cache, "restore_state_tensors"):
+            raise StateReversionError(
+                "TensorCache does not implement required restore_state_tensors method."
+            )
+
+        restored_tensors = self._tensor_cache.restore_state_tensors(state_id)
         logger.info(
-            f"Drag-shift: transition {trace_index} snapped to {snapped_freq:.4f} MHz, O-C = {oc_error:.4f} MHz"
+            "Reverted to state %s... (%d tensors restored)",
+            state_id[:12],
+            len(restored_tensors),
         )
-        return oc_error
+        return restored_tensors
 
-    def _snap_to_peak(
-        self,
-        target_freq_mhz: float,
-        experimental_freqs: np.ndarray,
-        experimental_intensities: np.ndarray,
-    ) -> float:
-        """Find nearest experimental peak apex via scipy.signal.find_peaks centroid.
-
-        Parameters
-        ----------
-        target_freq_mhz : float
-            Target frequency from user drag position.
-        experimental_freqs : np.ndarray
-            Experimental frequency axis.
-        experimental_intensities : np.ndarray
-            Experimental intensity axis.
+    def get_widget(self) -> Any:
+        """Assemble and return the provenance graph as an ipywidgets container.
 
         Returns
         -------
-        float
-            Frequency of the nearest experimental peak apex in MHz.
+        widgets.VBox or None
+            Ipywidgets container with dashboard title and Plotly graph.
         """
-        peak_indices, _ = find_peaks(experimental_intensities, height=0)
-        if len(peak_indices) == 0:
-            peak_indices, _ = find_peaks(experimental_intensities)
+        if not _HAS_WIDGETS:
+            logger.warning("ipywidgets not available for get_widget.")
+            return None
 
-        if len(peak_indices) == 0:
-            return float(target_freq_mhz)
+        fig = self.render_plotly_figure()
+        if fig is None:
+            return widgets.VBox(
+                [widgets.HTML("<p>Provenance graph rendering unavailable.</p>")]
+            )
 
-        peak_freqs = experimental_freqs[peak_indices]
-        nearest_idx = int(np.argmin(np.abs(peak_freqs - target_freq_mhz)))
-        return float(peak_freqs[nearest_idx])
-
-    def _update_local_oc(self, transition_index: int, nu_exp: float) -> float:
-        """Estimate local O-C using cached Jacobian on host CPU (NumPy, NOT JAX).
-
-        Uses first-order approximation: O-C = ν_exp − ν_calc.
-        The Jacobian is available for sensitivity display but the primary
-        update is the direct frequency difference for <50 ms latency.
-
-        Parameters
-        ----------
-        transition_index : int
-            Index into self._current_predictions.
-        nu_exp : float
-            Observed (snapped) frequency in MHz.
-
-        Returns
-        -------
-        float
-            O-C residual in MHz.
-        """
-        nu_calc = self._current_predictions[
-            transition_index
-        ].nu_calc_physical_mhz
-        return float(nu_exp - nu_calc)
-
-    def get_widget(self) -> widgets.VBox:
-        """Return the assembled SpectralViewport as an ipywidgets container."""
-        if self._fig is None:
+        if isinstance(fig, widgets.Widget):
             return widgets.VBox(
                 [
-                    widgets.HTML(
-                        "<p>No figure built. Call build_figure() first.</p>"
-                    )
-                ]
+                    widgets.HTML("<h3>🕰️ Provenance Graph — Time-Travel</h3>"),
+                    fig,
+                ],
+                layout=widgets.Layout(padding="10px"),
             )
 
-        if isinstance(self._fig, widgets.Widget):
-            return widgets.VBox(
-                [
-                    widgets.HTML("<h3>🔬 Spectral Viewport</h3>"),
-                    self._fig,
-                ]
-            )
-
-        # Fallback to HTML representation if fig is go.Figure
         return widgets.VBox(
             [
-                widgets.HTML("<h3>🔬 Spectral Viewport</h3>"),
+                widgets.HTML("<h3>🕰️ Provenance Graph — Time-Travel</h3>"),
                 widgets.HTML(
-                    self._fig.to_html(include_plotlyjs="cdn", full_html=False)
+                    fig.to_html(include_plotlyjs="cdn", full_html=False)
                 ),
-            ]
-        )
-
-
-# =============================================================================
-# 4. ASSIGNMENT LEDGER CLASS (ZONE B)
-# =============================================================================
-
-
-class AssignmentLedger:
-    """Virtualized assignment table with rapid triage action buttons."""
-
-    def __init__(
-        self,
-        on_action_callback: Callable[[int, AssignmentAction], None],
-        on_row_select_callback: Callable[[int], None],
-    ) -> None:
-        """Parameters
-        ----------
-        on_action_callback : callable
-            Called with (row_index, AssignmentAction) when a triage button is pressed.
-        on_row_select_callback : callable
-            Called with (row_index) when a ledger row is clicked for viewport panning.
-        """
-        self._on_action: Callable[[int, AssignmentAction], None] = (
-            on_action_callback
-        )
-        self._on_select: Callable[[int], None] = on_row_select_callback
-        self._rows_container: Optional[widgets.VBox] = None
-        self._current_predictions: list[ResidualPrediction] = []
-
-    @property
-    def current_predictions(self) -> list[ResidualPrediction]:
-        """Return current predictions loaded in ledger."""
-        return self._current_predictions
-
-    @property
-    def rows_container(self) -> Optional[widgets.VBox]:
-        """Return rows container widget."""
-        return self._rows_container
-
-    def update_rows(
-        self, predictions: Sequence[ResidualPrediction]
-    ) -> None:
-        """Update the ledger with current predictions.
-
-        Parameters
-        ----------
-        predictions : Sequence[ResidualPrediction]
-            Current transition predictions with provenance tags.
-        """
-        self._current_predictions = list(predictions)
-        row_widgets = []
-
-        for i, pred in enumerate(self._current_predictions):
-            qn = pred.quantum_numbers
-            qn_str = f"{qn[0]}({qn[1]},{qn[2]})←{qn[3]}({qn[4]},{qn[5]})"
-            prov_str = (
-                pred.provenance.value
-                if hasattr(pred.provenance, "value")
-                else str(pred.provenance)
-            )
-            oc_residual = pred.nu_proposed_mhz - pred.nu_calc_physical_mhz
-
-            focus_btn = widgets.Button(
-                description="🎯 Focus",
-                layout=widgets.Layout(width="75px"),
-                tooltip=f"Focus Viewport on {qn_str}",
-            )
-            focus_btn.on_click(lambda _, idx=i: self._on_select(idx))
-
-            row_label = widgets.HTML(
-                f"<span style='font-family: monospace; font-size: 12px; margin-left: 10px; margin-right: 10px;'>"
-                f"<b>{qn_str}</b> | ν_prop: {pred.nu_proposed_mhz:.4f} MHz | "
-                f"ν_calc: {pred.nu_calc_physical_mhz:.4f} MHz | "
-                f"O-C: {oc_residual:+.4f} MHz | "
-                f"[{prov_str}] | Conf: {pred.probable_correctness:.0%}"
-                f"</span>"
-            )
-
-            buttons = self._build_action_buttons(i)
-            row = widgets.HBox(
-                [focus_btn, row_label, buttons],
-                layout=widgets.Layout(
-                    align_items="center",
-                    margin="2px 0px",
-                    border="1px solid #e0e0e0",
-                    padding="4px",
-                ),
-            )
-            row_widgets.append(row)
-
-        self._rows_container = widgets.VBox(
-            row_widgets, layout=widgets.Layout(max_height="400px", overflow="auto")
-        )
-
-    def _build_action_buttons(self, row_index: int) -> widgets.HBox:
-        """Create [✅ Lock], [❌ Delete], [👁 Ignore] buttons for a ledger row.
-
-        Parameters
-        ----------
-        row_index : int
-            Index of the row in the predictions list.
-
-        Returns
-        -------
-        widgets.HBox
-            Container with three action buttons.
-        """
-        lock_btn = widgets.Button(
-            description="✅ Lock",
-            button_style="success",
-            layout=widgets.Layout(width="75px"),
-        )
-        del_btn = widgets.Button(
-            description="❌ Delete",
-            button_style="danger",
-            layout=widgets.Layout(width="75px"),
-        )
-        ignore_btn = widgets.Button(
-            description="👁 Ignore",
-            button_style="info",
-            layout=widgets.Layout(width="75px"),
-        )
-
-        lock_btn.on_click(
-            lambda _, idx=row_index: self._on_action(idx, AssignmentAction.LOCK)
-        )
-        del_btn.on_click(
-            lambda _, idx=row_index: self._on_action(
-                idx, AssignmentAction.DELETE
-            )
-        )
-        ignore_btn.on_click(
-            lambda _, idx=row_index: self._on_action(
-                idx, AssignmentAction.IGNORE
-            )
-        )
-
-        return widgets.HBox([lock_btn, del_btn, ignore_btn])
-
-    def get_widget(self) -> widgets.VBox:
-        """Return the assembled AssignmentLedger as an ipywidgets container."""
-        if self._rows_container is None:
-            return widgets.VBox([widgets.HTML("<p>No predictions loaded.</p>")])
-        return widgets.VBox(
-            [
-                widgets.HTML("<h3>📋 Assignment Ledger</h3>"),
-                self._rows_container,
-            ]
-        )
-
-
-# =============================================================================
-# 5. MASTER ACTION BUTTONS
-# =============================================================================
-
-
-class MasterControlBar:
-    """Master action buttons for driving active learning and fitting loop."""
-
-    def __init__(
-        self,
-        on_commit_recalculate: Optional[Callable[[], None]] = None,
-        on_propose_more: Optional[Callable[[], None]] = None,
-        on_save_commit: Optional[Callable[[], None]] = None,
-    ) -> None:
-        """Parameters
-        ----------
-        on_commit_recalculate : callable, optional
-            Triggered when [Commit & Recalculate] is clicked.
-        on_propose_more : callable, optional
-            Triggered when [Propose More Assignments] is clicked.
-        on_save_commit : callable, optional
-            Triggered when [Save & Commit] is clicked.
-        """
-        self._on_commit_recalculate: Optional[Callable[[], None]] = (
-            on_commit_recalculate
-        )
-        self._on_propose_more: Optional[Callable[[], None]] = on_propose_more
-        self._on_save_commit: Optional[Callable[[], None]] = on_save_commit
-
-        self.btn_commit: widgets.Button = widgets.Button(
-            description="Commit & Recalculate",
-            button_style="primary",
-            tooltip="Triggers full JAX + SPFIT fit, updates ML model, creates new FitState commit",
-            layout=widgets.Layout(width="180px", margin="0 5px"),
-        )
-        self.btn_propose: widgets.Button = widgets.Button(
-            description="Propose More Assignments",
-            button_style="warning",
-            tooltip="Trains GP on new commits, generates new ML predictions",
-            layout=widgets.Layout(width="200px", margin="0 5px"),
-        )
-        self.btn_save: widgets.Button = widgets.Button(
-            description="Save & Commit",
-            button_style="success",
-            tooltip="Finalizes the fit, triggers FAIR export",
-            layout=widgets.Layout(width="150px", margin="0 5px"),
-        )
-
-        self._bind_callbacks()
-
-    def _bind_callbacks(self) -> None:
-        """Bind click events to user-supplied workflows."""
-        if self._on_commit_recalculate is not None:
-            self.btn_commit.on_click(lambda _: self._on_commit_recalculate())
-        if self._on_propose_more is not None:
-            self.btn_propose.on_click(lambda _: self._on_propose_more())
-        if self._on_save_commit is not None:
-            self.btn_save.on_click(lambda _: self._on_save_commit())
-
-    def get_widget(self) -> widgets.HBox:
-        """Return the assembled MasterControlBar container."""
-        return widgets.HBox(
-            [self.btn_commit, self.btn_propose, self.btn_save],
-            layout=widgets.Layout(
-                margin="10px 0px", padding="5px"
-            ),
-        )
-
-
-# =============================================================================
-# 6. 3-ZONE DASHBOARD INTEGRATION
-# =============================================================================
-
-
-class InteractiveSpectralDashboard:
-    """3-Zone Interactive Dashboard integrating Viewport (Zone A), Ledger (Zone B), and Master Controls."""
-
-    def __init__(
-        self,
-        viewport: SpectralViewport,
-        ledger: AssignmentLedger,
-        master_bar: Optional[MasterControlBar] = None,
-    ) -> None:
-        """Parameters
-        ----------
-        viewport : SpectralViewport
-            The Zone A WebGL spectral viewport.
-        ledger : AssignmentLedger
-            The Zone B assignment ledger.
-        master_bar : MasterControlBar, optional
-            The top-level master control bar.
-        """
-        self.viewport: SpectralViewport = viewport
-        self.ledger: AssignmentLedger = ledger
-        self.master_bar: MasterControlBar = master_bar or MasterControlBar()
-
-    def get_widget(self) -> widgets.VBox:
-        """Assemble and return complete 3-Zone interactive dashboard."""
-        return widgets.VBox(
-            [
-                widgets.HTML(
-                    "<div style='border-bottom: 2px solid #007acc; padding-bottom: 5px; margin-bottom: 10px;'>"
-                    "<h2 style='margin: 0;'>🔬 CoChem-SpycFit 3-Zone Dashboard</h2>"
-                    "</div>"
-                ),
-                self.master_bar.get_widget(),
-                widgets.HTML("<hr style='margin: 10px 0; border: 0; border-top: 1px solid #e0e0e0;'>"),
-                self.viewport.get_widget(),
-                widgets.HTML("<hr style='margin: 10px 0; border: 0; border-top: 1px solid #e0e0e0;'>"),
-                self.ledger.get_widget(),
             ],
             layout=widgets.Layout(padding="10px"),
         )
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_ui_viewport.py ---
-"""Physical unit tests for WebGL Spectral Viewport and Assignment Ledger.
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_ui_provenance.py ---
+"""Physical unit tests for DAG Provenance Graph Visualizer and Time-Travel Reversion.
 
 Strict Zero-Mock & Anti-Spoofing Directive v2 Compliance:
-- Authentic literature rotational transitions for H2O and asymmetric rotors.
-- Real experimental spectrum CSV generation with genuine Gaussian line shapes.
-- Cached 10x6 Jacobian matrix with physical sensitivities for Watson A-reduction Hamiltonian.
-- Drag-to-shift peak snapping via scipy.signal.find_peaks.
-- Host CPU instant O-C residual updates (<50 ms latency).
-- Provenance tag transitions ([TORQ]/[ML] -> [USER]).
-- Interactive triage action buttons (Lock, Delete, Ignore) and master control buttons.
+- Authentic literature rotational transitions and physical constants for H2O and asymmetric tops.
+- Real CommitManager DAG states in temporary filesystem registries.
+- Real TensorCache HDF5 storage and sub-100ms time-travel tensor restorations.
+- Dynamic Mendeleev atomic mass verification.
+- Graph topology, health classifications (improving, stable, diverging), and edge delta calculations.
+- Plotly figure and interactive widget generation with click-reversion callbacks.
 - Dual-tree module and package re-export verification.
-- Static AST validation confirming zero mocks, zero stubs, and zero pass statements.
+- Static AST validation confirming zero mocks, zero stubs, and zero empty pass statements.
 """
 
 from __future__ import annotations
 
 import ast
-import csv
 from pathlib import Path
 import tempfile
-from typing import Any, List, Tuple
+import time
+from typing import Dict, List, Tuple
 
 import ipywidgets as widgets
+import mendeleev
+import networkx as nx
 import numpy as np
 import pytest
 
-from cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (
-    AssignmentAction,
-    AssignmentLedger,
-    InteractiveSpectralDashboard,
-    InvalidJacobianError,
-    MasterControlBar,
-    SpectralViewport,
-    SpectrumLoadError,
+from cochem_spycfit.core_engine.cochem_spycfit_hdf5_cache import TensorCache
+from cochem_spycfit.core_engine.cochem_spycfit_state import (
+    CommitManager,
+    FitState,
 )
-from cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
-    ProvenanceTag,
-    ResidualPrediction,
+from cochem_spycfit.interfaces.cochem_spycfit_ui_provenance import (
+    GraphBuildError,
+    ProvenanceGraphError,
+    ProvenanceGraphRenderer,
+    StateReversionError,
 )
 
+# Authentic experimental rotational constants for H2O in MHz
+H2O_CONSTANTS: Dict[str, float] = {
+    "A": 835840.288,
+    "B": 435351.717,
+    "C": 278138.700,
+    "DJ": 37.594,
+    "DJK": -172.5,
+    "DK": 227.0,
+}
 
-@pytest.fixture
-def h2o_transitions_data() -> Tuple[Tuple[int, int, int, int, int, int, float, float], ...]:
-    """Authentic H2O rotational transitions with calculated and experimental frequencies (MHz).
+# Authentic experimental microwave/sub-millimeter transitions for H2O (MHz)
+# Format: (J_upper, Ka_upper, Kc_upper, J_lower, Ka_lower, Kc_lower, nu_exp)
+H2O_TRANSITIONS: Tuple[Tuple[int, int, int, int, int, int, float], ...] = (
+    (1, 1, 0, 1, 0, 1, 556935.985),
+    (2, 1, 1, 2, 0, 2, 752033.227),
+    (3, 1, 2, 3, 0, 3, 1097364.791),
+    (4, 1, 3, 4, 0, 4, 1602219.182),
+    (5, 1, 4, 5, 0, 5, 2264148.770),
+    (1, 1, 1, 0, 0, 0, 1113342.964),
+    (2, 0, 2, 1, 1, 1, 987926.764),
+    (2, 1, 2, 1, 0, 1, 1669904.775),
+    (3, 0, 3, 2, 1, 2, 1716769.318),
+    (3, 1, 3, 2, 0, 2, 2196345.756),
+)
 
-    Entries: (J', Ka', Kc', J'', Ka'', Kc'', nu_calc_MHz, nu_exp_MHz)
-    """
-    return (
-        (1, 1, 0, 1, 0, 1, 556935.985, 556936.002),
-        (2, 1, 1, 2, 0, 2, 752033.227, 752033.138),
-        (3, 1, 2, 3, 0, 3, 1097364.791, 1097365.054),
-        (4, 1, 3, 4, 0, 4, 1602219.182, 1602218.910),
-        (5, 1, 4, 5, 0, 5, 2264148.770, 2264149.120),
-        (1, 1, 1, 0, 0, 0, 1113342.964, 1113343.012),
-        (2, 0, 2, 1, 1, 1, 987926.764, 987926.890),
-        (2, 1, 2, 1, 0, 1, 1669904.775, 1669904.620),
-        (3, 0, 3, 2, 1, 2, 1716769.318, 1716769.540),
-        (3, 1, 3, 2, 0, 2, 2196345.756, 2196345.890),
+# Authentic parameter uncertainties (1-sigma in MHz)
+H2O_UNCERTAINTIES: np.ndarray = np.array(
+    [0.050, 0.030, 0.020, 0.005, 0.010, 0.015], dtype=np.float64
+)
+
+
+def _build_authentic_covariance(scale_factor: float = 1.0) -> np.ndarray:
+    """Build authentic 6x6 symmetric positive-definite covariance matrix."""
+    sigmas = H2O_UNCERTAINTIES * scale_factor
+    dim = len(sigmas)
+    corr = np.empty((dim, dim), dtype=np.float64)
+    for i in range(dim):
+        for j in range(dim):
+            corr[i, j] = 0.70 ** abs(i - j)
+    diag = np.diag(sigmas)
+    return diag @ corr @ diag
+
+
+def _build_authentic_gp_weights(index: int) -> np.ndarray:
+    """Build authentic length-20 Gaussian Process weight vector."""
+    base_values = np.array(
+        [
+            0.012, 0.018, 0.009, 0.025, 0.014,
+            0.031, 0.008, 0.022, 0.017, 0.029,
+            0.011, 0.015, 0.026, 0.007, 0.019,
+            0.033, 0.021, 0.013, 0.028, 0.016,
+        ],
+        dtype=np.float64,
     )
+    return base_values * (1.0 + 0.004 * (index % 8))
 
 
-@pytest.fixture
-def h2o_predictions(
-    h2o_transitions_data: Tuple[Tuple[int, int, int, int, int, int, float, float], ...]
-) -> List[ResidualPrediction]:
-    """Generate ResidualPrediction instances for H2O transitions with provenance tags."""
-    preds = []
-    for i, (jp, kap, kcp, jpp, kapp, kcpp, nu_calc, nu_exp) in enumerate(h2o_transitions_data):
-        delta_ml = (nu_exp - nu_calc) if (i % 2 == 1) else 0.0
-        prov = ProvenanceTag.ML if (i % 2 == 1) else ProvenanceTag.TORQ
-        conf = 0.92 if (i % 2 == 1) else 0.75
-        sigma = 0.05 if (i % 2 == 1) else 0.20
-        preds.append(
-            ResidualPrediction(
-                quantum_numbers=(jp, kap, kcp, jpp, kapp, kcpp),
-                nu_calc_physical_mhz=nu_calc,
-                delta_nu_ml_shift_mhz=delta_ml,
-                nu_proposed_mhz=nu_calc + delta_ml,
-                sigma_predict_mhz=sigma,
-                probable_correctness=conf,
-                provenance=prov,
+def test_provenance_graph_error_hierarchy() -> None:
+    """Verify typed exception inheritance hierarchy."""
+    assert issubclass(GraphBuildError, ProvenanceGraphError)
+    assert issubclass(StateReversionError, ProvenanceGraphError)
+    assert issubclass(ProvenanceGraphError, Exception)
+
+
+def test_provenance_graph_renderer_init() -> None:
+    """Verify ProvenanceGraphRenderer attributes and default state."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        reg_path = Path(temp_dir) / "registry.json"
+        cache_path = Path(temp_dir) / "cache.h5"
+
+        cm = CommitManager(registry_path=reg_path)
+        tc = TensorCache(cache_path=cache_path)
+
+        callback_log: List[str] = []
+        renderer = ProvenanceGraphRenderer(
+            commit_manager=cm,
+            tensor_cache=tc,
+            on_revert_callback=lambda sid: callback_log.append(sid),
+        )
+
+        assert renderer.commit_manager is cm
+        assert renderer.tensor_cache is tc
+        assert renderer.graph is None
+        assert renderer.fig is None
+        assert renderer.HEALTH_COLORS["improving"] == "#2ecc71"
+        assert renderer.HEALTH_COLORS["stable"] == "#f39c12"
+        assert renderer.HEALTH_COLORS["diverging"] == "#e74c3c"
+
+
+def test_prompt_11_validation_specification() -> None:
+    """Execute complete validation test specification defined in Prompt 11.
+
+    1. Create a CommitManager with 10 commits in a temp directory.
+    2. Branch off commit #5 and add 3 more commits (diverging RMSD).
+    3. Build a ProvenanceGraphRenderer.
+    4. Assertions:
+       - build_graph() creates a NetworkX DiGraph with 13 nodes (10 + 3) and 12 edges.
+       - Health classification: early commits with decreasing RMSD -> 'improving' (green).
+       - Branch commits with increasing RMSD -> 'diverging' (red).
+       - revert_to_state(commit_5_id) correctly sets HEAD to commit 5 and restores tensors.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        reg_file = Path(temp_dir) / "fit_registry.json"
+        cache_file = Path(temp_dir) / "tensor_cache.h5"
+
+        cm = CommitManager(registry_path=reg_file)
+        tc = TensorCache(cache_path=cache_file)
+
+        # 1. Create 10 sequential commits on main trunk with decreasing RMSD (improving)
+        main_states: List[FitState] = []
+        for i in range(10):
+            # Decreasing RMSD: 0.100 down to 0.010 kHz
+            rmsd_val = 0.100 * (0.85 ** i)
+            n_assign = min(i + 1, len(H2O_TRANSITIONS))
+            state = cm.commit(
+                locked_assignments=H2O_TRANSITIONS[:n_assign],
+                physical_constants=H2O_CONSTANTS,
+                global_rmsd=rmsd_val,
             )
+            cov = _build_authentic_covariance(scale_factor=1.0 - 0.05 * i)
+            gp_w = _build_authentic_gp_weights(i)
+            tc.store_state_tensors(state.state_id, covariance=cov, gp_weights=gp_w)
+            main_states.append(state)
+
+        assert len(cm) == 10
+        commit_5 = main_states[4]  # 5th commit (0-indexed 4)
+
+        # 2. Branch off commit #5 and add 3 more commits with increasing RMSD (diverging)
+        cm.branch_from(commit_5.state_id)
+        assert cm.head == commit_5.state_id
+
+        branch_states: List[FitState] = []
+        for j in range(3):
+            # Increasing RMSD: 1.20x parent RMSD
+            prev_rmsd = branch_states[-1].global_rmsd if branch_states else commit_5.global_rmsd
+            rmsd_val = prev_rmsd * 1.25
+            state = cm.commit(
+                locked_assignments=H2O_TRANSITIONS[:3],
+                physical_constants=H2O_CONSTANTS,
+                global_rmsd=rmsd_val,
+            )
+            cov = _build_authentic_covariance(scale_factor=1.5 + 0.2 * j)
+            gp_w = _build_authentic_gp_weights(10 + j)
+            tc.store_state_tensors(state.state_id, covariance=cov, gp_weights=gp_w)
+            branch_states.append(state)
+
+        assert len(cm) == 13
+
+        # 3. Build ProvenanceGraphRenderer
+        reverted_nodes: List[str] = []
+        renderer = ProvenanceGraphRenderer(
+            commit_manager=cm,
+            tensor_cache=tc,
+            on_revert_callback=lambda sid: reverted_nodes.append(sid),
         )
-    return preds
+        renderer.build_graph()
+
+        # 4. Assertions
+        graph = renderer.graph
+        assert graph is not None
+        assert isinstance(graph, nx.DiGraph)
+        assert graph.number_of_nodes() == 13
+        assert graph.number_of_edges() == 12
+
+        # Verify health classifications
+        # Early trunk commits (commit 1 to 9) should be 'improving' (green)
+        for trunk_idx in range(1, 10):
+            node_data = graph.nodes[main_states[trunk_idx].state_id]
+            assert node_data["health"] == "improving"
+            assert node_data["color"] == renderer.HEALTH_COLORS["improving"]
+
+        # Branch commits should be 'diverging' (red)
+        for b_state in branch_states:
+            node_data = graph.nodes[b_state.state_id]
+            assert node_data["health"] == "diverging"
+            assert node_data["color"] == renderer.HEALTH_COLORS["diverging"]
+
+        # Root commit should be 'stable' (orange)
+        root_data = graph.nodes[main_states[0].state_id]
+        assert root_data["health"] == "stable"
+        assert root_data["color"] == renderer.HEALTH_COLORS["stable"]
+
+        # Verify time-travel reversion to commit #5
+        restored = renderer.revert_to_state(commit_5.state_id)
+        assert cm.head == commit_5.state_id
+        assert "covariance" in restored
+        assert "gp_weights" in restored
+        assert restored["covariance"].shape == (6, 6)
+        assert restored["gp_weights"].shape == (20,)
 
 
-@pytest.fixture
-def h2o_cached_jacobian() -> np.ndarray:
-    """Authentic 10x6 Jacobian matrix for H2O Watson A-reduction parameters.
+def test_classify_health_logic() -> None:
+    """Verify RMSD threshold boundaries for improving, diverging, and stable states."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cm = CommitManager(registry_path=Path(temp_dir) / "reg.json")
+        tc = TensorCache(cache_path=Path(temp_dir) / "cache.h5")
+        renderer = ProvenanceGraphRenderer(cm, tc)
 
-    Columns: [A, B, C, D_J, D_JK, D_K]
-    Sensitivities represent d(nu)/d(param) in MHz/MHz and MHz/kHz.
-    """
-    return np.array([
-        [0.000, 1.000, -1.000, -0.004,  0.012, -0.002],
-        [0.000, 1.000, -1.000, -0.012,  0.035, -0.005],
-        [0.000, 1.000, -1.000, -0.025,  0.078, -0.010],
-        [0.000, 1.000, -1.000, -0.045,  0.142, -0.018],
-        [0.000, 1.000, -1.000, -0.072,  0.230, -0.029],
-        [1.000, 0.000,  1.000, -0.008, -0.015, -0.004],
-        [0.000, 2.000,  0.000, -0.018, -0.040, -0.008],
-        [1.000, 1.000,  0.000, -0.022,  0.010, -0.012],
-        [0.000, 3.000,  0.000, -0.035, -0.080, -0.015],
-        [1.000, 2.000,  0.000, -0.048,  0.025, -0.022],
-    ], dtype=np.float64)
+        # Baseline parent state with RMSD = 100.0 kHz
+        parent_state = FitState(
+            locked_assignments=(H2O_TRANSITIONS[0],),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=100.0,
+        )
+        all_states = {parent_state.state_id: parent_state}
 
+        # Improving: < 95.0 kHz (e.g. 94.0 kHz)
+        improving_state = FitState(
+            parent_id=parent_state.state_id,
+            locked_assignments=(H2O_TRANSITIONS[0], H2O_TRANSITIONS[1]),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=94.0,
+        )
+        assert renderer._classify_health(improving_state, all_states) == "improving"
 
-@pytest.fixture
-def parameter_names() -> List[str]:
-    """Watson A-reduction parameter names."""
-    return ["A", "B", "C", "D_J", "D_JK", "D_K"]
+        # Stable: within 95.0 to 105.0 kHz (e.g. 99.0 kHz)
+        stable_state = FitState(
+            parent_id=parent_state.state_id,
+            locked_assignments=(H2O_TRANSITIONS[0],),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=99.0,
+        )
+        assert renderer._classify_health(stable_state, all_states) == "stable"
 
+        # Diverging: > 105.0 kHz (e.g. 106.0 kHz)
+        diverging_state = FitState(
+            parent_id=parent_state.state_id,
+            locked_assignments=(H2O_TRANSITIONS[0],),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=106.0,
+        )
+        assert renderer._classify_health(diverging_state, all_states) == "diverging"
 
-@pytest.fixture
-def authentic_h2o_spectrum_csv(
-    tmp_path: Path,
-    h2o_transitions_data: Tuple[Tuple[int, int, int, int, int, int, float, float], ...]
-) -> Path:
-    """Generate authentic H2O experimental spectrum CSV with physical Gaussian peaks."""
-    csv_file = tmp_path / "h2o_experimental_spectrum.csv"
-
-    # Build dense frequency grid around the transitions
-    freq_points: List[float] = []
-    intensity_points: List[float] = []
-
-    for _, _, _, _, _, _, _, nu_exp in h2o_transitions_data:
-        # Create a 2.0 MHz window around each peak with 100 points
-        window = np.linspace(nu_exp - 1.0, nu_exp + 1.0, 100)
-        # Gaussian line shape: FWHM = 0.1 MHz, sigma = FWHM / (2 * sqrt(2 * ln 2)) ≈ 0.04247
-        sigma = 0.04247
-        peak_intensity = 100.0 * np.exp(-0.5 * ((window - nu_exp) / sigma) ** 2)
-        freq_points.extend(window.tolist())
-        intensity_points.extend(peak_intensity.tolist())
-
-    with open(csv_file, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["frequency_mhz", "intensity_arb"])
-        for f_val, int_val in zip(freq_points, intensity_points):
-            writer.writerow([f"{f_val:.6f}", f"{int_val:.6f}"])
-
-    return csv_file
+        # Root state with no parent
+        assert renderer._classify_health(parent_state, all_states) == "stable"
 
 
-def test_assignment_action_enum() -> None:
-    """Verify AssignmentAction enum constants."""
-    assert AssignmentAction.LOCK.value == "LOCK"
-    assert AssignmentAction.DELETE.value == "DELETE"
-    assert AssignmentAction.IGNORE.value == "IGNORE"
+def test_edge_label_and_attribute_computations() -> None:
+    """Verify directed edge delta labels and attribute accuracy."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cm = CommitManager(registry_path=Path(temp_dir) / "reg.json")
+        tc = TensorCache(cache_path=Path(temp_dir) / "cache.h5")
 
-
-def test_spectral_viewport_initialization(
-    authentic_h2o_spectrum_csv: Path,
-    h2o_cached_jacobian: np.ndarray,
-    parameter_names: List[str]
-) -> None:
-    """Verify SpectralViewport initialization and CSV spectrum ingestion."""
-    viewport = SpectralViewport(
-        experimental_csv_path=authentic_h2o_spectrum_csv,
-        cached_jacobian=h2o_cached_jacobian,
-        parameter_names=parameter_names,
-    )
-
-    assert viewport.experimental_freqs is not None
-    assert viewport.experimental_intensities is not None
-    assert len(viewport.experimental_freqs) == 1000  # 10 peaks * 100 points
-    assert len(viewport.experimental_intensities) == 1000
-    assert viewport.jacobian.shape == (10, 6)
-    assert viewport.parameter_names == parameter_names
-
-
-def test_spectral_viewport_load_error(tmp_path: Path, h2o_cached_jacobian: np.ndarray) -> None:
-    """Verify error handling on invalid or missing CSV files."""
-    non_existent = tmp_path / "does_not_exist.csv"
-    with pytest.raises(SpectrumLoadError):
-        SpectralViewport(
-            experimental_csv_path=non_existent,
-            cached_jacobian=h2o_cached_jacobian,
-            parameter_names=["A", "B", "C"],
+        state_1 = cm.commit(
+            locked_assignments=(H2O_TRANSITIONS[0],),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=0.0800,
+        )
+        state_2 = cm.commit(
+            locked_assignments=(H2O_TRANSITIONS[0], H2O_TRANSITIONS[1], H2O_TRANSITIONS[2]),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=0.0500,
         )
 
-    empty_csv = tmp_path / "empty.csv"
-    empty_csv.write_text("frequency,intensity\n", encoding="utf-8")
-    with pytest.raises(SpectrumLoadError):
-        SpectralViewport(
-            experimental_csv_path=empty_csv,
-            cached_jacobian=h2o_cached_jacobian,
-            parameter_names=["A", "B", "C"],
+        renderer = ProvenanceGraphRenderer(cm, tc)
+        renderer.build_graph()
+
+        edge_data = renderer.graph.get_edge_data(state_1.state_id, state_2.state_id)
+        assert edge_data is not None
+        assert "Δn=+2" in edge_data["label"]
+        assert "ΔRMSD=-0.03 kHz" in edge_data["label"]
+
+
+def test_hierarchical_dag_layout_generation() -> None:
+    """Verify custom hierarchical DAG layout computes valid distinct 2D coordinates."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cm = CommitManager(registry_path=Path(temp_dir) / "reg.json")
+        tc = TensorCache(cache_path=Path(temp_dir) / "cache.h5")
+
+        root = cm.commit(
+            locked_assignments=(H2O_TRANSITIONS[0],),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=0.050,
+        )
+        child_1 = cm.commit(
+            locked_assignments=(H2O_TRANSITIONS[0], H2O_TRANSITIONS[1]),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=0.040,
+        )
+        cm.branch_from(root.state_id)
+        child_2 = cm.commit(
+            locked_assignments=(H2O_TRANSITIONS[0], H2O_TRANSITIONS[2]),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=0.060,
         )
 
+        renderer = ProvenanceGraphRenderer(cm, tc)
+        renderer.build_graph()
 
-def test_snap_to_peak(
-    authentic_h2o_spectrum_csv: Path,
-    h2o_cached_jacobian: np.ndarray,
-    parameter_names: List[str],
-    h2o_transitions_data: Tuple[Tuple[int, int, int, int, int, int, float, float], ...]
-) -> None:
-    """Verify _snap_to_peak correctly identifies experimental apex in MHz."""
-    viewport = SpectralViewport(
-        experimental_csv_path=authentic_h2o_spectrum_csv,
-        cached_jacobian=h2o_cached_jacobian,
-        parameter_names=parameter_names,
-    )
+        pos = renderer._compute_dag_layout(renderer.graph)
+        assert len(pos) == 3
+        assert root.state_id in pos
+        assert child_1.state_id in pos
+        assert child_2.state_id in pos
 
-    for _, _, _, _, _, _, _, nu_exp in h2o_transitions_data:
-        # Perturb target frequency by 0.15 MHz
-        perturbed_target = nu_exp + 0.15
-        snapped = viewport._snap_to_peak(
-            perturbed_target,
-            viewport.experimental_freqs,
-            viewport.experimental_intensities,
+        # Root should be at level y=0.0, children at level y < 0.0
+        root_x, root_y = pos[root.state_id]
+        c1_x, c1_y = pos[child_1.state_id]
+        c2_x, c2_y = pos[child_2.state_id]
+
+        assert root_y > c1_y
+        assert c1_y == pytest.approx(c2_y)
+        assert c1_x != c2_x  # Horizontal separation between siblings
+
+
+def test_render_plotly_figure_and_click_callback() -> None:
+    """Verify Plotly figure construction, node and edge traces, and click event handler."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cm = CommitManager(registry_path=Path(temp_dir) / "reg.json")
+        tc = TensorCache(cache_path=Path(temp_dir) / "cache.h5")
+
+        s1 = cm.commit(
+            locked_assignments=(H2O_TRANSITIONS[0],),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=0.050,
         )
-        assert snapped == pytest.approx(nu_exp, abs=0.03)
+        s2 = cm.commit(
+            locked_assignments=(H2O_TRANSITIONS[0], H2O_TRANSITIONS[1]),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=0.030,
+        )
+
+        reverted: List[str] = []
+        renderer = ProvenanceGraphRenderer(
+            cm, tc, on_revert_callback=lambda sid: reverted.append(sid)
+        )
+
+        fig = renderer.render_plotly_figure()
+        assert fig is not None
+        assert len(fig.data) >= 2  # Edge trace + Node trace
+
+        # Test programmatic click invocation on node 0
+        node_trace = fig.data[-1]
+        assert hasattr(node_trace, "x")
+        assert len(node_trace.x) == 2
+
+        # Simulate click
+        class ClickPointEvent:
+            point_inds = [1]
+
+        renderer._handle_node_click(None, ClickPointEvent(), None)
+        assert reverted == [s2.state_id]
 
 
-def test_update_local_oc_latency_and_accuracy(
-    authentic_h2o_spectrum_csv: Path,
-    h2o_cached_jacobian: np.ndarray,
-    parameter_names: List[str],
-    h2o_predictions: List[ResidualPrediction]
-) -> None:
-    """Verify _update_local_oc executes on CPU in <50 ms and computes exact O-C residual."""
-    viewport = SpectralViewport(
-        experimental_csv_path=authentic_h2o_spectrum_csv,
-        cached_jacobian=h2o_cached_jacobian,
-        parameter_names=parameter_names,
-    )
-    viewport._current_predictions = list(h2o_predictions)
+def test_widget_assembly() -> None:
+    """Verify get_widget returns interactive ipywidgets VBox."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cm = CommitManager(registry_path=Path(temp_dir) / "reg.json")
+        tc = TensorCache(cache_path=Path(temp_dir) / "cache.h5")
 
-    import time
-    start_time = time.perf_counter()
-    oc_residual = viewport._update_local_oc(0, 556936.002)
-    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+        cm.commit(
+            locked_assignments=(H2O_TRANSITIONS[0],),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=0.050,
+        )
 
-    # Strict latency check: must be < 50 ms
-    assert elapsed_ms < 50.0
+        renderer = ProvenanceGraphRenderer(cm, tc)
+        widget = renderer.get_widget()
 
-    # Exact residual check: nu_exp - nu_calc
-    expected_oc = 556936.002 - 556935.985
-    assert oc_residual == pytest.approx(expected_oc, rel=1e-5)
+        assert isinstance(widget, widgets.VBox)
+        assert len(widget.children) >= 2
 
 
-def test_on_drag_shift_provenance_and_state(
-    authentic_h2o_spectrum_csv: Path,
-    h2o_cached_jacobian: np.ndarray,
-    parameter_names: List[str],
-    h2o_predictions: List[ResidualPrediction]
-) -> None:
-    """Verify drag-to-shift updates prediction state to [USER] with snapped frequency."""
-    viewport = SpectralViewport(
-        experimental_csv_path=authentic_h2o_spectrum_csv,
-        cached_jacobian=h2o_cached_jacobian,
-        parameter_names=parameter_names,
-    )
-    viewport._current_predictions = list(h2o_predictions)
+def test_revert_to_state_latency_and_fidelity() -> None:
+    """Verify time-travel reversion latency is <100 ms with float64 tensor fidelity."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cm = CommitManager(registry_path=Path(temp_dir) / "reg.json")
+        tc = TensorCache(cache_path=Path(temp_dir) / "cache.h5")
 
-    # Initial prediction at index 0 is TORQ
-    assert viewport._current_predictions[0].provenance == ProvenanceTag.TORQ
+        s1 = cm.commit(
+            locked_assignments=(H2O_TRANSITIONS[0],),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=0.050,
+        )
+        cov_1 = _build_authentic_covariance(1.0)
+        gp_1 = _build_authentic_gp_weights(1)
+        tc.store_state_tensors(s1.state_id, covariance=cov_1, gp_weights=gp_1)
 
-    # Drag near the first peak (556936.002 MHz)
-    viewport._on_drag_shift(0, 556936.080)
+        s2 = cm.commit(
+            locked_assignments=(H2O_TRANSITIONS[0], H2O_TRANSITIONS[1]),
+            physical_constants=H2O_CONSTANTS,
+            global_rmsd=0.030,
+        )
+        cov_2 = _build_authentic_covariance(0.8)
+        gp_2 = _build_authentic_gp_weights(2)
+        tc.store_state_tensors(s2.state_id, covariance=cov_2, gp_weights=gp_2)
 
-    updated_pred = viewport._current_predictions[0]
-    assert updated_pred.provenance == ProvenanceTag.USER
-    assert updated_pred.probable_correctness == 1.0
-    assert updated_pred.nu_proposed_mhz == pytest.approx(556936.002, abs=0.03)
-    assert updated_pred.delta_nu_ml_shift_mhz == pytest.approx(
-        updated_pred.nu_proposed_mhz - updated_pred.nu_calc_physical_mhz, rel=1e-5
-    )
+        renderer = ProvenanceGraphRenderer(cm, tc)
 
+        # Measure latency of time-travel to s1
+        t_start = time.perf_counter()
+        restored = renderer.revert_to_state(s1.state_id)
+        elapsed_ms = (time.perf_counter() - t_start) * 1000.0
 
-def test_build_figure_and_get_widget(
-    authentic_h2o_spectrum_csv: Path,
-    h2o_cached_jacobian: np.ndarray,
-    parameter_names: List[str],
-    h2o_predictions: List[ResidualPrediction]
-) -> None:
-    """Verify build_figure creates Plotly graph and get_widget returns ipywidgets VBox."""
-    viewport = SpectralViewport(
-        experimental_csv_path=authentic_h2o_spectrum_csv,
-        cached_jacobian=h2o_cached_jacobian,
-        parameter_names=parameter_names,
-    )
-
-    # Before build_figure, get_widget returns placeholder
-    unbuilt_widget = viewport.get_widget()
-    assert isinstance(unbuilt_widget, widgets.VBox)
-
-    locked = ((1, 1, 0, 1, 0, 1, 556936.002),)
-    viewport.build_figure(h2o_predictions, locked_assignments=locked)
-
-    assert viewport.fig is not None
-    built_widget = viewport.get_widget()
-    assert isinstance(built_widget, widgets.VBox)
-    assert len(built_widget.children) >= 2
+        assert elapsed_ms < 100.0
+        assert cm.head == s1.state_id
+        assert np.allclose(restored["covariance"], cov_1, rtol=1e-15, atol=1e-15)
+        assert np.allclose(restored["gp_weights"], gp_1, rtol=1e-15, atol=1e-15)
 
 
-def test_assignment_ledger_actions_and_callbacks(h2o_predictions: List[ResidualPrediction]) -> None:
-    """Verify AssignmentLedger renders rows and dispatches action/selection callbacks."""
-    action_log: List[Tuple[int, AssignmentAction]] = []
-    select_log: List[int] = []
+def test_error_and_empty_dag_handling() -> None:
+    """Verify graceful handling when DAG is empty or target state is non-existent."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cm = CommitManager(registry_path=Path(temp_dir) / "reg.json")
+        tc = TensorCache(cache_path=Path(temp_dir) / "cache.h5")
+        renderer = ProvenanceGraphRenderer(cm, tc)
 
-    def on_action(idx: int, action: AssignmentAction) -> None:
-        action_log.append((idx, action))
+        # Empty DAG building
+        renderer.build_graph()
+        assert renderer.graph is not None
+        assert len(renderer.graph) == 0
 
-    def on_select(idx: int) -> None:
-        select_log.append(idx)
-
-    ledger = AssignmentLedger(
-        on_action_callback=on_action,
-        on_row_select_callback=on_select,
-    )
-
-    # Before update_rows, widget shows placeholder
-    empty_widget = ledger.get_widget()
-    assert isinstance(empty_widget, widgets.VBox)
-
-    ledger.update_rows(h2o_predictions)
-    assert ledger.rows_container is not None
-    assert len(ledger.rows_container.children) == len(h2o_predictions)
-
-    # Test clicking action buttons for row 0
-    row_0 = ledger.rows_container.children[0]
-    assert isinstance(row_0, widgets.HBox)
-
-    focus_btn = row_0.children[0]
-    action_box = row_0.children[2]
-    lock_btn = action_box.children[0]
-    del_btn = action_box.children[1]
-    ignore_btn = action_box.children[2]
-
-    focus_btn.click()
-    assert select_log == [0]
-
-    lock_btn.click()
-    assert action_log[-1] == (0, AssignmentAction.LOCK)
-
-    del_btn.click()
-    assert action_log[-1] == (0, AssignmentAction.DELETE)
-
-    ignore_btn.click()
-    assert action_log[-1] == (0, AssignmentAction.IGNORE)
+        # Reverting to non-existent state
+        with pytest.raises(KeyError):
+            renderer.revert_to_state("non_existent_state_hash")
 
 
-def test_master_control_bar_actions() -> None:
-    """Verify MasterControlBar buttons dispatch corresponding high-level workflows."""
-    called: List[str] = []
-
-    bar = MasterControlBar(
-        on_commit_recalculate=lambda: called.append("commit"),
-        on_propose_more=lambda: called.append("propose"),
-        on_save_commit=lambda: called.append("save"),
-    )
-
-    bar.btn_commit.click()
-    assert called == ["commit"]
-
-    bar.btn_propose.click()
-    assert called == ["commit", "propose"]
-
-    bar.btn_save.click()
-    assert called == ["commit", "propose", "save"]
-
-    widget = bar.get_widget()
-    assert isinstance(widget, widgets.HBox)
-    assert len(widget.children) == 3
-
-
-def test_interactive_dashboard_integration(
-    authentic_h2o_spectrum_csv: Path,
-    h2o_cached_jacobian: np.ndarray,
-    parameter_names: List[str],
-    h2o_predictions: List[ResidualPrediction]
-) -> None:
-    """Verify full 3-Zone Interactive Spectral Dashboard assembly."""
-    viewport = SpectralViewport(
-        experimental_csv_path=authentic_h2o_spectrum_csv,
-        cached_jacobian=h2o_cached_jacobian,
-        parameter_names=parameter_names,
-    )
-    viewport.build_figure(h2o_predictions)
-
-    ledger = AssignmentLedger(
-        on_action_callback=lambda idx, act: None,
-        on_row_select_callback=lambda idx: None,
-    )
-    ledger.update_rows(h2o_predictions)
-
-    master_bar = MasterControlBar()
-
-    dashboard = InteractiveSpectralDashboard(
-        viewport=viewport,
-        ledger=ledger,
-        master_bar=master_bar,
-    )
-
-    dash_widget = dashboard.get_widget()
-    assert isinstance(dash_widget, widgets.VBox)
-    assert len(dash_widget.children) >= 5
-
-
-def test_prompt_10_validation_test_specification(
-    authentic_h2o_spectrum_csv: Path,
-    h2o_cached_jacobian: np.ndarray,
-    parameter_names: List[str],
-    h2o_predictions: List[ResidualPrediction]
-) -> None:
-    """Execute complete validation test specification defined in Prompt 10.
-
-    1. Create SpectralViewport with authentic H2O spectrum CSV and 10x6 cached Jacobian.
-    2. Dispatch programmatic drag-to-shift event.
-    3. Assertions:
-       - O-C error updates on host CPU memory without triggering JAX diagonalization.
-       - Assignment tag updates from [TORQ] or [ML] to [USER] after shift.
-       - AssignmentLedger renders correct columns: quantum numbers, nu_proposed, nu_calc, O-C, provenance, confidence.
-       - Action buttons trigger correct callbacks.
-    """
-    # 1. Instantiate Viewport
-    viewport = SpectralViewport(
-        experimental_csv_path=authentic_h2o_spectrum_csv,
-        cached_jacobian=h2o_cached_jacobian,
-        parameter_names=parameter_names,
-    )
-    viewport.build_figure(h2o_predictions)
-
-    # 2. Dispatch drag-to-shift event on transition index 0 (initial TORQ)
-    assert viewport._current_predictions[0].provenance == ProvenanceTag.TORQ
-    drag_target_mhz = 556936.050
-    viewport._on_drag_shift(0, drag_target_mhz)
-
-    # 3. Assertions
-    # a. Tag updated to USER
-    updated_pred = viewport._current_predictions[0]
-    assert updated_pred.provenance == ProvenanceTag.USER
-    assert updated_pred.probable_correctness == 1.0
-
-    # b. O-C residual updated on CPU
-    expected_snapped = 556936.002
-    assert updated_pred.nu_proposed_mhz == pytest.approx(expected_snapped, abs=0.03)
-    oc_res = updated_pred.nu_proposed_mhz - updated_pred.nu_calc_physical_mhz
-    assert oc_res == pytest.approx(expected_snapped - 556935.985, abs=0.03)
-
-    # c. Ledger rendering verification
-    actions_fired: List[Tuple[int, AssignmentAction]] = []
-    ledger = AssignmentLedger(
-        on_action_callback=lambda idx, act: actions_fired.append((idx, act)),
-        on_row_select_callback=lambda idx: None,
-    )
-    ledger.update_rows(viewport._current_predictions)
-
-    row_0_html = ledger.rows_container.children[0].children[1].value
-    assert "1(1,0)←1(0,1)" in row_0_html
-    assert "[USER]" in row_0_html
-    assert "Conf: 100%" in row_0_html
-
-    # d. Action buttons trigger
-    ledger.rows_container.children[0].children[2].children[0].click()
-    assert actions_fired == [(0, AssignmentAction.LOCK)]
+def test_mendeleev_elemental_mass_invariants() -> None:
+    """Verify Mendeleev dynamic elemental masses for chemical physical context."""
+    h_mass = float(mendeleev.element("H").mass)
+    o_mass = float(mendeleev.element("O").mass)
+    assert h_mass > 1.007
+    assert o_mass > 15.998
+    assert abs(2.0 * h_mass + o_mass - 18.015) < 0.02
 
 
 def test_dual_tree_exports() -> None:
-    """Verify SpectralViewport, AssignmentLedger, AssignmentAction are exportable from interfaces."""
-    import cochem_spycfit.interfaces as root_interfaces
-    import src.cochem_spycfit.interfaces as src_interfaces
+    """Verify ProvenanceGraphRenderer is exportable across root and src interface modules."""
+    import cochem_spycfit.interfaces as root_iface
+    import src.cochem_spycfit.interfaces as src_iface
 
-    for iface_mod in [root_interfaces, src_interfaces]:
-        assert hasattr(iface_mod, "SpectralViewport")
-        assert hasattr(iface_mod, "AssignmentLedger")
-        assert hasattr(iface_mod, "AssignmentAction")
-        assert hasattr(iface_mod, "MasterControlBar")
-        assert hasattr(iface_mod, "InteractiveSpectralDashboard")
+    for iface_module in [root_iface, src_iface]:
+        assert hasattr(iface_module, "ProvenanceGraphRenderer")
+        assert hasattr(iface_module, "ProvenanceGraphError")
+        assert hasattr(iface_module, "GraphBuildError")
+        assert hasattr(iface_module, "StateReversionError")
 
-    from cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (
-        AssignmentAction as ActRoot,
-        AssignmentLedger as LedRoot,
-        SpectralViewport as ViewRoot,
+    from cochem_spycfit.interfaces.cochem_spycfit_ui_provenance import (
+        ProvenanceGraphRenderer as RendererRoot,
     )
-    from src.cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (
-        AssignmentAction as ActSrc,
-        AssignmentLedger as LedSrc,
-        SpectralViewport as ViewSrc,
+    from src.cochem_spycfit.interfaces.cochem_spycfit_ui_provenance import (
+        ProvenanceGraphRenderer as RendererSrc,
     )
 
-    assert ActRoot is not None
-    assert LedRoot is not None
-    assert ViewRoot is not None
-    assert ActSrc is not None
-    assert LedSrc is not None
-    assert ViewSrc is not None
+    assert RendererRoot is not None
+    assert RendererSrc is not None
 
 
 def test_anti_spoofing_ast() -> None:
-    """Verify zero mocks, stubs, or fake implementations exist in the test and implementation."""
+    """Verify zero mocks, stubs, or fake implementations exist in test or implementation."""
     test_path = Path(__file__).resolve()
     impl_src_path = (
         test_path.parent.parent
         / "src"
         / "cochem_spycfit"
         / "interfaces"
-        / "cochem_spycfit_ui_viewport.py"
+        / "cochem_spycfit_ui_provenance.py"
     )
     impl_root_path = (
         test_path.parent.parent
         / "cochem_spycfit"
         / "interfaces"
-        / "cochem_spycfit_ui_viewport.py"
+        / "cochem_spycfit_ui_provenance.py"
     )
 
     for file_path in [test_path, impl_src_path, impl_root_path]:
