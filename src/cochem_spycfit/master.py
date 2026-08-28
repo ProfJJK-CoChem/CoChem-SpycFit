@@ -46,8 +46,8 @@ def cleanup_zombies():
         try:
             if proc.info['status'] == psutil.STATUS_ZOMBIE:
                 proc.wait(timeout=1)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
-            pass
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired) as e:
+            logger.debug(f"Process already exited: {e}")
 
 atexit.register(cleanup_zombies)
 

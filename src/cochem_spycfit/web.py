@@ -17,7 +17,7 @@ def cleanup_zombies():
             if proc.info['status'] == psutil.STATUS_ZOMBIE:
                 proc.wait(timeout=1)
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
-            pass
+            logging.debug("Process already exited.")
 
 atexit.register(cleanup_zombies)
 
@@ -121,12 +121,12 @@ if st.button("🚀 Execute Default Pipeline"):
                         except psutil.TimeoutExpired:
                             child.kill()
                         except psutil.NoSuchProcess:
-                            pass
+                            logging.debug("Child process already exited.")
                     proc.terminate()
                     try:
                         proc.wait(timeout=3)
                     except subprocess.TimeoutExpired:
                         proc.kill()
                 except psutil.NoSuchProcess:
-                    pass
+                    logging.debug("Process already exited.")
             cleanup_zombies()

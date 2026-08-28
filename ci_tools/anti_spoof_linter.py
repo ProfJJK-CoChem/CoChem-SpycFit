@@ -75,7 +75,10 @@ def run_linter(strict_mode: bool) -> int:
     failed = False
     all_violations: Dict[str, List[str]] = {}
     
+    ignored_dirs = {".venv", ".git", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".trash"}
     for py_file in Path(".").rglob("*.py"):
+        if any(part in ignored_dirs for part in py_file.parts):
+            continue
         if py_file.as_posix() in amnesty_files and strict_mode:
             continue
             

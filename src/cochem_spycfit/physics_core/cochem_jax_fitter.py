@@ -180,7 +180,7 @@ class ActivePESRefinementConfig(BaseModel):
     target_method: str = Field(default="canonical-CCSD(T)", description="Ab initio quantum chemistry method")
     basis_set: str = Field(default="def2-QZVPP", description="Basis set for PES refinement")
     spool_directory: Path = Field(
-        default_factory=lambda: Path(os.environ.get("COCHEM_ARTIFACTS_DIR", str(Path.home() / ".cochem_artifacts"))) / "air_gapped_spool",
+        default_factory=lambda: Path(os.environ.get("COCHEM_ARTIFACTS_DIR", str(Path.home() / ".cochem" / "artifacts"))) / "air_gapped_spool",
         description="Directory for air-gapped export"
     )
     lock_timeout_seconds: float = Field(default=10.0, gt=0.0, description="Timeout for atomic file lock acquisition")

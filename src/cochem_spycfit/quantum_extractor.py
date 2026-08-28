@@ -15,7 +15,7 @@ try:
     import numpy as np
     import h5py
 except ImportError as e:
-    print(f"❌ FATAL: 'psutil', 'numpy', and 'h5py' are required. Details: {e}")
+    sys.stderr.write(f"❌ FATAL: 'psutil', 'numpy', and 'h5py' are required. Details: {e}\n")
     sys.exit(1)
 
 from pydantic import BaseModel, Field
@@ -50,7 +50,7 @@ def cleanup_subprocesses():
                     child.kill()
                 parent.kill()
             except psutil.NoSuchProcess:
-                pass
+                logging.debug("Process already exited.")
 atexit.register(cleanup_subprocesses)
 
 # Resolves SPYCFIT-10: Comprehensive IUPAC Atomic Isotope Mass Table (amu) for Z=1..118
@@ -654,8 +654,8 @@ def update_swarm_state(status: str, artifacts: List[str], error_code: Optional[s
         try:
             with open(state_file, "r") as f:
                 state = json.load(f)
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            logging.warning(f"Failed to load swarm state: {e}")
             
     state["cochem-audit"] = {
         "status": status,

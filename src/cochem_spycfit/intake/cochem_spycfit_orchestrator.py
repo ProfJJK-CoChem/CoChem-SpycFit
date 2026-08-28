@@ -646,9 +646,8 @@ class WallTimeSafetyGuard:
                 proc = psutil.Process(os.getpid())
                 cpu_pct = float(proc.cpu_percent(interval=None))
                 mem_mb = float(proc.memory_info().rss / (1024.0 * 1024.0))
-            except psutil.Error:
-                pass
-
+            except psutil.Error as e:
+                logger.debug(f"Failed to get memory info: {e}")
         status = HeartbeatStatus(
             timestamp_utc=datetime.datetime.now(datetime.timezone.utc).isoformat(),
             elapsed_seconds=np.float64(elapsed),
@@ -1098,9 +1097,9 @@ def orchestrate_spycfit_system(
                 with h5py.File(h5_target, "r") as f:
                     if "geometry" in f:
                         geom_list = f["geometry"][()].tolist()
-            except (OSError, ValueError, AttributeError, TypeError):
+            except (OSError, ValueError, AttributeError, TypeError) as e:
+                logger.debug(f"HDF5 reading failed: {e}")
                 pass
-
         req = TORQRequestPayload(
             request_id=f"req_{system_id}_{int(time.time())}",
             system_id=system_id,

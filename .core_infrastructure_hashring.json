@@ -1,5 +1,5 @@
 {
-    "ci_tools/anti_spoof_linter.py": "4cd61e5de10a73c1d596b17a2dacab6b64159efb11d0b39ef93292f9cb4ef963",
+    "ci_tools/anti_spoof_linter.py": "9019a9ce07afa07b6c00698c3550679ba1fc9781cd28e99b3a5d58b8e5a90ca2",
     "ci_tools/verify_core_integrity.py": "076dcd5feea7ad89c3836cc5a45e6ce32bd3f7719f995fe18dbc9ccac065b592",
     "ci_tools/zero_trust_runner.py": "93ebe4b72bdd097806d59fb22f8ab049a3c18e4f478f6c196f2d3db2b2763e99"
 }

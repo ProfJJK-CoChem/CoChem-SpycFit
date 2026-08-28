@@ -976,7 +976,7 @@ def render_static_offline_html(
         Path: Path to written HTML file.
     """
     if output_path is None:
-        artifacts_dir = Path(os.getenv("COCHEM_ARTIFACTS_DIR", Path.home() / ".cochem_artifacts"))
+        artifacts_dir = Path(os.getenv("COCHEM_ARTIFACTS_DIR", Path.home() / ".cochem" / "artifacts"))
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         target = artifacts_dir / f"cochem_dashboard_{uuid.uuid4().hex[:8]}.html"
     else:
@@ -1582,7 +1582,8 @@ class SpycFitInteractiveDashboard:
                 config=self.config,
                 convolved_curve=convolved_curve,
             )
-            fig.show()
+            renderer = "json" if (os.environ.get("CI") or os.environ.get("PYTEST_CURRENT_TEST")) else None
+            fig.show(renderer=renderer)
 
         with self.status_output:
             self.status_output.clear_output(wait=True)

@@ -1516,7 +1516,7 @@ class PESZarrStore:
     def __init__(self, store_path: Union[str, Path, zarr.Group], mode: str = "r") -> None:
         if isinstance(store_path, zarr.Group):
             self._root_group = store_path
-            self.store_path = Path("in_memory.zarr")
+            self.store_path = Path.home() / ".cochem" / "artifacts" / "in_memory.zarr"
             self.mode = mode
         else:
             self.store_path = translate_wsl_path(store_path).resolve()
@@ -1705,6 +1705,18 @@ class PESZarrStore:
 
         group = self.root.create_group(isomer_id)
 
+        def _write_zarr_node(grp: Any, name: str, arr_data: np.ndarray, chunk_shape: Optional[Tuple[int, ...]] = None) -> None:
+            if hasattr(grp, "create_dataset"):
+                node = grp.create_dataset(name, shape=arr_data.shape, chunks=chunk_shape, dtype=str(arr_data.dtype))
+                node[:] = arr_data
+            elif hasattr(grp, "create_array"):
+                node = grp.create_array(name, shape=arr_data.shape, chunks=chunk_shape, dtype=str(arr_data.dtype))
+                node[:] = arr_data
+            elif hasattr(grp, "array"):
+                grp.array(name, arr_data, chunks=chunk_shape)
+            else:
+                grp[name] = arr_data
+
         # 1. Write Symbols
         if "symbols" in data:
             group.attrs["symbols"] = [str(s) for s in data["symbols"]]
@@ -1713,22 +1725,19 @@ class PESZarrStore:
         if "coords" in data and data["coords"] is not None:
             c_arr = np.asarray(data["coords"], dtype=np.float64)
             c_shape = (min(c_arr.shape[0], 64), 3) if chunks is None else chunks
-            arr_node = group.create_array("coords", shape=c_arr.shape, chunks=c_shape, dtype="float64")
-            arr_node[:] = c_arr
+            _write_zarr_node(group, "coords", c_arr, c_shape)
 
         # 3. Write Cartesian Hessian
         if "hessian" in data and data["hessian"] is not None:
             h_arr = np.asarray(data["hessian"], dtype=np.float64)
             h_shape = (min(h_arr.shape[0], 64), min(h_arr.shape[1], 64)) if chunks is None else chunks
-            arr_node = group.create_array("hessian", shape=h_arr.shape, chunks=h_shape, dtype="float64")
-            arr_node[:] = h_arr
+            _write_zarr_node(group, "hessian", h_arr, h_shape)
 
         # 4. Write Dipole Derivatives
         if "dipole_derivatives" in data and data["dipole_derivatives"] is not None:
             d_arr = np.asarray(data["dipole_derivatives"], dtype=np.float64)
-            d_shape = (min(d_arr.shape[0], 64), d_arr.shape[1]) if chunks is None else chunks
-            arr_node = group.create_array("dipole_derivatives", shape=d_arr.shape, chunks=d_shape, dtype="float64")
-            arr_node[:] = d_arr
+            d_shape = (min(d_arr.shape[0], 64), min(d_arr.shape[1], 3)) if chunks is None else chunks
+            _write_zarr_node(group, "dipole_derivatives", d_arr, d_shape)
 
         # 5. Write Rotational Constants
         if "rotational_constants" in data and data["rotational_constants"] is not None:
@@ -1762,18 +1771,15 @@ class PESZarrStore:
 
         if "dvr_eigenvalues" in data and data["dvr_eigenvalues"] is not None:
             dvr_arr = np.asarray(data["dvr_eigenvalues"], dtype=np.float64)
-            arr_node = group.create_array("dvr_eigenvalues", shape=dvr_arr.shape, dtype="float64")
-            arr_node[:] = dvr_arr
+            _write_zarr_node(group, "dvr_eigenvalues", dvr_arr)
 
         if "tunneling_splittings" in data and data["tunneling_splittings"] is not None:
             ts_arr = np.asarray(data["tunneling_splittings"], dtype=np.float64)
-            arr_node = group.create_array("tunneling_splittings", shape=ts_arr.shape, dtype="float64")
-            arr_node[:] = ts_arr
+            _write_zarr_node(group, "tunneling_splittings", ts_arr)
 
         if "kraitchman_coords" in data and data["kraitchman_coords"] is not None:
             kc_arr = np.asarray(data["kraitchman_coords"], dtype=np.float64)
-            arr_node = group.create_array("kraitchman_coords", shape=kc_arr.shape, dtype="float64")
-            arr_node[:] = kc_arr
+            _write_zarr_node(group, "kraitchman_coords", kc_arr)
 
 
 # =============================================================================
@@ -1802,7 +1808,7 @@ def extract_from_zarr_dlpack(
             candidate = cochem_dir / "landscape.zarr"
         target_path = candidate
     else:
-        target_path = Path("artifacts_test") / "landscape.zarr"
+        target_path = Path.home() / ".cochem" / "artifacts" / "landscape.zarr"
 
     if not target_path.exists():
         raise FileNotFoundError(f"Zarr database not found at resolved path: {target_path}")
@@ -1990,7 +1996,7 @@ def extract_tensors(
         if target_isomer is None or not target_isomer:
             raise PESStoreError("Could not determine target isomer_id from HDF5 object.")
 
-        temp_store = PESStore(Path("ephemeral.h5"), mode="r")
+        temp_store = PESStore(Path.home() / ".cochem" / "artifacts" / "ephemeral.h5", mode="r")
         temp_store._h5file = pes_store if isinstance(pes_store, h5py.File) else pes_store.file
         temp_store._is_external_file = True
         raw_data = temp_store.read_isomer(target_isomer)

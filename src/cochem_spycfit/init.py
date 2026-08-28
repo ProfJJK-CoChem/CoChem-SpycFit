@@ -308,9 +308,8 @@ def update_swarm_state(status: str) -> None:
         try:
             with open(swarm_state_path, "r") as f:
                 state_data = json.load(f)
-        except (json.JSONDecodeError, OSError, KeyError, ValueError):
-            pass
-            
+        except (json.JSONDecodeError, OSError, KeyError, ValueError) as e:
+            logger.warning(f"Failed to load swarm state: {e}")
     state_data["cochem-audit"] = {
         "status": status,
         "timestamp": datetime.datetime.now().isoformat(),

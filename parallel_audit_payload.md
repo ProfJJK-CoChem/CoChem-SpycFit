@@ -1,0 +1,1 @@
+Perform a parallel adversarial static analysis on D:\__CoChem\GitHub-Repo\CoChem-SpycFit. Check for Zero-Mock mandate violations, faked jobs, and logical integrity.
