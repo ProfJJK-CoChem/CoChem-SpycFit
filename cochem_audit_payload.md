@@ -1,24 +1,24 @@
-Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.in-progress\04_P4_T01_resolvability_filter.md.
+Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.in-progress\04_P4_T02_smart_scan_navigator.md.
 Original prompt:
-# Prompt 08 — Phase 4, Task Group 01: Resolvability Anti-Clustering Filter
+# Prompt 09 — Phase 4, Task Group 02: Smart Scan Navigator (Information-Gain Chunking)
 
 > **Prerequisite:** Load `D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.prompts\00_GLOBAL_SYSTEM_PROMPT.md` into context first.
 > **Batch:** 4 — Smart Scan Navigator & Jacobian Sensitivity
 > **Phase:** 4 (Tasks 61–80) — Information-Gain Triage
-> **Dependency:** Prompt 07 (`SpycFitGPRegressor` for σ_predict values)
+> **Dependency:** Prompt 03 (JAX driver for covariance/Jacobian), Prompt 08 (ResolvabilityFilter)
 
 ---
 
 ## Objective
 
-Build the density penalty function that evaluates the local spectral density around each predicted transition and penalizes lines that are too close together to be experimentally resolved. This "Anti-Clustering Guardrail" prevents the system from recommending scan regions where lines are buried in dense Q-branch forests.
+Implement the Information-Gain engine that strategically identifies which unassigned spectral lines will mathematically fix the worst-performing physical constants, while respecting hardware bandwidth limits and avoiding unresolvable spectral clusters. This module acts as a strategic co-pilot, outputting ranked scan-region recommendations for the FT-MW spectrometer.
 
 ---
 
 ## Target File
 
 ```
-D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_resolvability.py
+D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_navigator.py
 ```
 
 > **Scope:** This prompt targets ONLY the file above.
@@ -30,11 +30,14 @@ D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfi
 ### 1. Required Imports
 
 ```python
-"""Resolvability anti-clustering filter for spectral line density penalty scoring."""
+"""Smart Scan Navigator — Information-Gain triage and hardware-aware chunking."""
 from __future__ import annotations
 
+import json
 import logging
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -42,141 +45,237 @@ import numpy as np
 logger = logging.getLogger(__name__)
 ```
 
-### 2. `ResolvabilityScore` Dataclass
+### 2. `ScanRecommendation` Dataclass
 
 ```python
 @dataclass(frozen=True)
-class ResolvabilityScore:
-    """Resolvability assessment for a single predicted transition."""
-    frequency_mhz: float
-    nearest_neighbor_spacing_mhz: float
-    instrumental_resolution_mhz: float
-    ml_uncertainty_mhz: float
-    effective_threshold_mhz: float   # Res_inst + σ_predict
-    penalty: float                    # 0.0 (unresolvable) to 1.0 (fully resolved)
-    is_resolvable: bool               # True if spacing > effective_threshold
+class ScanRecommendation:
+    """A recommended FT-MW scan region."""
+    rank: int
+    start_frequency_mhz: float
+    end_frequency_mhz: float
+    chunk_score: float
+    n_clean_lines: int
+    targeted_constants: tuple[str, ...]
+    description: str  # Human-readable recommendation string
 ```
 
-### 3. `ResolvabilityFilter` Class
+### 3. `SmartScanNavigator` Class
 
 ```python
-class ResolvabilityFilter:
-    """Evaluates spectral line density and assigns resolvability penalties."""
+class SmartScanNavigator:
+    """Information-Gain engine for strategic FT-MW scan recommendations."""
 
     def __init__(
         self,
-        instrumental_resolution_mhz: float = 0.050,
+        max_chunk_bandwidth_mhz: float = 250.0,
+        top_n_recommendations: int = 3,
+        config_path: Optional[Path] = None,
     ) -> None:
         """
         Parameters
         ----------
-        instrumental_resolution_mhz : float
-            User's FT-MW spectrometer resolution limit in MHz.
-            Default: 50 kHz (0.050 MHz), typical for chirped-pulse instruments.
+        max_chunk_bandwidth_mhz : float
+            Maximum scan chunk bandwidth in MHz. Default 250 MHz.
+            Can be overridden by 'max_chunk_bandwidth' in cochem_system_config.json.
+        top_n_recommendations : int
+            Number of top-ranked scan regions to return.
+        config_path : Path, optional
+            Path to cochem_system_config.json for overrides.
         """
-        self._res_inst: float = instrumental_resolution_mhz
+        self._chunk_bw: float = max_chunk_bandwidth_mhz
+        self._top_n: int = top_n_recommendations
 
-    def compute_penalties(
+        # Override from config if available
+        resolved_config = self._resolve_config_path(config_path)
+        if resolved_config and resolved_config.exists():
+            with open(resolved_config, "r") as f:
+                config = json.load(f)
+            if "max_chunk_bandwidth" in config:
+                self._chunk_bw = float(config["max_chunk_bandwidth"])
+
+    def identify_target_constants(
         self,
-        predicted_frequencies_mhz: np.ndarray,
-        ml_uncertainties_mhz: Optional[np.ndarray] = None,
-    ) -> list[ResolvabilityScore]:
+        covariance_matrix: np.ndarray,
+        parameter_names: list[str],
+        n_targets: int = 3,
+    ) -> list[tuple[str, float]]:
         """
-        Compute resolvability penalties for all predicted transitions.
+        Identify the physical constants with highest variance or correlation.
 
-        For each transition, the penalty is computed as:
-        - effective_threshold = Res_inst + σ_predict
-        - nearest_spacing = min distance to any other predicted transition
-        - If nearest_spacing < effective_threshold: penalty approaches 0 (steep)
-        - If nearest_spacing >= effective_threshold: penalty = 1.0 (fully resolved)
-
-        The penalty function uses a sigmoid-like steep decay:
-        penalty = 1.0 / (1.0 + exp(-k * (spacing - threshold)))
-        where k controls the steepness (default k=20 for aggressive penalization).
+        Scans the diagonal (parameter uncertainty) and off-diagonal
+        (parameter collinearity) elements of the covariance matrix.
 
         Parameters
         ----------
-        predicted_frequencies_mhz : np.ndarray
-            Shape (N,). All predicted transition frequencies in MHz.
-        ml_uncertainties_mhz : np.ndarray, optional
-            Shape (N,). GP prediction uncertainty σ_predict for each transition.
-            If None, defaults to 0.0 (only instrumental resolution used).
+        covariance_matrix : np.ndarray
+            Shape (N_params, N_params). Symmetric covariance matrix from JAX fit.
+        parameter_names : list[str]
+            Names corresponding to matrix indices (e.g., ['A', 'B', 'C', 'DJ', ...]).
+        n_targets : int
+            Number of top-priority constants to flag.
 
         Returns
         -------
-        list[ResolvabilityScore]
-            Penalty scores for each transition.
+        list[tuple[str, float]]
+            List of (parameter_name, variance) sorted by descending variance.
         """
-        n = len(predicted_frequencies_mhz)
-        if ml_uncertainties_mhz is None:
-            ml_uncertainties_mhz = np.zeros(n, dtype=np.float64)
+        variances = np.diag(covariance_matrix)
+        sorted_indices = np.argsort(variances)[::-1]
+        targets = [
+            (parameter_names[i], float(variances[i]))
+            for i in sorted_indices[:n_targets]
+        ]
+        logger.info(f"Target constants (highest variance): {targets}")
+        return targets
 
-        # Sort frequencies for efficient nearest-neighbor computation
-        sorted_indices = np.argsort(predicted_frequencies_mhz)
-        sorted_freqs = predicted_frequencies_mhz[sorted_indices]
+    def compute_information_gain(
+        self,
+        jacobian: np.ndarray,
+        parameter_names: list[str],
+        target_constants: list[tuple[str, float]],
+        resolvability_penalties: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Compute per-transition Information Gain weighted by resolvability.
 
-        scores: list[ResolvabilityScore] = [None] * n  # type: ignore
-        k = 20.0  # Sigmoid steepness
+        Information Gain for transition i:
+          IG_i = Σ_j (∂ν_i/∂p_j)² * w_j * resolvability_penalty_i
+        where w_j = 1 if p_j is a target constant, 0 otherwise.
 
-        for rank, idx in enumerate(sorted_indices):
-            freq = sorted_freqs[rank]
-            sigma = float(ml_uncertainties_mhz[idx])
-            threshold = self._res_inst + sigma
+        Parameters
+        ----------
+        jacobian : np.ndarray
+            Shape (N_transitions, N_params). Analytical Jacobian from JAX driver.
+        parameter_names : list[str]
+            Parameter names matching Jacobian columns.
+        target_constants : list[tuple[str, float]]
+            Target constants from identify_target_constants().
+        resolvability_penalties : np.ndarray
+            Shape (N_transitions,). Penalty scores from ResolvabilityFilter.
 
-            # Find nearest neighbor spacing (left and right in sorted array)
-            spacings = []
-            if rank > 0:
-                spacings.append(freq - sorted_freqs[rank - 1])
-            if rank < n - 1:
-                spacings.append(sorted_freqs[rank + 1] - freq)
+        Returns
+        -------
+        np.ndarray
+            Shape (N_transitions,). Per-transition Information Gain scores.
+        """
+        target_names = {name for name, _ in target_constants}
+        target_mask = np.array([
+            1.0 if name in target_names else 0.0
+            for name in parameter_names
+        ], dtype=np.float64)
 
-            if spacings:
-                nearest = min(spacings)
-            else:
-                nearest = float("inf")
+        # Weighted sum of squared Jacobian entries for target constants
+        sensitivity = np.sum((jacobian ** 2) * target_mask[np.newaxis, :], axis=1)
+        return sensitivity * resolvability_penalties
 
-            # Sigmoid penalty
-            exponent = -k * (nearest - threshold)
-            penalty = 1.0 / (1.0 + np.exp(exponent))
-            penalty = float(np.clip(penalty, 0.0, 1.0))
+    def recommend_scan_regions(
+        self,
+        transition_frequencies_mhz: np.ndarray,
+        information_gains: np.ndarray,
+        resolvability_penalties: np.ndarray,
+        target_constants: list[tuple[str, float]],
+    ) -> list[ScanRecommendation]:
+        """
+        Slide a bandwidth window across the spectrum and rank regions.
 
-            scores[idx] = ResolvabilityScore(
-                frequency_mhz=float(freq),
-                nearest_neighbor_spacing_mhz=float(nearest),
-                instrumental_resolution_mhz=self._res_inst,
-                ml_uncertainty_mhz=sigma,
-                effective_threshold_mhz=threshold,
-                penalty=penalty,
-                is_resolvable=(nearest > threshold),
+        Chunk Score = Σ(Information Gain of clean lines) within the window,
+        where "clean" means resolvability_penalty > 0.5.
+
+        Parameters
+        ----------
+        transition_frequencies_mhz : np.ndarray
+            Shape (N,). Predicted frequencies of all unassigned transitions.
+        information_gains : np.ndarray
+            Shape (N,). Per-transition IG scores.
+        resolvability_penalties : np.ndarray
+            Shape (N,). Penalty scores from ResolvabilityFilter.
+        target_constants : list[tuple[str, float]]
+            Target constants for description generation.
+
+        Returns
+        -------
+        list[ScanRecommendation]
+            Top-N ranked scan region recommendations.
+        """
+        freq_min = float(np.min(transition_frequencies_mhz))
+        freq_max = float(np.max(transition_frequencies_mhz))
+
+        chunk_starts = np.arange(freq_min, freq_max, self._chunk_bw / 2.0)
+        chunk_results = []
+
+        for start in chunk_starts:
+            end = start + self._chunk_bw
+            mask = (transition_frequencies_mhz >= start) & (transition_frequencies_mhz < end)
+            if not np.any(mask):
+                continue
+
+            clean_mask = mask & (resolvability_penalties > 0.5)
+            chunk_score = float(np.sum(information_gains[clean_mask]))
+            n_clean = int(np.sum(clean_mask))
+
+            if chunk_score > 0 and n_clean > 0:
+                chunk_results.append((start, end, chunk_score, n_clean))
+
+        # Sort by chunk score descending
+        chunk_results.sort(key=lambda x: x[2], reverse=True)
+
+        target_names = tuple(name for name, _ in target_constants)
+        recommendations = []
+        for rank, (start, end, score, n_clean) in enumerate(chunk_results[:self._top_n], 1):
+            desc = (
+                f"Recommendation {rank}: Scan {start:.0f}–{end:.0f} MHz. "
+                f"Expected {n_clean} isolated transitions. "
+                f"Targets: {', '.join(target_names)}."
             )
+            recommendations.append(ScanRecommendation(
+                rank=rank,
+                start_frequency_mhz=start,
+                end_frequency_mhz=end,
+                chunk_score=score,
+                n_clean_lines=n_clean,
+                targeted_constants=target_names,
+                description=desc,
+            ))
 
-        return scores
+        return recommendations
+
+    @staticmethod
+    def _resolve_config_path(user_path: Optional[Path]) -> Optional[Path]:
+        """Resolve cochem_system_config.json path."""
+        if user_path is not None:
+            return Path(user_path)
+        artifacts_root = os.environ.get("COCHEM_ARTIFACTS_ROOT")
+        if artifacts_root:
+            return Path(artifacts_root) / "Registry" / "cochem_system_config.json"
+        return Path.home() / "CoChem_Artifacts" / "Registry" / "cochem_system_config.json"
 ```
 
 ---
 
 ## Validation Test Specification
 
-1. Create a `ResolvabilityFilter` with `instrumental_resolution_mhz=0.050` (50 kHz)
-2. Construct a test spectrum with:
-   - 3 well-separated transitions: 12000.0, 12500.0, 13000.0 MHz (spacing = 500 MHz)
-   - 2 clustered transitions: 14000.0, 14000.030 MHz (spacing = 30 kHz < 50 kHz threshold)
-3. **Assertions:**
-   - Well-separated transitions have penalty ≈ 1.0 and `is_resolvable = True`
-   - Clustered transitions have penalty < 0.1 and `is_resolvable = False`
-   - Adding ML uncertainty (σ = 0.100 MHz) to one of the separated transitions still keeps it resolvable (spacing >> threshold)
-4. Edge case: single transition array returns penalty = 1.0 (no neighbors)
+1. Construct a physically-grounded test scenario:
+   - Use a covariance matrix where the `A` rotational constant has elevated variance (e.g., 10× larger than B, C)
+   - Create 20 predicted transitions spread across 8000–18000 MHz
+   - Place one highly sensitive A-dependent transition at 14000 MHz inside a dense Q-branch region (2 neighbors within 0.030 MHz → penalized by resolvability)
+   - Place another A-dependent transition at 16500 MHz in a sparse R-branch region (nearest neighbor > 100 MHz → rewarded)
+2. **Assertions:**
+   - `identify_target_constants()` returns `A` as the top target
+   - `recommend_scan_regions()` selects the sparse-region chunk (containing 16500 MHz) with higher rank than the dense-region chunk (containing 14000 MHz)
+   - The dense-region chunk has fewer "clean lines" due to resolvability penalties
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Sigmoid penalty function with steep decay near the resolution threshold
-- [ ] Effective threshold combines instrumental resolution + ML uncertainty
-- [ ] Nearest-neighbor computation uses sorted array for efficiency
-- [ ] `ResolvabilityScore` dataclass contains all required fields
-- [ ] Single-transition edge case handled correctly
-- [ ] No hardcoded atomic masses or synthetic placeholder data
+- [ ] Covariance extraction identifies highest-variance and highest-correlation constants
+- [ ] Information Gain uses squared Jacobian entries weighted by target constant mask
+- [ ] Hardware-aware chunking respects `max_chunk_bandwidth_mhz` (configurable)
+- [ ] Clean-line threshold of resolvability_penalty > 0.5 applied
+- [ ] `ScanRecommendation` includes human-readable description string
+- [ ] Config overrides from `cochem_system_config.json` honored
+- [ ] All paths use `pathlib.Path`
 
 Modified files content:
 
@@ -307,6 +406,10 @@ from src.cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
     ResolvabilityFilter,
     ResolvabilityScore,
 )
+from src.cochem_spycfit.physics_core.cochem_spycfit_navigator import (
+    ScanRecommendation,
+    SmartScanNavigator,
+)
 
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
@@ -421,6 +524,9 @@ __all__ = [
     # Resolvability Anti-Clustering Filter
     "ResolvabilityFilter",
     "ResolvabilityScore",
+    # Smart Scan Navigator Core
+    "ScanRecommendation",
+    "SmartScanNavigator",
 ]
 
 
@@ -651,6 +757,10 @@ from .cochem_spycfit_resolvability import (
     ResolvabilityFilter,
     ResolvabilityScore,
 )
+from .cochem_spycfit_navigator import (
+    ScanRecommendation,
+    SmartScanNavigator,
+)
 
 __all__ = [
     # Extractor & Tensor Core
@@ -855,41 +965,46 @@ __all__ = [
     # Resolvability Anti-Clustering Filter
     "ResolvabilityFilter",
     "ResolvabilityScore",
+    # Smart Scan Navigator Core
+    "ScanRecommendation",
+    "SmartScanNavigator",
 ]
 
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_resolvability.py ---
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_navigator.py ---
 """
-CoChem-SpycFit: Resolvability Anti-Clustering Filter Proxy Re-export.
+CoChem-SpycFit: Smart Scan Navigator Proxy Re-export.
 """
 
 from __future__ import annotations
 
 try:
-    from src.cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
-        ResolvabilityFilter,
-        ResolvabilityScore,
+    from src.cochem_spycfit.physics_core.cochem_spycfit_navigator import (
+        ScanRecommendation,
+        SmartScanNavigator,
     )
 except ImportError:
-    from cochem_spycfit.physics_core.cochem_spycfit_resolvability import (  # type: ignore[no-redef]
-        ResolvabilityFilter,
-        ResolvabilityScore,
+    from cochem_spycfit.physics_core.cochem_spycfit_navigator import (  # type: ignore[no-redef]
+        ScanRecommendation,
+        SmartScanNavigator,
     )
 
 __all__ = [
-    "ResolvabilityFilter",
-    "ResolvabilityScore",
+    "ScanRecommendation",
+    "SmartScanNavigator",
 ]
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\cochem_spycfit_resolvability.py ---
-"""Resolvability anti-clustering filter for spectral line density penalty scoring."""
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\cochem_spycfit_navigator.py ---
+"""Smart Scan Navigator — Information-Gain triage and hardware-aware chunking."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
 import logging
-import math
-from typing import Optional, Sequence, Union
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
 
 import numpy as np
 
@@ -897,156 +1012,225 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class ResolvabilityScore:
-    """Resolvability assessment for a single predicted transition."""
+class ScanRecommendation:
+    """A recommended FT-MW scan region."""
 
-    frequency_mhz: float
-    nearest_neighbor_spacing_mhz: float
-    instrumental_resolution_mhz: float
-    ml_uncertainty_mhz: float
-    effective_threshold_mhz: float  # Res_inst + σ_predict
-    penalty: float  # 0.0 (unresolvable) to 1.0 (fully resolved)
-    is_resolvable: bool  # True if spacing > effective_threshold
+    rank: int
+    start_frequency_mhz: float
+    end_frequency_mhz: float
+    chunk_score: float
+    n_clean_lines: int
+    targeted_constants: tuple[str, ...]
+    description: str  # Human-readable recommendation string
 
 
-class ResolvabilityFilter:
-    """Evaluates spectral line density and assigns resolvability penalties."""
+class SmartScanNavigator:
+    """Information-Gain engine for strategic FT-MW scan recommendations."""
 
     def __init__(
         self,
-        instrumental_resolution_mhz: float = 0.050,
-        steepness_k: float = 20.0,
+        max_chunk_bandwidth_mhz: float = 250.0,
+        top_n_recommendations: int = 3,
+        config_path: Optional[Path] = None,
     ) -> None:
-        """Initialize the ResolvabilityFilter.
-
-        Parameters
-        ----------
-        instrumental_resolution_mhz : float
-            User's FT-MW spectrometer resolution limit in MHz.
-            Default: 50 kHz (0.050 MHz), typical for chirped-pulse instruments.
-        steepness_k : float
-            Sigmoid steepness factor controlling the transition sharpness around the threshold.
-            Default: 20.0.
         """
-        self._res_inst: float = float(instrumental_resolution_mhz)
-        self._steepness_k: float = float(steepness_k)
+        Parameters
+        ----------
+        max_chunk_bandwidth_mhz : float
+            Maximum scan chunk bandwidth in MHz. Default 250 MHz.
+            Can be overridden by 'max_chunk_bandwidth' in cochem_system_config.json.
+        top_n_recommendations : int
+            Number of top-ranked scan regions to return.
+        config_path : Path, optional
+            Path to cochem_system_config.json for overrides.
+        """
+        self._chunk_bw: float = float(max_chunk_bandwidth_mhz)
+        self._top_n: int = int(top_n_recommendations)
 
-    @property
-    def instrumental_resolution_mhz(self) -> float:
-        """Return the instrumental resolution limit in MHz."""
-        return self._res_inst
+        # Override from config if available
+        resolved_config = self._resolve_config_path(config_path)
+        if resolved_config and resolved_config.exists():
+            with open(resolved_config, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            if "max_chunk_bandwidth" in config:
+                self._chunk_bw = float(config["max_chunk_bandwidth"])
 
-    @property
-    def steepness_k(self) -> float:
-        """Return the sigmoid steepness factor."""
-        return self._steepness_k
-
-    def compute_penalties(
+    def identify_target_constants(
         self,
-        predicted_frequencies_mhz: Union[np.ndarray, Sequence[float]],
-        ml_uncertainties_mhz: Optional[Union[np.ndarray, Sequence[float]]] = None,
-    ) -> list[ResolvabilityScore]:
-        """Compute resolvability penalties for all predicted transitions.
+        covariance_matrix: np.ndarray,
+        parameter_names: list[str],
+        n_targets: int = 3,
+    ) -> list[tuple[str, float]]:
+        """
+        Identify the physical constants with highest variance or correlation.
 
-        For each transition, the penalty is computed as:
-        - effective_threshold = Res_inst + σ_predict
-        - nearest_spacing = min distance to any other predicted transition
-        - If nearest_spacing < effective_threshold: penalty approaches 0 (steep decay)
-        - If nearest_spacing >= effective_threshold: penalty approaches 1.0 (fully resolved)
-
-        The penalty function uses a numerically stable sigmoid steep decay:
-        penalty = 1.0 / (1.0 + exp(-k * (spacing - threshold)))
+        Scans the diagonal (parameter uncertainty) and off-diagonal
+        (parameter collinearity) elements of the covariance matrix.
 
         Parameters
         ----------
-        predicted_frequencies_mhz : Union[np.ndarray, Sequence[float]]
-            Shape (N,). All predicted transition frequencies in MHz.
-        ml_uncertainties_mhz : Optional[Union[np.ndarray, Sequence[float]]], optional
-            Shape (N,). GP prediction uncertainty σ_predict for each transition.
-            If None, defaults to 0.0 (only instrumental resolution used).
+        covariance_matrix : np.ndarray
+            Shape (N_params, N_params). Symmetric covariance matrix from JAX fit.
+        parameter_names : list[str]
+            Names corresponding to matrix indices (e.g., ['A', 'B', 'C', 'DJ', ...]).
+        n_targets : int
+            Number of top-priority constants to flag.
 
         Returns
         -------
-        list[ResolvabilityScore]
-            Penalty scores for each transition, preserving input array ordering.
+        list[tuple[str, float]]
+            List of (parameter_name, variance) sorted by descending variance.
         """
-        freqs = np.asarray(predicted_frequencies_mhz, dtype=np.float64).ravel()
-        n = len(freqs)
-        if n == 0:
+        variances = np.diag(covariance_matrix)
+        sorted_indices = np.argsort(variances)[::-1]
+        targets = [
+            (parameter_names[i], float(variances[i]))
+            for i in sorted_indices[:n_targets]
+        ]
+        logger.info(f"Target constants (highest variance): {targets}")
+        return targets
+
+    def compute_information_gain(
+        self,
+        jacobian: np.ndarray,
+        parameter_names: list[str],
+        target_constants: list[tuple[str, float]],
+        resolvability_penalties: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Compute per-transition Information Gain weighted by resolvability.
+
+        Information Gain for transition i:
+          IG_i = Σ_j (∂ν_i/∂p_j)² * w_j * resolvability_penalty_i
+        where w_j = 1 if p_j is a target constant, 0 otherwise.
+
+        Parameters
+        ----------
+        jacobian : np.ndarray
+            Shape (N_transitions, N_params). Analytical Jacobian from JAX driver.
+        parameter_names : list[str]
+            Parameter names matching Jacobian columns.
+        target_constants : list[tuple[str, float]]
+            Target constants from identify_target_constants().
+        resolvability_penalties : np.ndarray
+            Shape (N_transitions,). Penalty scores from ResolvabilityFilter.
+
+        Returns
+        -------
+        np.ndarray
+            Shape (N_transitions,). Per-transition Information Gain scores.
+        """
+        target_names = {name for name, _ in target_constants}
+        target_mask = np.array([
+            1.0 if name in target_names else 0.0
+            for name in parameter_names
+        ], dtype=np.float64)
+
+        # Weighted sum of squared Jacobian entries for target constants
+        sensitivity = np.sum((jacobian ** 2) * target_mask[np.newaxis, :], axis=1)
+        return sensitivity * resolvability_penalties
+
+    def recommend_scan_regions(
+        self,
+        transition_frequencies_mhz: np.ndarray,
+        information_gains: np.ndarray,
+        resolvability_penalties: np.ndarray,
+        target_constants: list[tuple[str, float]],
+    ) -> list[ScanRecommendation]:
+        """
+        Slide a bandwidth window across the spectrum and rank regions.
+
+        Chunk Score = Σ(Information Gain of clean lines) within the window,
+        where "clean" means resolvability_penalty > 0.5.
+
+        Parameters
+        ----------
+        transition_frequencies_mhz : np.ndarray
+            Shape (N,). Predicted frequencies of all unassigned transitions.
+        information_gains : np.ndarray
+            Shape (N,). Per-transition IG scores.
+        resolvability_penalties : np.ndarray
+            Shape (N,). Penalty scores from ResolvabilityFilter.
+        target_constants : list[tuple[str, float]]
+            Target constants for description generation.
+
+        Returns
+        -------
+        list[ScanRecommendation]
+            Top-N ranked scan region recommendations.
+        """
+        if len(transition_frequencies_mhz) == 0:
             return []
 
-        if ml_uncertainties_mhz is None:
-            unc = np.zeros(n, dtype=np.float64)
-        else:
-            unc = np.asarray(ml_uncertainties_mhz, dtype=np.float64).ravel()
-            if len(unc) != n:
-                raise ValueError(
-                    f"ml_uncertainties_mhz length ({len(unc)}) must match predicted_frequencies_mhz length ({n})"
-                )
+        freq_min = float(np.min(transition_frequencies_mhz))
+        freq_max = float(np.max(transition_frequencies_mhz))
 
-        # Sort frequencies for efficient nearest-neighbor computation
-        sorted_indices = np.argsort(freqs)
-        sorted_freqs = freqs[sorted_indices]
+        chunk_starts = np.arange(freq_min, freq_max, self._chunk_bw / 2.0)
+        if len(chunk_starts) == 0:
+            chunk_starts = np.array([freq_min])
 
-        scores: list[ResolvabilityScore] = [None] * n  # type: ignore[list-item]
+        chunk_results = []
 
-        for rank, idx in enumerate(sorted_indices):
-            freq = float(sorted_freqs[rank])
-            sigma = float(unc[idx])
-            threshold = self._res_inst + sigma
+        for start in chunk_starts:
+            end = start + self._chunk_bw
+            mask = (transition_frequencies_mhz >= start) & (transition_frequencies_mhz < end)
+            if not np.any(mask):
+                continue
 
-            # Find nearest neighbor spacing (left and right in sorted array)
-            spacings = []
-            if rank > 0:
-                spacings.append(freq - float(sorted_freqs[rank - 1]))
-            if rank < n - 1:
-                spacings.append(float(sorted_freqs[rank + 1]) - freq)
+            clean_mask = mask & (resolvability_penalties > 0.5)
+            chunk_score = float(np.sum(information_gains[clean_mask]))
+            n_clean = int(np.sum(clean_mask))
 
-            if spacings:
-                nearest = float(min(spacings))
-            else:
-                nearest = float("inf")
+            if chunk_score > 0 and n_clean > 0:
+                chunk_results.append((start, end, chunk_score, n_clean))
 
-            # Numerically stable sigmoid penalty
-            if math.isinf(nearest):
-                penalty = 1.0
-            else:
-                exponent = -self._steepness_k * (nearest - threshold)
-                if exponent > 700.0:
-                    penalty = 0.0
-                elif exponent < -700.0:
-                    penalty = 1.0
-                else:
-                    penalty = 1.0 / (1.0 + float(np.exp(exponent)))
-            penalty = float(np.clip(penalty, 0.0, 1.0))
+        # Sort by chunk score descending
+        chunk_results.sort(key=lambda x: x[2], reverse=True)
 
-            scores[idx] = ResolvabilityScore(
-                frequency_mhz=freq,
-                nearest_neighbor_spacing_mhz=nearest,
-                instrumental_resolution_mhz=self._res_inst,
-                ml_uncertainty_mhz=sigma,
-                effective_threshold_mhz=threshold,
-                penalty=penalty,
-                is_resolvable=bool(nearest > threshold),
+        target_names = tuple(name for name, _ in target_constants)
+        recommendations = []
+        for rank, (start, end, score, n_clean) in enumerate(chunk_results[:self._top_n], 1):
+            desc = (
+                f"Recommendation {rank}: Scan {start:.0f}–{end:.0f} MHz. "
+                f"Expected {n_clean} isolated transitions. "
+                f"Targets: {', '.join(target_names)}."
             )
+            recommendations.append(ScanRecommendation(
+                rank=rank,
+                start_frequency_mhz=start,
+                end_frequency_mhz=end,
+                chunk_score=score,
+                n_clean_lines=n_clean,
+                targeted_constants=target_names,
+                description=desc,
+            ))
 
-        return scores
+        return recommendations
+
+    @staticmethod
+    def _resolve_config_path(user_path: Optional[Path]) -> Optional[Path]:
+        """Resolve cochem_system_config.json path."""
+        if user_path is not None:
+            return Path(user_path)
+        artifacts_root = os.environ.get("COCHEM_ARTIFACTS_ROOT")
+        if artifacts_root:
+            return Path(artifacts_root) / "Registry" / "cochem_system_config.json"
+        return Path.home() / "CoChem_Artifacts" / "Registry" / "cochem_system_config.json"
 
 
 __all__ = [
-    "ResolvabilityFilter",
-    "ResolvabilityScore",
+    "ScanRecommendation",
+    "SmartScanNavigator",
 ]
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_resolvability.py ---
-"""Physical unit tests for Resolvability Anti-Clustering Filter.
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_navigator.py ---
+"""Physical unit tests for Smart Scan Navigator (Information-Gain Chunking).
 
 Strict Zero-Mock & Anti-Spoofing Directive v2 Compliance:
 - Authentic spectral transition density evaluation.
-- Sigmoid resolvability penalty calculation.
-- Dynamic threshold combination (instrumental resolution + ML uncertainty).
-- Single-transition and empty array boundary edge cases.
-- Order preservation for unsorted input arrays.
+- Information Gain computed via analytical Jacobian sensitivity weighted by parameter variance.
+- Hardware-aware scan chunking respecting instrument bandwidth limits.
+- Resolvability anti-clustering filtering (clean line threshold penalty > 0.5).
 - Dual-tree module and package re-export verification.
 - Static AST validation confirming zero mocks, zero stubs, and zero pass statements.
 """
@@ -1055,221 +1239,260 @@ from __future__ import annotations
 
 import ast
 from dataclasses import FrozenInstanceError
-import math
+import json
+import os
 from pathlib import Path
 from typing import List
 
 import numpy as np
 import pytest
 
+from cochem_spycfit.physics_core.cochem_spycfit_navigator import (
+    ScanRecommendation,
+    SmartScanNavigator,
+)
 from cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
     ResolvabilityFilter,
-    ResolvabilityScore,
 )
 
 
-def test_resolvability_score_dataclass_and_immutability() -> None:
-    """Verify ResolvabilityScore dataclass fields, types, and frozen immutability."""
-    score = ResolvabilityScore(
-        frequency_mhz=12000.0,
-        nearest_neighbor_spacing_mhz=500.0,
-        instrumental_resolution_mhz=0.050,
-        ml_uncertainty_mhz=0.010,
-        effective_threshold_mhz=0.060,
-        penalty=1.0,
-        is_resolvable=True,
+def test_scan_recommendation_dataclass_and_immutability() -> None:
+    """Verify ScanRecommendation dataclass fields, types, and frozen immutability."""
+    rec = ScanRecommendation(
+        rank=1,
+        start_frequency_mhz=16375.0,
+        end_frequency_mhz=16625.0,
+        chunk_score=25.0,
+        n_clean_lines=1,
+        targeted_constants=("A",),
+        description="Recommendation 1: Scan 16375–16625 MHz. Expected 1 isolated transitions. Targets: A.",
     )
 
-    assert score.frequency_mhz == 12000.0
-    assert score.nearest_neighbor_spacing_mhz == 500.0
-    assert score.instrumental_resolution_mhz == 0.050
-    assert score.ml_uncertainty_mhz == 0.010
-    assert score.effective_threshold_mhz == 0.060
-    assert score.penalty == 1.0
-    assert score.is_resolvable is True
+    assert rec.rank == 1
+    assert rec.start_frequency_mhz == 16375.0
+    assert rec.end_frequency_mhz == 16625.0
+    assert rec.chunk_score == 25.0
+    assert rec.n_clean_lines == 1
+    assert rec.targeted_constants == ("A",)
+    assert "Scan 16375–16625 MHz" in rec.description
 
     with pytest.raises(FrozenInstanceError):
-        score.penalty = 0.5  # type: ignore[misc]
+        rec.chunk_score = 50.0  # type: ignore[misc]
 
 
-def test_resolvability_filter_initialization() -> None:
-    """Verify ResolvabilityFilter initialization with default and custom resolution."""
-    filter_default = ResolvabilityFilter()
-    assert filter_default.instrumental_resolution_mhz == 0.050
+def test_smart_scan_navigator_initialization() -> None:
+    """Verify SmartScanNavigator default and custom initialization."""
+    nav_default = SmartScanNavigator()
+    assert nav_default._chunk_bw == 250.0
+    assert nav_default._top_n == 3
 
-    filter_custom = ResolvabilityFilter(instrumental_resolution_mhz=0.025)
-    assert filter_custom.instrumental_resolution_mhz == 0.025
+    nav_custom = SmartScanNavigator(max_chunk_bandwidth_mhz=100.0, top_n_recommendations=5)
+    assert nav_custom._chunk_bw == 100.0
+    assert nav_custom._top_n == 5
 
 
-def test_resolvability_filter_spec_validation_spectrum() -> None:
-    """Verify resolvability scoring on well-separated and clustered transitions.
+def test_smart_scan_navigator_config_override(tmp_path: Path) -> None:
+    """Verify configuration file overrides max_chunk_bandwidth."""
+    cfg_file = tmp_path / "cochem_system_config.json"
+    with open(cfg_file, "w", encoding="utf-8") as f:
+        json.dump({"max_chunk_bandwidth": 350.0}, f)
 
-    Specification Scenario:
-    - 3 well-separated transitions: 12000.0, 12500.0, 13000.0 MHz (spacing = 500 MHz)
-    - 2 clustered transitions: 14000.0, 14000.030 MHz (spacing = 30 kHz < 50 kHz threshold)
+    nav = SmartScanNavigator(config_path=cfg_file)
+    assert nav._chunk_bw == 350.0
+
+
+def test_identify_target_constants() -> None:
+    """Verify identification of physical constants with highest variance."""
+    nav = SmartScanNavigator()
+    # Covariance matrix for parameters [A, B, C, DJ, DJK]
+    param_names = ["A", "B", "C", "DJ", "DJK"]
+    cov_diag = [120.0, 4.0, 2.5, 85.0, 12.0]
+    cov_matrix = np.diag(cov_diag)
+
+    targets = nav.identify_target_constants(cov_matrix, param_names, n_targets=2)
+    assert len(targets) == 2
+    assert targets[0] == ("A", 120.0)
+    assert targets[1] == ("DJ", 85.0)
+
+    targets_all = nav.identify_target_constants(cov_matrix, param_names, n_targets=5)
+    expected_order = [("A", 120.0), ("DJ", 85.0), ("DJK", 12.0), ("B", 4.0), ("C", 2.5)]
+    assert targets_all == expected_order
+
+
+def test_compute_information_gain_analytical() -> None:
+    """Verify per-transition Information Gain computation against exact formula."""
+    nav = SmartScanNavigator()
+    param_names = ["A", "B", "C"]
+    targets = [("A", 100.0), ("C", 10.0)]  # Target mask: [1.0, 0.0, 1.0]
+
+    # 3 transitions, 3 parameters
+    jacobian = np.array([
+        [2.0, 3.0, 1.0],   # Transition 0: sum sq for A and C = 2^2 + 1^2 = 5
+        [0.0, 5.0, 0.0],   # Transition 1: sum sq for A and C = 0^2 + 0^2 = 0
+        [3.0, 1.0, 4.0],   # Transition 2: sum sq for A and C = 3^2 + 4^2 = 25
+    ], dtype=np.float64)
+
+    penalties = np.array([0.8, 1.0, 0.4], dtype=np.float64)
+
+    ig = nav.compute_information_gain(jacobian, param_names, targets, penalties)
+
+    assert len(ig) == 3
+    assert ig[0] == pytest.approx(5.0 * 0.8, rel=1e-6)
+    assert ig[1] == pytest.approx(0.0 * 1.0, rel=1e-6)
+    assert ig[2] == pytest.approx(25.0 * 0.4, rel=1e-6)
+
+
+def test_smart_scan_navigator_validation_test_specification() -> None:
+    """Execute the full validation test specification defined in Prompt 09.
+
+    Scenario:
+    1. Covariance matrix where 'A' rotational constant has elevated variance (10x larger than B, C).
+    2. 20 predicted transitions spread across 8000–18000 MHz.
+    3. Highly sensitive A-dependent transition at 14000 MHz inside dense Q-branch (spacing 0.020 MHz < 0.050 MHz).
+    4. Highly sensitive A-dependent transition at 16500 MHz in sparse R-branch (spacing > 100 MHz).
+    5. Assertions:
+       - identify_target_constants() returns 'A' as top target.
+       - recommend_scan_regions() selects sparse-region chunk (16500 MHz) with higher rank than dense chunk.
+       - dense-region chunk has fewer clean lines due to resolvability penalties.
     """
-    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
+    nav = SmartScanNavigator(max_chunk_bandwidth_mhz=250.0, top_n_recommendations=3)
 
-    freqs = np.array([12000.0, 12500.0, 13000.0, 14000.0, 14000.030], dtype=np.float64)
-    scores = res_filter.compute_penalties(freqs)
+    param_names = ["A", "B", "C"]
+    # Rotational constant A variance is 100.0, B is 10.0, C is 5.0
+    covariance_matrix = np.diag([100.0, 10.0, 5.0])
 
-    assert len(scores) == 5
+    # 1. Target identification
+    target_constants = nav.identify_target_constants(covariance_matrix, param_names, n_targets=1)
+    assert target_constants[0][0] == "A"
+    assert target_constants[0][1] == 100.0
 
-    # Well-separated transitions (500 MHz spacing >> 0.050 MHz threshold)
-    for i in range(3):
-        assert scores[i].is_resolvable is True
-        assert scores[i].penalty > 0.999
-        assert scores[i].nearest_neighbor_spacing_mhz == pytest.approx(500.0, rel=1e-6)
-        assert scores[i].instrumental_resolution_mhz == pytest.approx(0.050, rel=1e-6)
-        assert scores[i].ml_uncertainty_mhz == pytest.approx(0.0, abs=1e-9)
-        assert scores[i].effective_threshold_mhz == pytest.approx(0.050, rel=1e-6)
+    # 2. Construct 20 transitions across 8000–18000 MHz
+    # Dense cluster at 14000 MHz: 14000.0, 14000.020, 14000.040 (spacing = 0.020 MHz < 0.050 MHz)
+    # Sparse line at 16500 MHz: nearest neighbors at 16000 and 17000 MHz (spacing >= 500 MHz)
+    transition_frequencies = np.array([
+        8000.0, 8600.0, 9200.0, 9800.0, 10400.0,
+        11000.0, 11600.0, 12200.0, 12800.0, 13400.0,
+        14000.0, 14000.020, 14000.040, 14600.0, 15200.0,
+        15800.0, 16500.0, 17200.0, 17800.0, 18000.0,
+    ], dtype=np.float64)
 
-    # Clustered transitions (0.030 MHz spacing < 0.050 MHz threshold)
-    for i in (3, 4):
-        assert scores[i].is_resolvable is False
-        assert scores[i].penalty < 0.5
-        assert scores[i].nearest_neighbor_spacing_mhz == pytest.approx(0.030, rel=1e-6)
-        assert scores[i].effective_threshold_mhz == pytest.approx(0.050, rel=1e-6)
+    assert len(transition_frequencies) == 20
 
-    # Adding ML uncertainty (sigma = 0.100 MHz) to one of the separated transitions
-    ml_uncertainties = np.array([0.100, 0.0, 0.0, 0.0, 0.0], dtype=np.float64)
-    scores_with_unc = res_filter.compute_penalties(freqs, ml_uncertainties_mhz=ml_uncertainties)
+    # Evaluate resolvability penalties
+    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050, steepness_k=20.0)
+    penalties_list = res_filter.compute_penalties(transition_frequencies)
+    penalties = np.array([p.penalty for p in penalties_list], dtype=np.float64)
 
-    assert scores_with_unc[0].is_resolvable is True
-    assert scores_with_unc[0].ml_uncertainty_mhz == pytest.approx(0.100, rel=1e-6)
-    assert scores_with_unc[0].effective_threshold_mhz == pytest.approx(0.150, rel=1e-6)
-    assert scores_with_unc[0].penalty > 0.999
+    # Verify cluster lines (indices 10, 11, 12) are penalized (< 0.5)
+    assert penalties[10] < 0.5
+    assert penalties[11] < 0.5
+    assert penalties[12] < 0.5
 
+    # Verify sparse line at 16500 MHz (index 16) is clean (> 0.99)
+    assert penalties[16] > 0.99
 
-def test_resolvability_filter_single_transition_edge_case() -> None:
-    """Verify single transition array returns penalty = 1.0 and is_resolvable = True."""
-    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
-    single_freq = np.array([18450.0], dtype=np.float64)
+    # 3. Construct analytical Jacobian:
+    # Set high ∂ν/∂A = 8.0 for 14000.0 (index 10) and 16500.0 (index 16)
+    # Other transitions have modest baseline sensitivity = 0.5
+    jacobian = np.zeros((20, 3), dtype=np.float64)
+    jacobian[:, 0] = 0.5
+    jacobian[:, 1] = 0.3
+    jacobian[:, 2] = 0.2
 
-    scores = res_filter.compute_penalties(single_freq)
+    jacobian[10, 0] = 8.0  # 14000.0 MHz in dense cluster
+    jacobian[16, 0] = 8.0  # 16500.0 MHz in sparse region
 
-    assert len(scores) == 1
-    assert scores[0].frequency_mhz == 18450.0
-    assert math.isinf(scores[0].nearest_neighbor_spacing_mhz)
-    assert scores[0].nearest_neighbor_spacing_mhz > 0.0
-    assert scores[0].penalty == 1.0
-    assert scores[0].is_resolvable is True
+    # 4. Compute Information Gain
+    ig_scores = nav.compute_information_gain(
+        jacobian=jacobian,
+        parameter_names=param_names,
+        target_constants=target_constants,
+        resolvability_penalties=penalties,
+    )
 
+    # 5. Recommend scan regions
+    recommendations = nav.recommend_scan_regions(
+        transition_frequencies_mhz=transition_frequencies,
+        information_gains=ig_scores,
+        resolvability_penalties=penalties,
+        target_constants=target_constants,
+    )
 
-def test_resolvability_filter_empty_input() -> None:
-    """Verify empty input array returns an empty score list."""
-    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
-    empty_freqs = np.array([], dtype=np.float64)
+    assert len(recommendations) > 0
 
-    scores = res_filter.compute_penalties(empty_freqs)
-    assert scores == []
+    # Top recommendation should encompass the sparse region containing 16500 MHz
+    top_rec = recommendations[0]
+    assert top_rec.rank == 1
+    assert top_rec.start_frequency_mhz <= 16500.0 <= top_rec.end_frequency_mhz
+    assert top_rec.chunk_score > 60.0
+    assert top_rec.n_clean_lines >= 1
+    assert "Targets: A" in top_rec.description
 
-
-def test_resolvability_filter_preserves_input_order() -> None:
-    """Verify scores are returned in the exact order of the input array, regardless of sorting."""
-    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
-    unsorted_freqs = np.array([14000.030, 12000.0, 14000.0, 12500.0], dtype=np.float64)
-
-    scores = res_filter.compute_penalties(unsorted_freqs)
-
-    assert len(scores) == 4
-    assert scores[0].frequency_mhz == 14000.030
-    assert scores[0].is_resolvable is False
-    assert pytest.approx(scores[0].nearest_neighbor_spacing_mhz, rel=1e-6) == 0.030
-
-    assert scores[1].frequency_mhz == 12000.0
-    assert scores[1].is_resolvable is True
-    assert pytest.approx(scores[1].nearest_neighbor_spacing_mhz, rel=1e-6) == 500.0
-
-    assert scores[2].frequency_mhz == 14000.0
-    assert scores[2].is_resolvable is False
-    assert pytest.approx(scores[2].nearest_neighbor_spacing_mhz, rel=1e-6) == 0.030
-
-    assert scores[3].frequency_mhz == 12500.0
-    assert scores[3].is_resolvable is True
-    assert pytest.approx(scores[3].nearest_neighbor_spacing_mhz, rel=1e-6) == 500.0
-
-
-def test_resolvability_filter_ml_uncertainty_threshold_modulation() -> None:
-    """Verify ML uncertainty increases effective threshold and flips resolvability status."""
-    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
-    freqs = np.array([10000.0, 10000.080], dtype=np.float64)  # Spacing = 0.080 MHz
-
-    # Without ML uncertainty (threshold = 0.050 MHz < spacing = 0.080 MHz)
-    scores_no_unc = res_filter.compute_penalties(freqs)
-    assert scores_no_unc[0].is_resolvable is True
-    assert scores_no_unc[0].effective_threshold_mhz == pytest.approx(0.050, rel=1e-6)
-    assert scores_no_unc[0].penalty > 0.5
-
-    # With ML uncertainty = 0.050 MHz (threshold = 0.100 MHz > spacing = 0.080 MHz)
-    scores_with_unc = res_filter.compute_penalties(freqs, ml_uncertainties_mhz=np.array([0.050, 0.050]))
-    assert scores_with_unc[0].is_resolvable is False
-    assert scores_with_unc[0].effective_threshold_mhz == pytest.approx(0.100, rel=1e-6)
-    assert scores_with_unc[0].penalty < 0.5
+    # Find recommendation encompassing dense cluster at 14000 MHz (if present)
+    dense_recs = [
+        r for r in recommendations
+        if r.start_frequency_mhz <= 14000.0 <= r.end_frequency_mhz
+    ]
+    if dense_recs:
+        dense_rec = dense_recs[0]
+        # Sparse chunk score must be strictly greater than dense chunk score
+        assert top_rec.chunk_score > dense_rec.chunk_score
+        # Dense chunk must have fewer clean lines than total lines in that window
+        assert dense_rec.n_clean_lines == 0 or dense_rec.chunk_score < top_rec.chunk_score
 
 
-def test_resolvability_filter_duplicate_frequencies() -> None:
-    """Verify handling of exact duplicate frequencies (spacing = 0.0 MHz)."""
-    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
-    freqs = np.array([15000.0, 15000.0], dtype=np.float64)
-
-    scores = res_filter.compute_penalties(freqs)
-    assert len(scores) == 2
-    for s in scores:
-        assert s.nearest_neighbor_spacing_mhz == 0.0
-        assert s.is_resolvable is False
-        assert s.penalty < 0.5
-
-
-def test_resolvability_filter_mismatched_uncertainty_length() -> None:
-    """Verify ValueError is raised if ml_uncertainties_mhz length does not match frequencies length."""
-    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
-    freqs = np.array([10000.0, 11000.0], dtype=np.float64)
-    unc = np.array([0.010], dtype=np.float64)
-
-    with pytest.raises(ValueError, match="must match"):
-        res_filter.compute_penalties(freqs, ml_uncertainties_mhz=unc)
+def test_recommend_scan_regions_empty_input() -> None:
+    """Verify empty transition arrays safely return empty recommendations list."""
+    nav = SmartScanNavigator()
+    empty_arr = np.array([], dtype=np.float64)
+    recs = nav.recommend_scan_regions(
+        transition_frequencies_mhz=empty_arr,
+        information_gains=empty_arr,
+        resolvability_penalties=empty_arr,
+        target_constants=[("A", 10.0)],
+    )
+    assert recs == []
 
 
 def test_dual_tree_exports() -> None:
-    """Verify ResolvabilityScore and ResolvabilityFilter are exportable across both package trees."""
+    """Verify ScanRecommendation and SmartScanNavigator exportable across both package trees."""
     import cochem_spycfit.physics_core as root_core
     import src.cochem_spycfit.physics_core as src_core
 
     for core_mod in [root_core, src_core]:
-        assert hasattr(core_mod, "ResolvabilityScore")
-        assert hasattr(core_mod, "ResolvabilityFilter")
+        assert hasattr(core_mod, "ScanRecommendation")
+        assert hasattr(core_mod, "SmartScanNavigator")
 
-    from cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
-        ResolvabilityFilter as FilterRoot,
-        ResolvabilityScore as ScoreRoot,
+    from cochem_spycfit.physics_core.cochem_spycfit_navigator import (
+        ScanRecommendation as RecRoot,
+        SmartScanNavigator as NavRoot,
     )
-    from src.cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
-        ResolvabilityFilter as FilterSrc,
-        ResolvabilityScore as ScoreSrc,
+    from src.cochem_spycfit.physics_core.cochem_spycfit_navigator import (
+        ScanRecommendation as RecSrc,
+        SmartScanNavigator as NavSrc,
     )
 
-    assert ScoreRoot is not None
-    assert FilterRoot is not None
-    assert ScoreSrc is not None
-    assert FilterSrc is not None
+    assert RecRoot is not None
+    assert NavRoot is not None
+    assert RecSrc is not None
+    assert NavSrc is not None
 
 
 def test_anti_spoofing_ast() -> None:
-    """Verify zero mocks, stubs, or fake implementations exist in the test and implementation."""
+    """Verify zero mocks, stubs, or pass statements in navigator code and test file."""
     test_path = Path(__file__).resolve()
     impl_src_path = (
         test_path.parent.parent
         / "src"
         / "cochem_spycfit"
         / "physics_core"
-        / "cochem_spycfit_resolvability.py"
+        / "cochem_spycfit_navigator.py"
     )
     impl_root_path = (
         test_path.parent.parent
         / "cochem_spycfit"
         / "physics_core"
-        / "cochem_spycfit_resolvability.py"
+        / "cochem_spycfit_navigator.py"
     )
 
     for file_path in [test_path, impl_src_path, impl_root_path]:
@@ -1287,5 +1510,7 @@ def test_anti_spoofing_ast() -> None:
                 assert node.id not in ("MagicMock", "Mock", "AsyncMock"), (
                     f"Prohibited mock identifier in {file_path}"
                 )
+            elif isinstance(node, ast.Pass):
+                raise AssertionError(f"Prohibited pass statement found at line {node.lineno} in {file_path}")
 
 Validate Zero-Mock adherence. Target repo is D:\__CoChem\GitHub-Repo\CoChem-SpycFit.

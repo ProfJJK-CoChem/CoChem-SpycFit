@@ -224,6 +224,10 @@ from .cochem_spycfit_resolvability import (
     ResolvabilityFilter,
     ResolvabilityScore,
 )
+from .cochem_spycfit_navigator import (
+    ScanRecommendation,
+    SmartScanNavigator,
+)
 
 __all__ = [
     # Extractor & Tensor Core
@@ -428,5 +432,8 @@ __all__ = [
     # Resolvability Anti-Clustering Filter
     "ResolvabilityFilter",
     "ResolvabilityScore",
+    # Smart Scan Navigator Core
+    "ScanRecommendation",
+    "SmartScanNavigator",
 ]
 

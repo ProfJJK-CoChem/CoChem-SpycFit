@@ -124,6 +124,10 @@ from src.cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
     ResolvabilityFilter,
     ResolvabilityScore,
 )
+from src.cochem_spycfit.physics_core.cochem_spycfit_navigator import (
+    ScanRecommendation,
+    SmartScanNavigator,
+)
 
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
@@ -238,5 +242,8 @@ __all__ = [
     # Resolvability Anti-Clustering Filter
     "ResolvabilityFilter",
     "ResolvabilityScore",
+    # Smart Scan Navigator Core
+    "ScanRecommendation",
+    "SmartScanNavigator",
 ]
 
