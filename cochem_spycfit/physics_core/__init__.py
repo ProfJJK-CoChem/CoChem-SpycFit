@@ -120,6 +120,10 @@ from src.cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
     ResidualPrediction,
     SpycFitGPRegressor,
 )
+from src.cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
+    ResolvabilityFilter,
+    ResolvabilityScore,
+)
 
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
@@ -231,5 +235,8 @@ __all__ = [
     "ProvenanceTag",
     "ResidualPrediction",
     "SpycFitGPRegressor",
+    # Resolvability Anti-Clustering Filter
+    "ResolvabilityFilter",
+    "ResolvabilityScore",
 ]
 

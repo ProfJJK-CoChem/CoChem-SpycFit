@@ -220,6 +220,10 @@ from .cochem_spycfit_ml_core import (
     ResidualPrediction,
     SpycFitGPRegressor,
 )
+from .cochem_spycfit_resolvability import (
+    ResolvabilityFilter,
+    ResolvabilityScore,
+)
 
 __all__ = [
     # Extractor & Tensor Core
@@ -421,5 +425,8 @@ __all__ = [
     "ProvenanceTag",
     "ResidualPrediction",
     "SpycFitGPRegressor",
+    # Resolvability Anti-Clustering Filter
+    "ResolvabilityFilter",
+    "ResolvabilityScore",
 ]
 

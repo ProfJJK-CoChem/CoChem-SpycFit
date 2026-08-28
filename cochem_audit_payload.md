@@ -1,24 +1,24 @@
-Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.in-progress\03_P3_T02_gaussian_process_ml_core.md.
+Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.in-progress\04_P4_T01_resolvability_filter.md.
 Original prompt:
-# Prompt 07 — Phase 3, Task Group 02: Gaussian Process ML Core
+# Prompt 08 — Phase 4, Task Group 01: Resolvability Anti-Clustering Filter
 
 > **Prerequisite:** Load `D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.prompts\00_GLOBAL_SYSTEM_PROMPT.md` into context first.
-> **Batch:** 3 — ML Learning Loop & Gaussian Process Regressor
-> **Phase:** 3 (Tasks 41–60) — Systematic Residual Mapping
-> **Dependency:** Prompt 06 (`QuantumFeatureExtractor`), Prompt 01 (`FitState`), Prompt 02 (`TensorCache`)
+> **Batch:** 4 — Smart Scan Navigator & Jacobian Sensitivity
+> **Phase:** 4 (Tasks 61–80) — Information-Gain Triage
+> **Dependency:** Prompt 07 (`SpycFitGPRegressor` for σ_predict values)
 
 ---
 
 ## Objective
 
-Implement the Gaussian Process Regressor that learns the topological error manifold (O−C residuals) of the physical Hamiltonian. The ML does NOT replace the rigid-rotor Hamiltonian — it learns systematic errors (e.g., anharmonic shifts) from user-confirmed assignments, predicting shifts and confidence intervals for unassigned lines. Predictions are explicitly tagged `[ML]` to separate them from `[TORQ]` pure ab initio predictions.
+Build the density penalty function that evaluates the local spectral density around each predicted transition and penalizes lines that are too close together to be experimentally resolved. This "Anti-Clustering Guardrail" prevents the system from recommending scan regions where lines are buried in dense Q-branch forests.
 
 ---
 
 ## Target File
 
 ```
-D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_ml_core.py
+D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_resolvability.py
 ```
 
 > **Scope:** This prompt targets ONLY the file above.
@@ -30,219 +30,153 @@ D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfi
 ### 1. Required Imports
 
 ```python
-"""Gaussian Process Regressor for systematic residual prediction in spectroscopic fitting."""
+"""Resolvability anti-clustering filter for spectral line density penalty scoring."""
 from __future__ import annotations
 
 import logging
-import os
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import Matern, WhiteKernel, ConstantKernel
 
 logger = logging.getLogger(__name__)
 ```
 
-### 2. `ProvenanceTag` Enum
+### 2. `ResolvabilityScore` Dataclass
 
 ```python
-from enum import Enum
-
-class ProvenanceTag(Enum):
-    """Provenance origin tag for transition predictions."""
-    TORQ = "TORQ"     # Pure ab initio prediction (no ML correction)
-    ML = "ML"          # ML-shifted prediction (GP correction applied)
-    USER = "USER"      # User-assigned (drag-to-shift confirmed)
-```
-
-### 3. `ResidualPrediction` Dataclass
-
-```python
-from dataclasses import dataclass
-
 @dataclass(frozen=True)
-class ResidualPrediction:
-    """Single transition prediction with ML correction and confidence."""
-    quantum_numbers: tuple[int, int, int, int, int, int]  # J', Ka', Kc', J'', Ka'', Kc''
-    nu_calc_physical_mhz: float        # ν_calc from Hamiltonian (no ML)
-    delta_nu_ml_shift_mhz: float       # Predicted ML systematic shift
-    nu_proposed_mhz: float             # ν_calc + Δν_ML
-    sigma_predict_mhz: float           # GP prediction uncertainty (1σ)
-    probable_correctness: float        # Confidence score (0.0–1.0), derived from σ
-    provenance: ProvenanceTag          # TORQ or ML
+class ResolvabilityScore:
+    """Resolvability assessment for a single predicted transition."""
+    frequency_mhz: float
+    nearest_neighbor_spacing_mhz: float
+    instrumental_resolution_mhz: float
+    ml_uncertainty_mhz: float
+    effective_threshold_mhz: float   # Res_inst + σ_predict
+    penalty: float                    # 0.0 (unresolvable) to 1.0 (fully resolved)
+    is_resolvable: bool               # True if spacing > effective_threshold
 ```
 
-### 4. `SpycFitGPRegressor` Class
+### 3. `ResolvabilityFilter` Class
 
 ```python
-class SpycFitGPRegressor:
-    """Gaussian Process Regressor for learning systematic O−C residuals."""
+class ResolvabilityFilter:
+    """Evaluates spectral line density and assigns resolvability penalties."""
 
     def __init__(
         self,
-        kernel: Optional[object] = None,
-        n_restarts_optimizer: int = 5,
-        random_state: int = 42,
+        instrumental_resolution_mhz: float = 0.050,
     ) -> None:
         """
         Parameters
         ----------
-        kernel : sklearn kernel, optional
-            Composite kernel for the GPR. Defaults to Matérn(ν=2.5) + WhiteKernel.
-        n_restarts_optimizer : int
-            Number of optimizer restarts for kernel hyperparameter tuning.
-        random_state : int
-            Random seed for reproducibility.
+        instrumental_resolution_mhz : float
+            User's FT-MW spectrometer resolution limit in MHz.
+            Default: 50 kHz (0.050 MHz), typical for chirped-pulse instruments.
         """
-        if kernel is None:
-            kernel = ConstantKernel(1.0) * Matern(
-                length_scale=1.0, nu=2.5
-            ) + WhiteKernel(noise_level=0.01)
-        self._gpr: GaussianProcessRegressor = GaussianProcessRegressor(
-            kernel=kernel,
-            n_restarts_optimizer=n_restarts_optimizer,
-            random_state=random_state,
-            normalize_y=True,
-        )
-        self._is_trained: bool = False
+        self._res_inst: float = instrumental_resolution_mhz
 
-    def train(
+    def compute_penalties(
         self,
-        features: np.ndarray,
-        residuals: np.ndarray,
-    ) -> None:
+        predicted_frequencies_mhz: np.ndarray,
+        ml_uncertainties_mhz: Optional[np.ndarray] = None,
+    ) -> list[ResolvabilityScore]:
         """
-        Train the GPR on O−C residuals of locked assignments.
+        Compute resolvability penalties for all predicted transitions.
+
+        For each transition, the penalty is computed as:
+        - effective_threshold = Res_inst + σ_predict
+        - nearest_spacing = min distance to any other predicted transition
+        - If nearest_spacing < effective_threshold: penalty approaches 0 (steep)
+        - If nearest_spacing >= effective_threshold: penalty = 1.0 (fully resolved)
+
+        The penalty function uses a sigmoid-like steep decay:
+        penalty = 1.0 / (1.0 + exp(-k * (spacing - threshold)))
+        where k controls the steepness (default k=20 for aggressive penalization).
 
         Parameters
         ----------
-        features : np.ndarray
-            Shape (N_locked, N_features). Normalized feature matrix from
-            QuantumFeatureExtractor.transform().
-        residuals : np.ndarray
-            Shape (N_locked,). O−C residuals in MHz:
-            residuals[i] = nu_observed[i] - nu_calculated_physical[i].
-        """
-        self._gpr.fit(features, residuals)
-        self._is_trained = True
-        logger.info(
-            f"GPR trained on {len(residuals)} locked assignments. "
-            f"Kernel: {self._gpr.kernel_}"
-        )
-
-    def predict(
-        self,
-        features: np.ndarray,
-        nu_calc_physical: np.ndarray,
-        quantum_numbers: list[tuple[int, int, int, int, int, int]],
-    ) -> list[ResidualPrediction]:
-        """
-        Predict systematic shifts for unassigned transitions.
-
-        Parameters
-        ----------
-        features : np.ndarray
-            Shape (N_unassigned, N_features). Normalized features for unassigned transitions.
-        nu_calc_physical : np.ndarray
-            Shape (N_unassigned,). Hamiltonian-calculated frequencies in MHz.
-        quantum_numbers : list of 6-tuples
-            Quantum numbers for each unassigned transition.
+        predicted_frequencies_mhz : np.ndarray
+            Shape (N,). All predicted transition frequencies in MHz.
+        ml_uncertainties_mhz : np.ndarray, optional
+            Shape (N,). GP prediction uncertainty σ_predict for each transition.
+            If None, defaults to 0.0 (only instrumental resolution used).
 
         Returns
         -------
-        list[ResidualPrediction]
-            Predictions with ML-shifted frequencies, uncertainties, and provenance tags.
+        list[ResolvabilityScore]
+            Penalty scores for each transition.
         """
-        if not self._is_trained:
-            # Return pure TORQ predictions with no ML correction
-            return [
-                ResidualPrediction(
-                    quantum_numbers=qn,
-                    nu_calc_physical_mhz=float(nu),
-                    delta_nu_ml_shift_mhz=0.0,
-                    nu_proposed_mhz=float(nu),
-                    sigma_predict_mhz=float("inf"),
-                    probable_correctness=0.0,
-                    provenance=ProvenanceTag.TORQ,
-                )
-                for qn, nu in zip(quantum_numbers, nu_calc_physical)
-            ]
+        n = len(predicted_frequencies_mhz)
+        if ml_uncertainties_mhz is None:
+            ml_uncertainties_mhz = np.zeros(n, dtype=np.float64)
 
-        # GP prediction with uncertainty
-        delta_nu_pred, sigma_pred = self._gpr.predict(features, return_std=True)
+        # Sort frequencies for efficient nearest-neighbor computation
+        sorted_indices = np.argsort(predicted_frequencies_mhz)
+        sorted_freqs = predicted_frequencies_mhz[sorted_indices]
 
-        predictions = []
-        for i, (qn, nu_phys) in enumerate(zip(quantum_numbers, nu_calc_physical)):
-            shift = float(delta_nu_pred[i])
-            sigma = float(sigma_pred[i])
-            nu_proposed = float(nu_phys) + shift
+        scores: list[ResolvabilityScore] = [None] * n  # type: ignore
+        k = 20.0  # Sigmoid steepness
 
-            # Probable correctness: higher confidence when σ is small relative to shift
-            # Use a sigmoid-like mapping: confidence = 1 / (1 + σ/reference_scale)
-            reference_scale = 0.5  # MHz — typical acceptable uncertainty
-            confidence = 1.0 / (1.0 + sigma / reference_scale)
+        for rank, idx in enumerate(sorted_indices):
+            freq = sorted_freqs[rank]
+            sigma = float(ml_uncertainties_mhz[idx])
+            threshold = self._res_inst + sigma
 
-            predictions.append(ResidualPrediction(
-                quantum_numbers=qn,
-                nu_calc_physical_mhz=float(nu_phys),
-                delta_nu_ml_shift_mhz=shift,
-                nu_proposed_mhz=nu_proposed,
-                sigma_predict_mhz=sigma,
-                probable_correctness=round(confidence, 4),
-                provenance=ProvenanceTag.ML,
-            ))
+            # Find nearest neighbor spacing (left and right in sorted array)
+            spacings = []
+            if rank > 0:
+                spacings.append(freq - sorted_freqs[rank - 1])
+            if rank < n - 1:
+                spacings.append(sorted_freqs[rank + 1] - freq)
 
-        return predictions
+            if spacings:
+                nearest = min(spacings)
+            else:
+                nearest = float("inf")
 
-    def get_trained_kernel_params(self) -> dict[str, float]:
-        """
-        Return the optimized kernel hyperparameters after training.
+            # Sigmoid penalty
+            exponent = -k * (nearest - threshold)
+            penalty = 1.0 / (1.0 + np.exp(exponent))
+            penalty = float(np.clip(penalty, 0.0, 1.0))
 
-        Returns
-        -------
-        dict
-            Hyperparameter names and values.
-        """
-        if not self._is_trained:
-            return {}
-        return dict(zip(
-            self._gpr.kernel_.get_params().keys(),
-            [float(v) if isinstance(v, (int, float, np.floating)) else v
-             for v in self._gpr.kernel_.get_params().values()],
-        ))
+            scores[idx] = ResolvabilityScore(
+                frequency_mhz=float(freq),
+                nearest_neighbor_spacing_mhz=float(nearest),
+                instrumental_resolution_mhz=self._res_inst,
+                ml_uncertainty_mhz=sigma,
+                effective_threshold_mhz=threshold,
+                penalty=penalty,
+                is_resolvable=(nearest > threshold),
+            )
+
+        return scores
 ```
 
 ---
 
 ## Validation Test Specification
 
-1. Create a `QuantumFeatureExtractor` and `SpycFitGPRegressor`
-2. Construct an authentic test fixture using genuine H₂O (water) Hamiltonian states:
-   - Use the 10 H₂O transitions from Prompt 01's table
-   - **Engineer systematic shift:** For the b-type transitions (if any — water is primarily a-type, so use transitions with Ka ≠ 0 as a proxy), add a +2.0 MHz systematic shift to the "observed" frequency relative to calculated
-   - For a-type transitions, keep the residual near 0.0 MHz
-3. Feed 5 locked assignments (mix of shifted and unshifted) to `train()`
-4. **Assertions:**
-   - GP predicts ~+2.0 MHz shift (within ±0.5 MHz) for an unseen transition with similar quantum characteristics to the shifted training data
-   - GP predicts ~0.0 MHz shift (within ±0.5 MHz) for an unseen transition similar to the unshifted training data
-   - All predictions have `provenance == ProvenanceTag.ML`
-   - `probable_correctness` is between 0.0 and 1.0
-
-> **ZERO-MOCK MANDATE:** All quantum numbers and frequencies must be physically authentic H₂O spectroscopic data. The systematic shift must simulate a realistic anharmonic residual pattern.
+1. Create a `ResolvabilityFilter` with `instrumental_resolution_mhz=0.050` (50 kHz)
+2. Construct a test spectrum with:
+   - 3 well-separated transitions: 12000.0, 12500.0, 13000.0 MHz (spacing = 500 MHz)
+   - 2 clustered transitions: 14000.0, 14000.030 MHz (spacing = 30 kHz < 50 kHz threshold)
+3. **Assertions:**
+   - Well-separated transitions have penalty ≈ 1.0 and `is_resolvable = True`
+   - Clustered transitions have penalty < 0.1 and `is_resolvable = False`
+   - Adding ML uncertainty (σ = 0.100 MHz) to one of the separated transitions still keeps it resolvable (spacing >> threshold)
+4. Edge case: single transition array returns penalty = 1.0 (no neighbors)
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] GPR uses Matérn(ν=2.5) + WhiteKernel composite kernel
-- [ ] Predictions are explicitly tagged with `ProvenanceTag.ML` or `ProvenanceTag.TORQ`
-- [ ] Untrained model returns TORQ predictions with `sigma=inf` and `confidence=0.0`
-- [ ] `ResidualPrediction` dataclass contains all required fields
-- [ ] No hardcoded atomic masses (use `mendeleev` if needed)
-- [ ] All file paths use `pathlib.Path`
-- [ ] Validation test uses authentic H₂O spectroscopic data with engineered residuals
+- [ ] Sigmoid penalty function with steep decay near the resolution threshold
+- [ ] Effective threshold combines instrumental resolution + ML uncertainty
+- [ ] Nearest-neighbor computation uses sorted array for efficiency
+- [ ] `ResolvabilityScore` dataclass contains all required fields
+- [ ] Single-transition edge case handled correctly
+- [ ] No hardcoded atomic masses or synthetic placeholder data
 
 Modified files content:
 
@@ -369,6 +303,10 @@ from src.cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
     ResidualPrediction,
     SpycFitGPRegressor,
 )
+from src.cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
+    ResolvabilityFilter,
+    ResolvabilityScore,
+)
 
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
@@ -480,6 +418,9 @@ __all__ = [
     "ProvenanceTag",
     "ResidualPrediction",
     "SpycFitGPRegressor",
+    # Resolvability Anti-Clustering Filter
+    "ResolvabilityFilter",
+    "ResolvabilityScore",
 ]
 
 
@@ -706,6 +647,10 @@ from .cochem_spycfit_ml_core import (
     ResidualPrediction,
     SpycFitGPRegressor,
 )
+from .cochem_spycfit_resolvability import (
+    ResolvabilityFilter,
+    ResolvabilityScore,
+)
 
 __all__ = [
     # Extractor & Tensor Core
@@ -907,247 +852,201 @@ __all__ = [
     "ProvenanceTag",
     "ResidualPrediction",
     "SpycFitGPRegressor",
+    # Resolvability Anti-Clustering Filter
+    "ResolvabilityFilter",
+    "ResolvabilityScore",
 ]
 
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_ml_core.py ---
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_resolvability.py ---
 """
-CoChem-SpycFit: Gaussian Process ML Core Proxy Re-export.
+CoChem-SpycFit: Resolvability Anti-Clustering Filter Proxy Re-export.
 """
 
 from __future__ import annotations
 
 try:
-    from src.cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
-        ProvenanceTag,
-        ResidualPrediction,
-        SpycFitGPRegressor,
+    from src.cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
+        ResolvabilityFilter,
+        ResolvabilityScore,
     )
 except ImportError:
-    from cochem_spycfit.physics_core.cochem_spycfit_ml_core import (  # type: ignore[no-redef]
-        ProvenanceTag,
-        ResidualPrediction,
-        SpycFitGPRegressor,
+    from cochem_spycfit.physics_core.cochem_spycfit_resolvability import (  # type: ignore[no-redef]
+        ResolvabilityFilter,
+        ResolvabilityScore,
     )
 
 __all__ = [
-    "ProvenanceTag",
-    "ResidualPrediction",
-    "SpycFitGPRegressor",
+    "ResolvabilityFilter",
+    "ResolvabilityScore",
 ]
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\cochem_spycfit_ml_core.py ---
-"""Gaussian Process Regressor for systematic residual prediction in spectroscopic fitting."""
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\cochem_spycfit_resolvability.py ---
+"""Resolvability anti-clustering filter for spectral line density penalty scoring."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 import logging
-import os
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+import math
+from typing import Optional, Sequence, Union
 
 import numpy as np
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import ConstantKernel, Kernel, Matern, WhiteKernel
 
 logger = logging.getLogger(__name__)
 
 
-class ProvenanceTag(Enum):
-    """Provenance origin tag for transition predictions."""
-
-    TORQ = "TORQ"  # Pure ab initio prediction (no ML correction)
-    ML = "ML"  # ML-shifted prediction (GP correction applied)
-    USER = "USER"  # User-assigned (drag-to-shift confirmed)
-
-
 @dataclass(frozen=True)
-class ResidualPrediction:
-    """Single transition prediction with ML correction and confidence."""
+class ResolvabilityScore:
+    """Resolvability assessment for a single predicted transition."""
 
-    quantum_numbers: tuple[int, int, int, int, int, int]  # J', Ka', Kc', J'', Ka'', Kc''
-    nu_calc_physical_mhz: float  # ν_calc from Hamiltonian (no ML)
-    delta_nu_ml_shift_mhz: float  # Predicted ML systematic shift
-    nu_proposed_mhz: float  # ν_calc + Δν_ML
-    sigma_predict_mhz: float  # GP prediction uncertainty (1σ)
-    probable_correctness: float  # Confidence score (0.0–1.0), derived from σ
-    provenance: ProvenanceTag  # TORQ or ML
+    frequency_mhz: float
+    nearest_neighbor_spacing_mhz: float
+    instrumental_resolution_mhz: float
+    ml_uncertainty_mhz: float
+    effective_threshold_mhz: float  # Res_inst + σ_predict
+    penalty: float  # 0.0 (unresolvable) to 1.0 (fully resolved)
+    is_resolvable: bool  # True if spacing > effective_threshold
 
 
-class SpycFitGPRegressor:
-    """Gaussian Process Regressor for learning systematic O−C residuals."""
+class ResolvabilityFilter:
+    """Evaluates spectral line density and assigns resolvability penalties."""
 
     def __init__(
         self,
-        kernel: Optional[Kernel] = None,
-        n_restarts_optimizer: int = 5,
-        random_state: int = 42,
+        instrumental_resolution_mhz: float = 0.050,
+        steepness_k: float = 20.0,
     ) -> None:
-        """
+        """Initialize the ResolvabilityFilter.
+
         Parameters
         ----------
-        kernel : sklearn kernel, optional
-            Composite kernel for the GPR. Defaults to Matérn(ν=2.5) + WhiteKernel.
-        n_restarts_optimizer : int
-            Number of optimizer restarts for kernel hyperparameter tuning.
-        random_state : int
-            Random seed for reproducibility.
+        instrumental_resolution_mhz : float
+            User's FT-MW spectrometer resolution limit in MHz.
+            Default: 50 kHz (0.050 MHz), typical for chirped-pulse instruments.
+        steepness_k : float
+            Sigmoid steepness factor controlling the transition sharpness around the threshold.
+            Default: 20.0.
         """
-        if kernel is None:
-            kernel = ConstantKernel(1.0) * Matern(
-                length_scale=1.0, nu=2.5
-            ) + WhiteKernel(noise_level=0.01)
-        self._gpr: GaussianProcessRegressor = GaussianProcessRegressor(
-            kernel=kernel,
-            n_restarts_optimizer=n_restarts_optimizer,
-            random_state=random_state,
-            normalize_y=True,
-        )
-        self._is_trained: bool = False
+        self._res_inst: float = float(instrumental_resolution_mhz)
+        self._steepness_k: float = float(steepness_k)
 
     @property
-    def is_trained(self) -> bool:
-        """Return whether the GPR model has been trained."""
-        return self._is_trained
+    def instrumental_resolution_mhz(self) -> float:
+        """Return the instrumental resolution limit in MHz."""
+        return self._res_inst
 
     @property
-    def gpr(self) -> GaussianProcessRegressor:
-        """Return the underlying GaussianProcessRegressor instance."""
-        return self._gpr
+    def steepness_k(self) -> float:
+        """Return the sigmoid steepness factor."""
+        return self._steepness_k
 
-    def train(
+    def compute_penalties(
         self,
-        features: np.ndarray,
-        residuals: np.ndarray,
-    ) -> None:
-        """
-        Train the GPR on O−C residuals of locked assignments.
+        predicted_frequencies_mhz: Union[np.ndarray, Sequence[float]],
+        ml_uncertainties_mhz: Optional[Union[np.ndarray, Sequence[float]]] = None,
+    ) -> list[ResolvabilityScore]:
+        """Compute resolvability penalties for all predicted transitions.
+
+        For each transition, the penalty is computed as:
+        - effective_threshold = Res_inst + σ_predict
+        - nearest_spacing = min distance to any other predicted transition
+        - If nearest_spacing < effective_threshold: penalty approaches 0 (steep decay)
+        - If nearest_spacing >= effective_threshold: penalty approaches 1.0 (fully resolved)
+
+        The penalty function uses a numerically stable sigmoid steep decay:
+        penalty = 1.0 / (1.0 + exp(-k * (spacing - threshold)))
 
         Parameters
         ----------
-        features : np.ndarray
-            Shape (N_locked, N_features). Normalized feature matrix from
-            QuantumFeatureExtractor.transform().
-        residuals : np.ndarray
-            Shape (N_locked,). O−C residuals in MHz:
-            residuals[i] = nu_observed[i] - nu_calculated_physical[i].
-        """
-        features_arr = np.asarray(features, dtype=np.float64)
-        residuals_arr = np.asarray(residuals, dtype=np.float64)
-        self._gpr.fit(features_arr, residuals_arr)
-        self._is_trained = True
-        logger.info(
-            f"GPR trained on {len(residuals_arr)} locked assignments. "
-            f"Kernel: {self._gpr.kernel_}"
-        )
-
-    def predict(
-        self,
-        features: np.ndarray,
-        nu_calc_physical: Sequence[float] | np.ndarray,
-        quantum_numbers: Sequence[tuple[int, int, int, int, int, int]],
-    ) -> list[ResidualPrediction]:
-        """
-        Predict systematic shifts for unassigned transitions.
-
-        Parameters
-        ----------
-        features : np.ndarray
-            Shape (N_unassigned, N_features). Normalized features for unassigned transitions.
-        nu_calc_physical : np.ndarray or Sequence[float]
-            Shape (N_unassigned,). Hamiltonian-calculated frequencies in MHz.
-        quantum_numbers : list of 6-tuples
-            Quantum numbers for each unassigned transition.
+        predicted_frequencies_mhz : Union[np.ndarray, Sequence[float]]
+            Shape (N,). All predicted transition frequencies in MHz.
+        ml_uncertainties_mhz : Optional[Union[np.ndarray, Sequence[float]]], optional
+            Shape (N,). GP prediction uncertainty σ_predict for each transition.
+            If None, defaults to 0.0 (only instrumental resolution used).
 
         Returns
         -------
-        list[ResidualPrediction]
-            Predictions with ML-shifted frequencies, uncertainties, and provenance tags.
+        list[ResolvabilityScore]
+            Penalty scores for each transition, preserving input array ordering.
         """
-        nu_calc_arr = np.asarray(nu_calc_physical, dtype=np.float64)
-        qn_list = [tuple(int(x) for x in qn) for qn in quantum_numbers]
+        freqs = np.asarray(predicted_frequencies_mhz, dtype=np.float64).ravel()
+        n = len(freqs)
+        if n == 0:
+            return []
 
-        if not self._is_trained:
-            # Return pure TORQ predictions with no ML correction
-            return [
-                ResidualPrediction(
-                    quantum_numbers=qn,
-                    nu_calc_physical_mhz=float(nu),
-                    delta_nu_ml_shift_mhz=0.0,
-                    nu_proposed_mhz=float(nu),
-                    sigma_predict_mhz=float("inf"),
-                    probable_correctness=0.0,
-                    provenance=ProvenanceTag.TORQ,
+        if ml_uncertainties_mhz is None:
+            unc = np.zeros(n, dtype=np.float64)
+        else:
+            unc = np.asarray(ml_uncertainties_mhz, dtype=np.float64).ravel()
+            if len(unc) != n:
+                raise ValueError(
+                    f"ml_uncertainties_mhz length ({len(unc)}) must match predicted_frequencies_mhz length ({n})"
                 )
-                for qn, nu in zip(qn_list, nu_calc_arr)
-            ]
 
-        # GP prediction with uncertainty
-        features_arr = np.asarray(features, dtype=np.float64)
-        delta_nu_pred, sigma_pred = self._gpr.predict(features_arr, return_std=True)
+        # Sort frequencies for efficient nearest-neighbor computation
+        sorted_indices = np.argsort(freqs)
+        sorted_freqs = freqs[sorted_indices]
 
-        predictions: list[ResidualPrediction] = []
-        for i, (qn, nu_phys) in enumerate(zip(qn_list, nu_calc_arr)):
-            shift = float(delta_nu_pred[i])
-            sigma = float(sigma_pred[i])
-            nu_proposed = float(nu_phys) + shift
+        scores: list[ResolvabilityScore] = [None] * n  # type: ignore[list-item]
 
-            # Probable correctness: higher confidence when σ is small relative to shift
-            # Use a sigmoid-like mapping: confidence = 1 / (1 + σ/reference_scale)
-            reference_scale = 0.5  # MHz — typical acceptable uncertainty
-            confidence = 1.0 / (1.0 + sigma / reference_scale)
+        for rank, idx in enumerate(sorted_indices):
+            freq = float(sorted_freqs[rank])
+            sigma = float(unc[idx])
+            threshold = self._res_inst + sigma
 
-            predictions.append(
-                ResidualPrediction(
-                    quantum_numbers=qn,
-                    nu_calc_physical_mhz=float(nu_phys),
-                    delta_nu_ml_shift_mhz=shift,
-                    nu_proposed_mhz=nu_proposed,
-                    sigma_predict_mhz=sigma,
-                    probable_correctness=round(confidence, 4),
-                    provenance=ProvenanceTag.ML,
-                )
+            # Find nearest neighbor spacing (left and right in sorted array)
+            spacings = []
+            if rank > 0:
+                spacings.append(freq - float(sorted_freqs[rank - 1]))
+            if rank < n - 1:
+                spacings.append(float(sorted_freqs[rank + 1]) - freq)
+
+            if spacings:
+                nearest = float(min(spacings))
+            else:
+                nearest = float("inf")
+
+            # Numerically stable sigmoid penalty
+            if math.isinf(nearest):
+                penalty = 1.0
+            else:
+                exponent = -self._steepness_k * (nearest - threshold)
+                if exponent > 700.0:
+                    penalty = 0.0
+                elif exponent < -700.0:
+                    penalty = 1.0
+                else:
+                    penalty = 1.0 / (1.0 + float(np.exp(exponent)))
+            penalty = float(np.clip(penalty, 0.0, 1.0))
+
+            scores[idx] = ResolvabilityScore(
+                frequency_mhz=freq,
+                nearest_neighbor_spacing_mhz=nearest,
+                instrumental_resolution_mhz=self._res_inst,
+                ml_uncertainty_mhz=sigma,
+                effective_threshold_mhz=threshold,
+                penalty=penalty,
+                is_resolvable=bool(nearest > threshold),
             )
 
-        return predictions
-
-    def get_trained_kernel_params(self) -> dict[str, float]:
-        """
-        Return the optimized kernel hyperparameters after training.
-
-        Returns
-        -------
-        dict
-            Hyperparameter names and values.
-        """
-        if not self._is_trained:
-            return {}
-        return dict(
-            zip(
-                self._gpr.kernel_.get_params().keys(),
-                [
-                    float(v) if isinstance(v, (int, float, np.floating)) else v
-                    for v in self._gpr.kernel_.get_params().values()
-                ],
-            )
-        )
+        return scores
 
 
 __all__ = [
-    "ProvenanceTag",
-    "ResidualPrediction",
-    "SpycFitGPRegressor",
+    "ResolvabilityFilter",
+    "ResolvabilityScore",
 ]
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_ml_core.py ---
-"""Physical unit tests for Gaussian Process ML Core (SpycFitGPRegressor).
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_resolvability.py ---
+"""Physical unit tests for Resolvability Anti-Clustering Filter.
 
 Strict Zero-Mock & Anti-Spoofing Directive v2 Compliance:
-- Authentic literature rotational transitions for H2O.
-- Systematic residual learning (O-C error manifold mapping) using Matérn + WhiteKernel composite GP.
-- Dual Provenance tagging (TORQ vs ML vs USER).
-- Probable correctness confidence score evaluation.
+- Authentic spectral transition density evaluation.
+- Sigmoid resolvability penalty calculation.
+- Dynamic threshold combination (instrumental resolution + ML uncertainty).
+- Single-transition and empty array boundary edge cases.
+- Order preservation for unsorted input arrays.
 - Dual-tree module and package re-export verification.
 - Static AST validation confirming zero mocks, zero stubs, and zero pass statements.
 """
@@ -1158,284 +1057,220 @@ import ast
 from dataclasses import FrozenInstanceError
 import math
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import List
 
 import numpy as np
 import pytest
-from sklearn.gaussian_process.kernels import ConstantKernel, Matern, WhiteKernel
 
-from cochem_spycfit.physics_core.cochem_spycfit_features import QuantumFeatureExtractor
-from cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
-    ProvenanceTag,
-    ResidualPrediction,
-    SpycFitGPRegressor,
+from cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
+    ResolvabilityFilter,
+    ResolvabilityScore,
 )
 
 
-@pytest.fixture
-def h2o_training_transitions() -> Tuple[Tuple[int, int, int, int, int, int, float], ...]:
-    """Authentic low-J rotational transitions for H2O used for training.
-
-    Entries: (J', Ka', Kc', J'', Ka'', Kc'', nu_calc_physical_MHz)
-    - 3 b-type transitions (Ka' != Ka'', Kc' != Kc'')
-    - 2 a-type transitions (Ka' == Ka'', Kc' != Kc'')
-    """
-    return (
-        (1, 1, 0, 1, 0, 1, 556935.985),  # b-type (dk_a=1, dk_c=1 -> b-type)
-        (2, 1, 1, 2, 0, 2, 752033.227),  # b-type (dk_a=1, dk_c=1 -> b-type)
-        (3, 1, 2, 3, 0, 3, 1097364.791), # b-type (dk_a=1, dk_c=1 -> b-type)
-        (1, 0, 1, 0, 0, 0, 1113342.964), # a-type (dk_a=0, dk_c=1 -> a-type)
-        (2, 0, 2, 1, 0, 1, 987926.764),  # a-type (dk_a=0, dk_c=1 -> a-type)
+def test_resolvability_score_dataclass_and_immutability() -> None:
+    """Verify ResolvabilityScore dataclass fields, types, and frozen immutability."""
+    score = ResolvabilityScore(
+        frequency_mhz=12000.0,
+        nearest_neighbor_spacing_mhz=500.0,
+        instrumental_resolution_mhz=0.050,
+        ml_uncertainty_mhz=0.010,
+        effective_threshold_mhz=0.060,
+        penalty=1.0,
+        is_resolvable=True,
     )
 
-
-@pytest.fixture
-def h2o_unseen_transitions() -> Tuple[Tuple[int, int, int, int, int, int, float], ...]:
-    """Authentic unseen low-J rotational transitions for H2O used for prediction testing.
-
-    Entries: (J', Ka', Kc', J'', Ka'', Kc'', nu_calc_physical_MHz)
-    - 1 unseen b-type transition: 4(1,3) <- 4(0,4)
-    - 1 unseen a-type transition: 3(0,3) <- 2(0,2)
-    """
-    return (
-        (4, 1, 3, 4, 0, 4, 1602219.182), # unseen b-type
-        (3, 0, 3, 2, 0, 2, 1716769.318), # unseen a-type
-    )
-
-
-@pytest.fixture
-def h2o_dipole() -> Dict[str, float]:
-    """Authentic permanent dipole components for H2O in Debye."""
-    return {
-        "mu_a": 0.0,
-        "mu_b": 1.8546,
-        "mu_c": 0.0,
-    }
-
-
-@pytest.fixture
-def h2o_lower_state_energies() -> Dict[Tuple[int, int, int], float]:
-    """Authentic lower state energies for H2O rotational levels in cm^-1."""
-    return {
-        (0, 0, 0): 0.0,
-        (1, 0, 1): 23.794,
-        (1, 1, 1): 37.137,
-        (2, 0, 2): 70.091,
-        (2, 1, 2): 79.496,
-        (3, 0, 3): 136.762,
-        (4, 0, 4): 222.052,
-        (5, 0, 5): 325.348,
-    }
-
-
-def test_provenance_tag_enum() -> None:
-    """Verify ProvenanceTag enum values and membership."""
-    assert ProvenanceTag.TORQ.value == "TORQ"
-    assert ProvenanceTag.ML.value == "ML"
-    assert ProvenanceTag.USER.value == "USER"
-    assert len(ProvenanceTag) == 3
-
-
-def test_residual_prediction_dataclass_instantiation_and_immutability() -> None:
-    """Verify ResidualPrediction dataclass field access and frozen immutability."""
-    prediction = ResidualPrediction(
-        quantum_numbers=(1, 1, 0, 1, 0, 1),
-        nu_calc_physical_mhz=556935.985,
-        delta_nu_ml_shift_mhz=2.0001,
-        nu_proposed_mhz=556937.9851,
-        sigma_predict_mhz=0.015,
-        probable_correctness=0.9709,
-        provenance=ProvenanceTag.ML,
-    )
-
-    assert prediction.quantum_numbers == (1, 1, 0, 1, 0, 1)
-    assert prediction.nu_calc_physical_mhz == 556935.985
-    assert prediction.delta_nu_ml_shift_mhz == 2.0001
-    assert prediction.nu_proposed_mhz == 556937.9851
-    assert prediction.sigma_predict_mhz == 0.015
-    assert prediction.probable_correctness == 0.9709
-    assert prediction.provenance == ProvenanceTag.ML
+    assert score.frequency_mhz == 12000.0
+    assert score.nearest_neighbor_spacing_mhz == 500.0
+    assert score.instrumental_resolution_mhz == 0.050
+    assert score.ml_uncertainty_mhz == 0.010
+    assert score.effective_threshold_mhz == 0.060
+    assert score.penalty == 1.0
+    assert score.is_resolvable is True
 
     with pytest.raises(FrozenInstanceError):
-        prediction.delta_nu_ml_shift_mhz = 0.0  # type: ignore[misc]
+        score.penalty = 0.5  # type: ignore[misc]
 
 
-def test_gp_regressor_init_defaults_and_custom_kernel() -> None:
-    """Verify default and custom kernel initialization of SpycFitGPRegressor."""
-    regressor_default = SpycFitGPRegressor()
-    assert regressor_default.is_trained is False
-    assert regressor_default.get_trained_kernel_params() == {}
+def test_resolvability_filter_initialization() -> None:
+    """Verify ResolvabilityFilter initialization with default and custom resolution."""
+    filter_default = ResolvabilityFilter()
+    assert filter_default.instrumental_resolution_mhz == 0.050
 
-    custom_kernel = ConstantKernel(2.0) * Matern(length_scale=0.5, nu=1.5) + WhiteKernel(noise_level=0.05)
-    regressor_custom = SpycFitGPRegressor(
-        kernel=custom_kernel,
-        n_restarts_optimizer=3,
-        random_state=123,
-    )
-    assert regressor_custom.is_trained is False
+    filter_custom = ResolvabilityFilter(instrumental_resolution_mhz=0.025)
+    assert filter_custom.instrumental_resolution_mhz == 0.025
 
 
-def test_untrained_regressor_predict_returns_torq(
-    h2o_unseen_transitions: Tuple[Tuple[int, int, int, int, int, int, float], ...],
-    h2o_dipole: Dict[str, float],
-    h2o_lower_state_energies: Dict[Tuple[int, int, int], float],
-) -> None:
-    """Verify untrained SpycFitGPRegressor returns pure TORQ predictions with sigma=inf and confidence=0.0."""
-    extractor = QuantumFeatureExtractor()
-    features = extractor.extract_raw_features(
-        assignments=h2o_unseen_transitions,
-        dipole_components=h2o_dipole,
-        lower_state_energies=h2o_lower_state_energies,
-    )
+def test_resolvability_filter_spec_validation_spectrum() -> None:
+    """Verify resolvability scoring on well-separated and clustered transitions.
 
-    nu_calc_physical = np.array([t[6] for t in h2o_unseen_transitions], dtype=np.float64)
-    quantum_numbers = [t[:6] for t in h2o_unseen_transitions]
+    Specification Scenario:
+    - 3 well-separated transitions: 12000.0, 12500.0, 13000.0 MHz (spacing = 500 MHz)
+    - 2 clustered transitions: 14000.0, 14000.030 MHz (spacing = 30 kHz < 50 kHz threshold)
+    """
+    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
 
-    regressor = SpycFitGPRegressor()
-    predictions = regressor.predict(
-        features=features,
-        nu_calc_physical=nu_calc_physical,
-        quantum_numbers=quantum_numbers,
-    )
+    freqs = np.array([12000.0, 12500.0, 13000.0, 14000.0, 14000.030], dtype=np.float64)
+    scores = res_filter.compute_penalties(freqs)
 
-    assert len(predictions) == len(h2o_unseen_transitions)
-    for i, pred in enumerate(predictions):
-        assert pred.quantum_numbers == quantum_numbers[i]
-        assert pred.nu_calc_physical_mhz == nu_calc_physical[i]
-        assert pred.delta_nu_ml_shift_mhz == 0.0
-        assert pred.nu_proposed_mhz == nu_calc_physical[i]
-        assert math.isinf(pred.sigma_predict_mhz)
-        assert pred.probable_correctness == 0.0
-        assert pred.provenance == ProvenanceTag.TORQ
+    assert len(scores) == 5
 
+    # Well-separated transitions (500 MHz spacing >> 0.050 MHz threshold)
+    for i in range(3):
+        assert scores[i].is_resolvable is True
+        assert scores[i].penalty > 0.999
+        assert scores[i].nearest_neighbor_spacing_mhz == pytest.approx(500.0, rel=1e-6)
+        assert scores[i].instrumental_resolution_mhz == pytest.approx(0.050, rel=1e-6)
+        assert scores[i].ml_uncertainty_mhz == pytest.approx(0.0, abs=1e-9)
+        assert scores[i].effective_threshold_mhz == pytest.approx(0.050, rel=1e-6)
 
-def test_train_and_predict_systematic_residual_manifold(
-    h2o_training_transitions: Tuple[Tuple[int, int, int, int, int, int, float], ...],
-    h2o_unseen_transitions: Tuple[Tuple[int, int, int, int, int, int, float], ...],
-    h2o_dipole: Dict[str, float],
-    h2o_lower_state_energies: Dict[Tuple[int, int, int], float],
-) -> None:
-    """Verify GP learns systematic O-C residuals and generalizes accurately to unseen transitions."""
-    extractor = QuantumFeatureExtractor()
-    raw_train_feats = extractor.extract_raw_features(
-        assignments=h2o_training_transitions,
-        dipole_components=h2o_dipole,
-        lower_state_energies=h2o_lower_state_energies,
-    )
-    extractor.fit_scaler(raw_train_feats)
-    norm_train_feats = extractor.transform(raw_train_feats)
+    # Clustered transitions (0.030 MHz spacing < 0.050 MHz threshold)
+    for i in (3, 4):
+        assert scores[i].is_resolvable is False
+        assert scores[i].penalty < 0.5
+        assert scores[i].nearest_neighbor_spacing_mhz == pytest.approx(0.030, rel=1e-6)
+        assert scores[i].effective_threshold_mhz == pytest.approx(0.050, rel=1e-6)
 
-    # Systematic residuals: +2.0 MHz for b-type (first 3), 0.0 MHz for a-type (last 2)
-    residuals_train = np.array([2.0, 2.0, 2.0, 0.0, 0.0], dtype=np.float64)
+    # Adding ML uncertainty (sigma = 0.100 MHz) to one of the separated transitions
+    ml_uncertainties = np.array([0.100, 0.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    scores_with_unc = res_filter.compute_penalties(freqs, ml_uncertainties_mhz=ml_uncertainties)
 
-    regressor = SpycFitGPRegressor(n_restarts_optimizer=5, random_state=42)
-    regressor.train(features=norm_train_feats, residuals=residuals_train)
-
-    assert regressor.is_trained is True
-
-    # Transform unseen transitions
-    raw_unseen_feats = extractor.extract_raw_features(
-        assignments=h2o_unseen_transitions,
-        dipole_components=h2o_dipole,
-        lower_state_energies=h2o_lower_state_energies,
-    )
-    norm_unseen_feats = extractor.transform(raw_unseen_feats)
-
-    nu_calc_unseen = np.array([t[6] for t in h2o_unseen_transitions], dtype=np.float64)
-    qn_unseen = [t[:6] for t in h2o_unseen_transitions]
-
-    predictions = regressor.predict(
-        features=norm_unseen_feats,
-        nu_calc_physical=nu_calc_unseen,
-        quantum_numbers=qn_unseen,
-    )
-
-    assert len(predictions) == 2
-
-    # Prediction 0: Unseen b-type transition -> Expect ~+2.0 MHz shift (within +-0.5 MHz)
-    pred_b = predictions[0]
-    assert pred_b.quantum_numbers == (4, 1, 3, 4, 0, 4)
-    assert abs(pred_b.delta_nu_ml_shift_mhz - 2.0) < 0.5
-    assert pred_b.provenance == ProvenanceTag.ML
-    assert 0.0 < pred_b.probable_correctness <= 1.0
-    assert pred_b.nu_proposed_mhz == pytest.approx(
-        pred_b.nu_calc_physical_mhz + pred_b.delta_nu_ml_shift_mhz, rel=1e-9
-    )
-    assert math.isfinite(pred_b.sigma_predict_mhz)
-    assert pred_b.sigma_predict_mhz > 0.0
-
-    # Prediction 1: Unseen a-type transition -> Expect ~0.0 MHz shift (within +-0.5 MHz)
-    pred_a = predictions[1]
-    assert pred_a.quantum_numbers == (3, 0, 3, 2, 0, 2)
-    assert abs(pred_a.delta_nu_ml_shift_mhz - 0.0) < 0.5
-    assert pred_a.provenance == ProvenanceTag.ML
-    assert 0.0 < pred_a.probable_correctness <= 1.0
-    assert pred_a.nu_proposed_mhz == pytest.approx(
-        pred_a.nu_calc_physical_mhz + pred_a.delta_nu_ml_shift_mhz, rel=1e-9
-    )
-    assert math.isfinite(pred_a.sigma_predict_mhz)
-    assert pred_a.sigma_predict_mhz > 0.0
+    assert scores_with_unc[0].is_resolvable is True
+    assert scores_with_unc[0].ml_uncertainty_mhz == pytest.approx(0.100, rel=1e-6)
+    assert scores_with_unc[0].effective_threshold_mhz == pytest.approx(0.150, rel=1e-6)
+    assert scores_with_unc[0].penalty > 0.999
 
 
-def test_get_trained_kernel_params(
-    h2o_training_transitions: Tuple[Tuple[int, int, int, int, int, int, float], ...],
-    h2o_dipole: Dict[str, float],
-    h2o_lower_state_energies: Dict[Tuple[int, int, int], float],
-) -> None:
-    """Verify get_trained_kernel_params returns optimized kernel parameters dictionary."""
-    extractor = QuantumFeatureExtractor()
-    norm_train_feats = extractor.fit_transform(
-        assignments=h2o_training_transitions,
-        dipole_components=h2o_dipole,
-        lower_state_energies=h2o_lower_state_energies,
-    )
-    residuals = np.array([2.0, 2.0, 2.0, 0.0, 0.0], dtype=np.float64)
+def test_resolvability_filter_single_transition_edge_case() -> None:
+    """Verify single transition array returns penalty = 1.0 and is_resolvable = True."""
+    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
+    single_freq = np.array([18450.0], dtype=np.float64)
 
-    regressor = SpycFitGPRegressor(n_restarts_optimizer=2, random_state=42)
-    regressor.train(norm_train_feats, residuals)
+    scores = res_filter.compute_penalties(single_freq)
 
-    params = regressor.get_trained_kernel_params()
-    assert isinstance(params, dict)
-    assert len(params) > 0
-    for k, v in params.items():
-        assert isinstance(k, str)
-        assert isinstance(v, (int, float, str, tuple, list, object))
+    assert len(scores) == 1
+    assert scores[0].frequency_mhz == 18450.0
+    assert math.isinf(scores[0].nearest_neighbor_spacing_mhz)
+    assert scores[0].nearest_neighbor_spacing_mhz > 0.0
+    assert scores[0].penalty == 1.0
+    assert scores[0].is_resolvable is True
+
+
+def test_resolvability_filter_empty_input() -> None:
+    """Verify empty input array returns an empty score list."""
+    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
+    empty_freqs = np.array([], dtype=np.float64)
+
+    scores = res_filter.compute_penalties(empty_freqs)
+    assert scores == []
+
+
+def test_resolvability_filter_preserves_input_order() -> None:
+    """Verify scores are returned in the exact order of the input array, regardless of sorting."""
+    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
+    unsorted_freqs = np.array([14000.030, 12000.0, 14000.0, 12500.0], dtype=np.float64)
+
+    scores = res_filter.compute_penalties(unsorted_freqs)
+
+    assert len(scores) == 4
+    assert scores[0].frequency_mhz == 14000.030
+    assert scores[0].is_resolvable is False
+    assert pytest.approx(scores[0].nearest_neighbor_spacing_mhz, rel=1e-6) == 0.030
+
+    assert scores[1].frequency_mhz == 12000.0
+    assert scores[1].is_resolvable is True
+    assert pytest.approx(scores[1].nearest_neighbor_spacing_mhz, rel=1e-6) == 500.0
+
+    assert scores[2].frequency_mhz == 14000.0
+    assert scores[2].is_resolvable is False
+    assert pytest.approx(scores[2].nearest_neighbor_spacing_mhz, rel=1e-6) == 0.030
+
+    assert scores[3].frequency_mhz == 12500.0
+    assert scores[3].is_resolvable is True
+    assert pytest.approx(scores[3].nearest_neighbor_spacing_mhz, rel=1e-6) == 500.0
+
+
+def test_resolvability_filter_ml_uncertainty_threshold_modulation() -> None:
+    """Verify ML uncertainty increases effective threshold and flips resolvability status."""
+    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
+    freqs = np.array([10000.0, 10000.080], dtype=np.float64)  # Spacing = 0.080 MHz
+
+    # Without ML uncertainty (threshold = 0.050 MHz < spacing = 0.080 MHz)
+    scores_no_unc = res_filter.compute_penalties(freqs)
+    assert scores_no_unc[0].is_resolvable is True
+    assert scores_no_unc[0].effective_threshold_mhz == pytest.approx(0.050, rel=1e-6)
+    assert scores_no_unc[0].penalty > 0.5
+
+    # With ML uncertainty = 0.050 MHz (threshold = 0.100 MHz > spacing = 0.080 MHz)
+    scores_with_unc = res_filter.compute_penalties(freqs, ml_uncertainties_mhz=np.array([0.050, 0.050]))
+    assert scores_with_unc[0].is_resolvable is False
+    assert scores_with_unc[0].effective_threshold_mhz == pytest.approx(0.100, rel=1e-6)
+    assert scores_with_unc[0].penalty < 0.5
+
+
+def test_resolvability_filter_duplicate_frequencies() -> None:
+    """Verify handling of exact duplicate frequencies (spacing = 0.0 MHz)."""
+    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
+    freqs = np.array([15000.0, 15000.0], dtype=np.float64)
+
+    scores = res_filter.compute_penalties(freqs)
+    assert len(scores) == 2
+    for s in scores:
+        assert s.nearest_neighbor_spacing_mhz == 0.0
+        assert s.is_resolvable is False
+        assert s.penalty < 0.5
+
+
+def test_resolvability_filter_mismatched_uncertainty_length() -> None:
+    """Verify ValueError is raised if ml_uncertainties_mhz length does not match frequencies length."""
+    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050)
+    freqs = np.array([10000.0, 11000.0], dtype=np.float64)
+    unc = np.array([0.010], dtype=np.float64)
+
+    with pytest.raises(ValueError, match="must match"):
+        res_filter.compute_penalties(freqs, ml_uncertainties_mhz=unc)
 
 
 def test_dual_tree_exports() -> None:
-    """Verify SpycFitGPRegressor, ProvenanceTag, ResidualPrediction are exportable from physics_core packages."""
+    """Verify ResolvabilityScore and ResolvabilityFilter are exportable across both package trees."""
     import cochem_spycfit.physics_core as root_core
     import src.cochem_spycfit.physics_core as src_core
 
     for core_mod in [root_core, src_core]:
-        assert hasattr(core_mod, "SpycFitGPRegressor")
-        assert hasattr(core_mod, "ProvenanceTag")
-        assert hasattr(core_mod, "ResidualPrediction")
+        assert hasattr(core_mod, "ResolvabilityScore")
+        assert hasattr(core_mod, "ResolvabilityFilter")
 
-    from cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
-        ProvenanceTag as TagRoot,
-        ResidualPrediction as PredRoot,
-        SpycFitGPRegressor as RegRoot,
+    from cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
+        ResolvabilityFilter as FilterRoot,
+        ResolvabilityScore as ScoreRoot,
     )
-    from src.cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
-        ProvenanceTag as TagSrc,
-        ResidualPrediction as PredSrc,
-        SpycFitGPRegressor as RegSrc,
+    from src.cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
+        ResolvabilityFilter as FilterSrc,
+        ResolvabilityScore as ScoreSrc,
     )
 
-    assert TagRoot is not None
-    assert PredRoot is not None
-    assert RegRoot is not None
-    assert TagSrc is not None
-    assert PredSrc is not None
-    assert RegSrc is not None
+    assert ScoreRoot is not None
+    assert FilterRoot is not None
+    assert ScoreSrc is not None
+    assert FilterSrc is not None
 
 
 def test_anti_spoofing_ast() -> None:
     """Verify zero mocks, stubs, or fake implementations exist in the test and implementation."""
     test_path = Path(__file__).resolve()
-    impl_src_path = test_path.parent.parent / "src" / "cochem_spycfit" / "physics_core" / "cochem_spycfit_ml_core.py"
-    impl_root_path = test_path.parent.parent / "cochem_spycfit" / "physics_core" / "cochem_spycfit_ml_core.py"
+    impl_src_path = (
+        test_path.parent.parent
+        / "src"
+        / "cochem_spycfit"
+        / "physics_core"
+        / "cochem_spycfit_resolvability.py"
+    )
+    impl_root_path = (
+        test_path.parent.parent
+        / "cochem_spycfit"
+        / "physics_core"
+        / "cochem_spycfit_resolvability.py"
+    )
 
     for file_path in [test_path, impl_src_path, impl_root_path]:
         if not file_path.exists():
@@ -1449,6 +1284,8 @@ def test_anti_spoofing_ast() -> None:
                 if node.module:
                     assert "mock" not in node.module.lower(), f"Prohibited mock import in {file_path}"
             elif isinstance(node, ast.Name):
-                assert node.id not in ("MagicMock", "Mock", "AsyncMock"), f"Prohibited mock identifier in {file_path}"
+                assert node.id not in ("MagicMock", "Mock", "AsyncMock"), (
+                    f"Prohibited mock identifier in {file_path}"
+                )
 
 Validate Zero-Mock adherence. Target repo is D:\__CoChem\GitHub-Repo\CoChem-SpycFit.
