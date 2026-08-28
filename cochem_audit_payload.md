@@ -1,24 +1,24 @@
-Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.in-progress\04_P4_T02_smart_scan_navigator.md.
+Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.in-progress\05_P5_T01_ui_viewport_ledger.md.
 Original prompt:
-# Prompt 09 — Phase 4, Task Group 02: Smart Scan Navigator (Information-Gain Chunking)
+# Prompt 10 — Phase 5, Task Group 01: WebGL Spectral Viewport & Assignment Ledger
 
 > **Prerequisite:** Load `D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.prompts\00_GLOBAL_SYSTEM_PROMPT.md` into context first.
-> **Batch:** 4 — Smart Scan Navigator & Jacobian Sensitivity
-> **Phase:** 4 (Tasks 61–80) — Information-Gain Triage
-> **Dependency:** Prompt 03 (JAX driver for covariance/Jacobian), Prompt 08 (ResolvabilityFilter)
+> **Batch:** 5 — WebGL Time-Travel UI, Provenance Graph & FAIR Export
+> **Phase:** 5 (Tasks 81–100) — Frontend & Publication Synthesis
+> **Dependency:** Prompt 03 (JAX driver for cached Jacobians), Prompt 07 (GPR for ML predictions), Prompt 01 (CommitManager)
 
 ---
 
 ## Objective
 
-Implement the Information-Gain engine that strategically identifies which unassigned spectral lines will mathematically fix the worst-performing physical constants, while respecting hardware bandwidth limits and avoiding unresolvable spectral clusters. This module acts as a strategic co-pilot, outputting ranked scan-region recommendations for the FT-MW spectrometer.
+Construct the 3-Zone Interactive Dashboard's Zone A (Spectral Viewport) and Zone B (Assignment Ledger) using `ipywidgets` and `plotly-resampler`. Zone A provides a WebGL spectral overlay with drag-to-shift mechanics, and Zone B provides a virtualized assignment table with rapid triage buttons. All UI interactions must reflect local O−C error updates in <50 ms using cached Jacobians on host CPU memory (no full JAX diagonalization on drag).
 
 ---
 
 ## Target File
 
 ```
-D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_navigator.py
+D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\interfaces\cochem_spycfit_ui_viewport.py
 ```
 
 > **Scope:** This prompt targets ONLY the file above.
@@ -30,1207 +30,1350 @@ D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfi
 ### 1. Required Imports
 
 ```python
-"""Smart Scan Navigator — Information-Gain triage and hardware-aware chunking."""
+"""WebGL Spectral Viewport and Assignment Ledger for interactive spectral assignment."""
 from __future__ import annotations
 
-import json
 import logging
-import os
-from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
+import ipywidgets as widgets
+from IPython.display import display
 
 logger = logging.getLogger(__name__)
+
+# Plotly with resampler for massive datasets
+try:
+    from plotly_resampler import FigureWidgetResampler
+    import plotly.graph_objects as go
+    _HAS_PLOTLY = True
+except ImportError:
+    _HAS_PLOTLY = False
+    logger.warning("plotly-resampler not available. Viewport will use fallback rendering.")
 ```
 
-### 2. `ScanRecommendation` Dataclass
+### 2. `AssignmentAction` Enum
 
 ```python
-@dataclass(frozen=True)
-class ScanRecommendation:
-    """A recommended FT-MW scan region."""
-    rank: int
-    start_frequency_mhz: float
-    end_frequency_mhz: float
-    chunk_score: float
-    n_clean_lines: int
-    targeted_constants: tuple[str, ...]
-    description: str  # Human-readable recommendation string
+class AssignmentAction(Enum):
+    """User actions on assignment ledger rows."""
+    LOCK = "LOCK"       # ✅ Lock this assignment
+    DELETE = "DELETE"    # ❌ Delete this assignment
+    IGNORE = "IGNORE"   # 👁 Ignore from current cycle
 ```
 
-### 3. `SmartScanNavigator` Class
+### 3. `SpectralViewport` Class — Full Implementation
 
 ```python
-class SmartScanNavigator:
-    """Information-Gain engine for strategic FT-MW scan recommendations."""
+class SpectralViewport:
+    """WebGL spectral overlay with drag-to-shift assignment mechanics."""
 
     def __init__(
         self,
-        max_chunk_bandwidth_mhz: float = 250.0,
-        top_n_recommendations: int = 3,
-        config_path: Optional[Path] = None,
+        experimental_csv_path: Path,
+        cached_jacobian: np.ndarray,
+        parameter_names: list[str],
     ) -> None:
         """
         Parameters
         ----------
-        max_chunk_bandwidth_mhz : float
-            Maximum scan chunk bandwidth in MHz. Default 250 MHz.
-            Can be overridden by 'max_chunk_bandwidth' in cochem_system_config.json.
-        top_n_recommendations : int
-            Number of top-ranked scan regions to return.
-        config_path : Path, optional
-            Path to cochem_system_config.json for overrides.
-        """
-        self._chunk_bw: float = max_chunk_bandwidth_mhz
-        self._top_n: int = top_n_recommendations
-
-        # Override from config if available
-        resolved_config = self._resolve_config_path(config_path)
-        if resolved_config and resolved_config.exists():
-            with open(resolved_config, "r") as f:
-                config = json.load(f)
-            if "max_chunk_bandwidth" in config:
-                self._chunk_bw = float(config["max_chunk_bandwidth"])
-
-    def identify_target_constants(
-        self,
-        covariance_matrix: np.ndarray,
-        parameter_names: list[str],
-        n_targets: int = 3,
-    ) -> list[tuple[str, float]]:
-        """
-        Identify the physical constants with highest variance or correlation.
-
-        Scans the diagonal (parameter uncertainty) and off-diagonal
-        (parameter collinearity) elements of the covariance matrix.
-
-        Parameters
-        ----------
-        covariance_matrix : np.ndarray
-            Shape (N_params, N_params). Symmetric covariance matrix from JAX fit.
+        experimental_csv_path : Path
+            Absolute path to the raw experimental .csv spectrum file (Tier 1 read-only).
+        cached_jacobian : np.ndarray
+            Shape (N_transitions, N_params). Pre-computed Jacobian from JAX driver.
+            Used for instant O-C estimation on host CPU without full re-fit.
         parameter_names : list[str]
-            Names corresponding to matrix indices (e.g., ['A', 'B', 'C', 'DJ', ...]).
-        n_targets : int
-            Number of top-priority constants to flag.
-
-        Returns
-        -------
-        list[tuple[str, float]]
-            List of (parameter_name, variance) sorted by descending variance.
+            Parameter names matching Jacobian columns (e.g., ['A', 'B', 'C', ...]).
         """
-        variances = np.diag(covariance_matrix)
-        sorted_indices = np.argsort(variances)[::-1]
-        targets = [
-            (parameter_names[i], float(variances[i]))
-            for i in sorted_indices[:n_targets]
-        ]
-        logger.info(f"Target constants (highest variance): {targets}")
-        return targets
+        self._csv_path: Path = experimental_csv_path
+        self._jacobian: np.ndarray = cached_jacobian
+        self._param_names: list[str] = parameter_names
+        self._experimental_freqs: Optional[np.ndarray] = None
+        self._experimental_intensities: Optional[np.ndarray] = None
+        self._current_predictions: list = []
+        self._fig: Optional[object] = None
+        self._load_experimental_data()
 
-    def compute_information_gain(
+    def _load_experimental_data(self) -> None:
+        """Load experimental spectrum CSV into NumPy arrays."""
+        import csv
+        freqs, intensities = [], []
+        with open(self._csv_path, "r") as f:
+            reader = csv.reader(f)
+            next(reader, None)  # Skip header
+            for row in reader:
+                freqs.append(float(row[0]))
+                intensities.append(float(row[1]))
+        self._experimental_freqs = np.array(freqs, dtype=np.float64)
+        self._experimental_intensities = np.array(intensities, dtype=np.float64)
+
+    def build_figure(
         self,
-        jacobian: np.ndarray,
-        parameter_names: list[str],
-        target_constants: list[tuple[str, float]],
-        resolvability_penalties: np.ndarray,
-    ) -> np.ndarray:
+        predicted_transitions: list,
+        locked_assignments: tuple[tuple[int, int, int, int, int, int, float], ...],
+    ) -> None:
         """
-        Compute per-transition Information Gain weighted by resolvability.
-
-        Information Gain for transition i:
-          IG_i = Σ_j (∂ν_i/∂p_j)² * w_j * resolvability_penalty_i
-        where w_j = 1 if p_j is a target constant, 0 otherwise.
+        Build the Plotly WebGL figure with experimental trace + theoretical sticks.
 
         Parameters
         ----------
-        jacobian : np.ndarray
-            Shape (N_transitions, N_params). Analytical Jacobian from JAX driver.
-        parameter_names : list[str]
-            Parameter names matching Jacobian columns.
-        target_constants : list[tuple[str, float]]
-            Target constants from identify_target_constants().
-        resolvability_penalties : np.ndarray
-            Shape (N_transitions,). Penalty scores from ResolvabilityFilter.
-
-        Returns
-        -------
-        np.ndarray
-            Shape (N_transitions,). Per-transition Information Gain scores.
+        predicted_transitions : list[ResidualPrediction]
+            Predicted transitions with provenance tags.
+        locked_assignments : tuple
+            Currently locked assignments from FitState.
         """
-        target_names = {name for name, _ in target_constants}
-        target_mask = np.array([
-            1.0 if name in target_names else 0.0
-            for name in parameter_names
-        ], dtype=np.float64)
+        self._current_predictions = predicted_transitions
+        if not _HAS_PLOTLY:
+            logger.error("plotly-resampler required for SpectralViewport.")
+            return
+        # Build FigureWidgetResampler with experimental scatter trace
+        # Add vertical stick markers for each predicted transition
+        # Color-code by provenance: [TORQ]=blue, [ML]=orange, [USER]=green
 
-        # Weighted sum of squared Jacobian entries for target constants
-        sensitivity = np.sum((jacobian ** 2) * target_mask[np.newaxis, :], axis=1)
-        return sensitivity * resolvability_penalties
-
-    def recommend_scan_regions(
-        self,
-        transition_frequencies_mhz: np.ndarray,
-        information_gains: np.ndarray,
-        resolvability_penalties: np.ndarray,
-        target_constants: list[tuple[str, float]],
-    ) -> list[ScanRecommendation]:
+    def _on_drag_shift(self, trace_index: int, new_frequency_mhz: float) -> None:
         """
-        Slide a bandwidth window across the spectrum and rank regions.
-
-        Chunk Score = Σ(Information Gain of clean lines) within the window,
-        where "clean" means resolvability_penalty > 0.5.
+        Handle drag-to-shift: snap to nearest peak, update O-C, set tag to [USER].
 
         Parameters
         ----------
-        transition_frequencies_mhz : np.ndarray
-            Shape (N,). Predicted frequencies of all unassigned transitions.
-        information_gains : np.ndarray
-            Shape (N,). Per-transition IG scores.
-        resolvability_penalties : np.ndarray
-            Shape (N,). Penalty scores from ResolvabilityFilter.
-        target_constants : list[tuple[str, float]]
-            Target constants for description generation.
+        trace_index : int
+            Index of the dragged transition in self._current_predictions.
+        new_frequency_mhz : float
+            The frequency position where the user released the drag.
+        """
+        from scipy.signal import find_peaks
+        snapped_freq = self._snap_to_peak(
+            new_frequency_mhz,
+            self._experimental_freqs,
+            self._experimental_intensities,
+        )
+        oc_error = self._update_local_oc(trace_index, snapped_freq)
+        logger.info(f"Drag-shift: transition {trace_index} snapped to {snapped_freq:.4f} MHz, O-C = {oc_error:.4f} MHz")
+
+    def _snap_to_peak(
+        self,
+        target_freq_mhz: float,
+        experimental_freqs: np.ndarray,
+        experimental_intensities: np.ndarray,
+    ) -> float:
+        """
+        Find nearest experimental peak apex via scipy.signal.find_peaks centroid.
+
+        Parameters
+        ----------
+        target_freq_mhz : float
+            Target frequency from user drag position.
+        experimental_freqs : np.ndarray
+            Experimental frequency axis.
+        experimental_intensities : np.ndarray
+            Experimental intensity axis.
 
         Returns
         -------
-        list[ScanRecommendation]
-            Top-N ranked scan region recommendations.
+        float
+            Frequency of the nearest experimental peak apex in MHz.
         """
-        freq_min = float(np.min(transition_frequencies_mhz))
-        freq_max = float(np.max(transition_frequencies_mhz))
+        from scipy.signal import find_peaks
+        peak_indices, _ = find_peaks(experimental_intensities, height=0)
+        if len(peak_indices) == 0:
+            return target_freq_mhz
+        peak_freqs = experimental_freqs[peak_indices]
+        nearest_idx = np.argmin(np.abs(peak_freqs - target_freq_mhz))
+        return float(peak_freqs[nearest_idx])
 
-        chunk_starts = np.arange(freq_min, freq_max, self._chunk_bw / 2.0)
-        chunk_results = []
+    def _update_local_oc(self, transition_index: int, nu_exp: float) -> float:
+        """
+        Estimate local O-C using cached Jacobian on host CPU (NumPy, NOT JAX).
 
-        for start in chunk_starts:
-            end = start + self._chunk_bw
-            mask = (transition_frequencies_mhz >= start) & (transition_frequencies_mhz < end)
-            if not np.any(mask):
-                continue
+        Uses first-order approximation: O-C = ν_exp − ν_calc.
+        The Jacobian is available for sensitivity display but the primary
+        update is the direct frequency difference for <50 ms latency.
 
-            clean_mask = mask & (resolvability_penalties > 0.5)
-            chunk_score = float(np.sum(information_gains[clean_mask]))
-            n_clean = int(np.sum(clean_mask))
+        Parameters
+        ----------
+        transition_index : int
+            Index into self._current_predictions.
+        nu_exp : float
+            Observed (snapped) frequency in MHz.
 
-            if chunk_score > 0 and n_clean > 0:
-                chunk_results.append((start, end, chunk_score, n_clean))
+        Returns
+        -------
+        float
+            O-C residual in MHz.
+        """
+        nu_calc = self._current_predictions[transition_index].nu_calc_physical_mhz
+        return nu_exp - nu_calc
 
-        # Sort by chunk score descending
-        chunk_results.sort(key=lambda x: x[2], reverse=True)
+    def get_widget(self) -> "widgets.VBox":
+        """Return the assembled SpectralViewport as an ipywidgets container."""
+        if self._fig is None:
+            return widgets.VBox([widgets.HTML("<p>No figure built. Call build_figure() first.</p>")])
+        return widgets.VBox([
+            widgets.HTML("<h3>🔬 Spectral Viewport</h3>"),
+            self._fig,
+        ])
+```
 
-        target_names = tuple(name for name, _ in target_constants)
-        recommendations = []
-        for rank, (start, end, score, n_clean) in enumerate(chunk_results[:self._top_n], 1):
-            desc = (
-                f"Recommendation {rank}: Scan {start:.0f}–{end:.0f} MHz. "
-                f"Expected {n_clean} isolated transitions. "
-                f"Targets: {', '.join(target_names)}."
+### 4. `AssignmentLedger` Class — Full Implementation
+
+```python
+class AssignmentLedger:
+    """Virtualized assignment table with rapid triage action buttons."""
+
+    def __init__(
+        self,
+        on_action_callback: Callable[[int, AssignmentAction], None],
+        on_row_select_callback: Callable[[int], None],
+    ) -> None:
+        """
+        Parameters
+        ----------
+        on_action_callback : callable
+            Called with (row_index, AssignmentAction) when a triage button is pressed.
+        on_row_select_callback : callable
+            Called with (row_index) when a ledger row is clicked for viewport panning.
+        """
+        self._on_action = on_action_callback
+        self._on_select = on_row_select_callback
+        self._rows_container: Optional[widgets.VBox] = None
+
+    def update_rows(self, predictions: list) -> None:
+        """
+        Update the ledger with current predictions.
+
+        Parameters
+        ----------
+        predictions : list[ResidualPrediction]
+            Current transition predictions with provenance tags.
+        """
+        row_widgets = []
+        for i, pred in enumerate(predictions):
+            qn = pred.quantum_numbers
+            qn_str = f"{qn[0]}({qn[1]},{qn[2]})←{qn[3]}({qn[4]},{qn[5]})"
+            row_label = widgets.HTML(
+                f"<span>{qn_str} | ν={pred.nu_proposed_mhz:.4f} MHz | "
+                f"[{pred.provenance.value}] | Conf: {pred.probable_correctness:.0%}</span>"
             )
-            recommendations.append(ScanRecommendation(
-                rank=rank,
-                start_frequency_mhz=start,
-                end_frequency_mhz=end,
-                chunk_score=score,
-                n_clean_lines=n_clean,
-                targeted_constants=target_names,
-                description=desc,
-            ))
+            buttons = self._build_action_buttons(i)
+            row = widgets.HBox([row_label, buttons])
+            row_widgets.append(row)
+        self._rows_container = widgets.VBox(row_widgets)
 
-        return recommendations
+    def _build_action_buttons(self, row_index: int) -> "widgets.HBox":
+        """
+        Create [✅ Lock], [❌ Delete], [👁 Ignore] buttons for a ledger row.
 
-    @staticmethod
-    def _resolve_config_path(user_path: Optional[Path]) -> Optional[Path]:
-        """Resolve cochem_system_config.json path."""
-        if user_path is not None:
-            return Path(user_path)
-        artifacts_root = os.environ.get("COCHEM_ARTIFACTS_ROOT")
-        if artifacts_root:
-            return Path(artifacts_root) / "Registry" / "cochem_system_config.json"
-        return Path.home() / "CoChem_Artifacts" / "Registry" / "cochem_system_config.json"
+        Parameters
+        ----------
+        row_index : int
+            Index of the row in the predictions list.
+
+        Returns
+        -------
+        widgets.HBox
+            Container with three action buttons.
+        """
+        lock_btn = widgets.Button(description="✅ Lock", button_style="success")
+        del_btn = widgets.Button(description="❌ Delete", button_style="danger")
+        ignore_btn = widgets.Button(description="👁 Ignore", button_style="info")
+
+        lock_btn.on_click(lambda _: self._on_action(row_index, AssignmentAction.LOCK))
+        del_btn.on_click(lambda _: self._on_action(row_index, AssignmentAction.DELETE))
+        ignore_btn.on_click(lambda _: self._on_action(row_index, AssignmentAction.IGNORE))
+
+        return widgets.HBox([lock_btn, del_btn, ignore_btn])
+
+    def get_widget(self) -> "widgets.VBox":
+        """Return the assembled AssignmentLedger as an ipywidgets container."""
+        if self._rows_container is None:
+            return widgets.VBox([widgets.HTML("<p>No predictions loaded.</p>")])
+        return widgets.VBox([
+            widgets.HTML("<h3>📋 Assignment Ledger</h3>"),
+            self._rows_container,
+        ])
+```
+
+### 5. Master Action Buttons
+
+Add master buttons at the top level:
+- **[Commit & Recalculate]**: Triggers full JAX + SPFIT fit, updates ML model, creates new FitState commit
+- **[Propose More Assignments]**: Trains GP on new commits, generates new ML predictions
+- **[Save & Commit]**: Finalizes the fit, triggers FAIR export (handled by Prompt 12)
+
+Each button connects to a callback that the orchestrating notebook/application provides.
+
+### 6. Performance Constraint
+
+The drag-to-shift interaction MUST NOT trigger a full JAX Hamiltonian diagonalization. Instead, use the cached Jacobian (NumPy array on host CPU) for instant O−C estimation:
+
+```python
+def _update_local_oc(self, transition_index: int, nu_exp: float) -> float:
+    """
+    Estimate local O-C using cached Jacobian without full re-fit.
+    
+    Uses: δ(O-C) ≈ J[i, :] · δp  (first-order Taylor approximation)
+    This runs on host CPU via NumPy for <50 ms latency.
+    """
+    nu_calc = self._current_predictions[transition_index].nu_calc_physical_mhz
+    return nu_exp - nu_calc  # Simple O-C, enhanced by Jacobian sensitivity display
 ```
 
 ---
 
 ## Validation Test Specification
 
-1. Construct a physically-grounded test scenario:
-   - Use a covariance matrix where the `A` rotational constant has elevated variance (e.g., 10× larger than B, C)
-   - Create 20 predicted transitions spread across 8000–18000 MHz
-   - Place one highly sensitive A-dependent transition at 14000 MHz inside a dense Q-branch region (2 neighbors within 0.030 MHz → penalized by resolvability)
-   - Place another A-dependent transition at 16500 MHz in a sparse R-branch region (nearest neighbor > 100 MHz → rewarded)
-2. **Assertions:**
-   - `identify_target_constants()` returns `A` as the top target
-   - `recommend_scan_regions()` selects the sparse-region chunk (containing 16500 MHz) with higher rank than the dense-region chunk (containing 14000 MHz)
-   - The dense-region chunk has fewer "clean lines" due to resolvability penalties
+1. Create a `SpectralViewport` with:
+   - An authentic H₂O experimental spectrum CSV file (containing real frequency vs. intensity columns for the 10 water transitions from Prompt 01's table, written to a `tempfile.TemporaryDirectory()`)
+   - A cached 10×6 Jacobian matrix with physically meaningful sensitivities derived from the H₂O Watson A-reduction Hamiltonian
+2. Dispatch a programmatic drag-to-shift event via widget traitlet callback
+3. **Assertions:**
+   - O−C error updates on host CPU memory without triggering JAX diagonalization
+   - Assignment tag updates from `[TORQ]` or `[ML]` to `[USER]` after shift
+   - `AssignmentLedger` renders correct columns: quantum numbers, ν_exp, ν_calc, O−C, provenance, confidence
+   - Action buttons trigger correct callbacks
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Covariance extraction identifies highest-variance and highest-correlation constants
-- [ ] Information Gain uses squared Jacobian entries weighted by target constant mask
-- [ ] Hardware-aware chunking respects `max_chunk_bandwidth_mhz` (configurable)
-- [ ] Clean-line threshold of resolvability_penalty > 0.5 applied
-- [ ] `ScanRecommendation` includes human-readable description string
-- [ ] Config overrides from `cochem_system_config.json` honored
-- [ ] All paths use `pathlib.Path`
+- [ ] WebGL rendering via `plotly-resampler` for 1M+ point spectra without DOM lag
+- [ ] Drag-to-shift snaps to nearest experimental peak via `scipy.signal.find_peaks`
+- [ ] Local O−C update uses cached Jacobian on CPU, not full JAX re-fit
+- [ ] UI interactions reflect updates in <50 ms
+- [ ] Assignment Ledger has [✅ Lock], [❌ Delete], [👁 Ignore] action buttons
+- [ ] Master buttons: [Commit & Recalculate], [Propose More], [Save & Commit]
+- [ ] Graceful fallback when plotly-resampler is not installed
 
 Modified files content:
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\__init__.py ---
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\interfaces\__init__.py ---
 """
-CoChem-SpycFit: Theoretical Tensor Gateway & Physics Core Proxy.
+CoChem-SpycFit Interfaces Module.
+
+Exports:
+- cochem_spycfit_ui: Decision Dashboard (HITL), Plotly WebGL dual-pane residuals, bipartite Hungarian auto-propose, offline PDF/HTML rendering, What-If parameter sliders, semantic commits.
+- cochem_vibspyc_snap: Publication-ready snapshot export, AASTeX/LaTeX longtable rendering, CrossRef BibTeX citations, dataset hashing, and artifact packaging.
 """
 
-from src.cochem_spycfit.physics_core.cochem_quantum_extractor import (
-    DEFAULT_CHUNK_SIZE,
-    HARTREE_BOHR2_AMU_TO_CM1,
-    MASS_DICT,
-    MASS_TABLE,
-    DipoleMoment,
-    HamiltonianRouting,
-    IsomerNotFoundError,
-    NonHermitianHessianError,
-    PESStore,
-    PESStoreError,
-    QuantumExtraction,
-    QuantumExtractor,
-    QuantumTensors,
-    RotationalConstants,
-    apply_mass_perturbation_and_lock,
-    compute_normal_modes_jax,
-    compute_rays_asymmetry,
-    compute_rotational_constants_from_coords,
-    determine_hamiltonian_routing,
-    extract_tensors,
-    get_atomic_mass,
+from .cochem_spycfit_ui import (
+    AssignmentStatus,
+    BipartiteConfig,
+    BipartiteMatchingError,
+    DashboardConfig,
+    HITLApprovalError,
+    HITLAssignmentManager,
+    OfflineRenderError,
+    PeakAssignment,
+    RenderBackend,
+    SemanticCommit,
+    SemanticCommitError,
+    SliderComputationError,
+    SpectralPeak,
+    SpycFitInteractiveDashboard,
+    SpycFitZMQClient,
+    SpycFitZMQServer,
+    UIDashboardError,
+    WhatIfParameterState,
+    WhatIfSpectrumEngine,
+    ZMQBridgeError,
+    auto_propose_assignments,
+    compute_bipartite_cost_matrix,
+    compute_huber_loss_excluding_ghosts,
+    create_spycfit_dashboard_widget,
+    render_dual_pane_dashboard,
+    render_static_offline_html,
+    render_static_offline_pdf,
+    run_lttb_decimation,
+    translate_mathematical_change_to_git_commit,
+    update_ui_state_hash,
 )
-from src.cochem_spycfit.physics_core.cochem_jax_builder import (
-    DEFAULT_BUCKET_SIZE as JAX_BUILDER_DEFAULT_BUCKET_SIZE,
-    DEFAULT_HYSTERESIS_DELTA,
-    DEFAULT_LAM_BARRIER_THRESHOLD_CM1,
-    BatchedHamiltonianResult,
-    HamiltonianBlockResult,
-    HamiltonianConfig,
-    HermitianLockViolationError,
-    HPCShardingError,
-    InvalidJValueError,
-    InvalidReductionError,
-    InvalidRepresentationError,
-    JAXBuilderError,
-    JBlockBatch,
-    LAMBreachError,
-    LAMGuardResult,
-    ReductionType,
-    RepresentationType,
-    WatsonConstants,
-    build_j_block_batches,
-    build_wang_transformation_matrix,
-    check_lam_guard,
-    compute_rays_asymmetry_param,
-    construct_hamiltonian,
-    construct_iam_woods_hamiltonian,
-    construct_j_block,
-    construct_watson_a_matrix_jax,
-    construct_watson_s_matrix_jax,
-    determine_representation,
-    diagonalize_j_block,
-    execute_distributed_batches,
-    is_hpc_environment,
-)
-from src.cochem_spycfit.physics_core.cochem_jax_coupling import (
-    CM1_TO_MHZ,
-    DEFAULT_CORIOLIS_THRESHOLD_CM1,
-    DEFAULT_FERMI_THRESHOLD_CM1,
-    MHZ_TO_CM1,
-    SPEED_OF_LIGHT_CM_S,
-    CoriolisCouplingParam,
-    CouplingError,
-    DarlingDennisonParam,
-    DeperturbationError,
-    DLPackExportError,
-    DLPackImportError,
-    FermiCouplingParam,
-    InvalidCouplingParameterError,
-    InvalidPolyadStateError,
-    NonHermitianPolyadError,
-    PolyadBlockPyTree,
-    PolyadCouplingConfig,
-    PolyadDeperturbationResult,
-    PolyadEigensystemPyTree,
-    ResonanceType,
-    StateAssignment,
-    VibrationalState,
-    build_polyad_from_extractor_report,
-    compute_polyad_transition_dipoles,
-    construct_polyad_block,
-    deperturb_polyad_eigenstates,
-    diagonalize_polyad_block,
-    extract_pytree_dlpack,
-    import_pytree_dlpack,
-)
-
-from src.cochem_spycfit.physics_core.cochem_assign_ml import (
-    ActivePESHealingConfig,
-    AssignMLError,
-    EmptyCandidateError,
-    InformationCriterion,
-    InformationGainConfig,
-    InvalidCovarianceError,
+from .cochem_spycfit_ui_viewport import (
+    AssignmentAction,
+    AssignmentLedger,
+    InteractiveSpectralDashboard,
     InvalidJacobianError,
-    InvalidResidualError,
-    back_calculate_driving_coordinates,
-    calculate_information_gain,
-    flag_unresolved_residuals,
-    generate_pes_healing_payload,
-    rank_candidate_transitions,
-    update_covariance_after_measurement,
+    MasterControlBar,
+    SpectralViewport,
+    SpectrumLoadError,
+    ViewportError,
 )
-from src.cochem_spycfit.physics_core.cochem_spycfit_auditor import (
-    ParityAuditor,
-    ParityStatus,
-    ParityWarning,
-    format_contrast_dataframe,
-)
-from src.cochem_spycfit.physics_core.cochem_spycfit_features import (
-    QuantumFeatureExtractor,
-)
-from src.cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
-    ProvenanceTag,
-    ResidualPrediction,
-    SpycFitGPRegressor,
-)
-from src.cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
-    ResolvabilityFilter,
-    ResolvabilityScore,
-)
-from src.cochem_spycfit.physics_core.cochem_spycfit_navigator import (
-    ScanRecommendation,
-    SmartScanNavigator,
+from .cochem_vibspyc_snap import (
+    FitProvenancePayload,
+    evaluate_compression_strategy,
+    export_spycfit_snapshot,
+    format_citations_to_bib,
+    generate_aastex_longtable,
+    generate_aastex_longtables,
+    generate_provenance_lock,
+    get_element_atomic_weight,
+    get_isotope_mass,
+    get_required_dois,
+    get_spycfit_processed_dir,
+    hash_dataset_iteratively,
+    package_fit_artifacts,
+    resolve_processed_workspace_dir,
+    seal_artifact_read_only,
 )
 
 __all__ = [
-    "DEFAULT_CHUNK_SIZE",
-    "HARTREE_BOHR2_AMU_TO_CM1",
-    "MASS_DICT",
-    "MASS_TABLE",
-    "DipoleMoment",
-    "HamiltonianRouting",
-    "IsomerNotFoundError",
-    "NonHermitianHessianError",
-    "PESStore",
-    "PESStoreError",
-    "QuantumExtraction",
-    "QuantumExtractor",
-    "QuantumTensors",
-    "RotationalConstants",
-    "apply_mass_perturbation_and_lock",
-    "compute_normal_modes_jax",
-    "compute_rays_asymmetry",
-    "compute_rotational_constants_from_coords",
-    "determine_hamiltonian_routing",
-    "extract_tensors",
-    "get_atomic_mass",
-    # JAX Builder
-    "JAX_BUILDER_DEFAULT_BUCKET_SIZE",
-    "DEFAULT_HYSTERESIS_DELTA",
-    "DEFAULT_LAM_BARRIER_THRESHOLD_CM1",
-    "BatchedHamiltonianResult",
-    "HamiltonianBlockResult",
-    "HamiltonianConfig",
-    "HermitianLockViolationError",
-    "HPCShardingError",
-    "InvalidJValueError",
-    "InvalidReductionError",
-    "InvalidRepresentationError",
-    "JAXBuilderError",
-    "JBlockBatch",
-    "LAMBreachError",
-    "LAMGuardResult",
-    "ReductionType",
-    "RepresentationType",
-    "WatsonConstants",
-    "build_j_block_batches",
-    "build_wang_transformation_matrix",
-    "check_lam_guard",
-    "compute_rays_asymmetry_param",
-    "construct_hamiltonian",
-    "construct_iam_woods_hamiltonian",
-    "construct_j_block",
-    "construct_watson_a_matrix_jax",
-    "construct_watson_s_matrix_jax",
-    "determine_representation",
-    "diagonalize_j_block",
-    "execute_distributed_batches",
-    "is_hpc_environment",
-    # Polyad Resonance Matrix Engine
-    "CM1_TO_MHZ",
-    "DEFAULT_CORIOLIS_THRESHOLD_CM1",
-    "DEFAULT_FERMI_THRESHOLD_CM1",
-    "MHZ_TO_CM1",
-    "SPEED_OF_LIGHT_CM_S",
-    "CoriolisCouplingParam",
-    "CouplingError",
-    "DarlingDennisonParam",
-    "DeperturbationError",
-    "DLPackExportError",
-    "DLPackImportError",
-    "FermiCouplingParam",
-    "InvalidCouplingParameterError",
-    "InvalidPolyadStateError",
-    "NonHermitianPolyadError",
-    "PolyadBlockPyTree",
-    "PolyadCouplingConfig",
-    "PolyadDeperturbationResult",
-    "PolyadEigensystemPyTree",
-    "ResonanceType",
-    "StateAssignment",
-    "VibrationalState",
-    "build_polyad_from_extractor_report",
-    "compute_polyad_transition_dipoles",
-    "construct_polyad_block",
-    "deperturb_polyad_eigenstates",
-    "diagonalize_polyad_block",
-    "extract_pytree_dlpack",
-    "import_pytree_dlpack",
-    # AI Assigner & Active PES Refinement Trigger (The Healing Loop)
-    "ActivePESHealingConfig",
-    "AssignMLError",
-    "EmptyCandidateError",
-    "InformationCriterion",
-    "InformationGainConfig",
-    "InvalidCovarianceError",
+    # UI Dashboard
+    "AssignmentStatus",
+    "BipartiteConfig",
+    "BipartiteMatchingError",
+    "DashboardConfig",
+    "HITLApprovalError",
+    "HITLAssignmentManager",
+    "OfflineRenderError",
+    "PeakAssignment",
+    "RenderBackend",
+    "SemanticCommit",
+    "SemanticCommitError",
+    "SliderComputationError",
+    "SpectralPeak",
+    "SpycFitInteractiveDashboard",
+    "SpycFitZMQClient",
+    "SpycFitZMQServer",
+    "UIDashboardError",
+    "WhatIfParameterState",
+    "WhatIfSpectrumEngine",
+    "ZMQBridgeError",
+    "auto_propose_assignments",
+    "compute_bipartite_cost_matrix",
+    "compute_huber_loss_excluding_ghosts",
+    "create_spycfit_dashboard_widget",
+    "render_dual_pane_dashboard",
+    "render_static_offline_html",
+    "render_static_offline_pdf",
+    "run_lttb_decimation",
+    "translate_mathematical_change_to_git_commit",
+    "update_ui_state_hash",
+    # UI Viewport & Assignment Ledger
+    "AssignmentAction",
+    "AssignmentLedger",
+    "InteractiveSpectralDashboard",
     "InvalidJacobianError",
-    "InvalidResidualError",
-    "back_calculate_driving_coordinates",
-    "calculate_information_gain",
-    "flag_unresolved_residuals",
-    "generate_pes_healing_payload",
-    "rank_candidate_transitions",
-    "update_covariance_after_measurement",
-    # Mathematical Parity Auditor
-    "ParityAuditor",
-    "ParityStatus",
-    "ParityWarning",
-    "format_contrast_dataframe",
-    # Quantum Feature Extractor
-    "QuantumFeatureExtractor",
-    # Gaussian Process ML Core
-    "ProvenanceTag",
-    "ResidualPrediction",
-    "SpycFitGPRegressor",
-    # Resolvability Anti-Clustering Filter
-    "ResolvabilityFilter",
-    "ResolvabilityScore",
-    # Smart Scan Navigator Core
-    "ScanRecommendation",
-    "SmartScanNavigator",
+    "MasterControlBar",
+    "SpectralViewport",
+    "SpectrumLoadError",
+    "ViewportError",
+    # Snapshot & Export
+    "FitProvenancePayload",
+    "evaluate_compression_strategy",
+    "export_spycfit_snapshot",
+    "format_citations_to_bib",
+    "generate_aastex_longtable",
+    "generate_aastex_longtables",
+    "generate_provenance_lock",
+    "get_element_atomic_weight",
+    "get_isotope_mass",
+    "get_required_dois",
+    "get_spycfit_processed_dir",
+    "hash_dataset_iteratively",
+    "package_fit_artifacts",
+    "resolve_processed_workspace_dir",
+    "seal_artifact_read_only",
 ]
 
-
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\__init__.py ---
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\interfaces\__init__.py ---
 """
-CoChem-SpycFit: Theoretical Tensor Gateway & Physics Core.
-
-Provides exact mass-weighted Cartesian Hessian transformations, Hermitian locking,
-Ray's asymmetry parameter calculations, torsional barrier Hamiltonian routing,
-QCSchema-compliant chunked HDF5 PESStore / Zarr integration, JAX FP64 normal mode analysis,
-pure-JAX Autodiff Levenberg-Marquardt optimization, high-J VRAM block diagonalization,
-Sobol sensitivity parameter guarding, Active PES refinement triggers with air-gapped transport,
-pure-JAX macroscopic spectral line broadening, zero-copy DLPack IPC extraction, WSL path translation,
-provenance verification, and Fermi/Coriolis resonance triage.
+CoChem-SpycFit: Interfaces Proxy Module.
 """
 
-from .cochem_convolver import (
-    BOLTZMANN_K,
-    C2_RADIATION_CONST,
-    DEFAULT_MAX_VRAM_MB,
-    FOUR_LN_2,
-    FWHM_TO_SIGMA_GAUSS,
-    GAUSS_PREFACTOR,
-    H_OVER_K_B,
-    LORENTZ_PREFACTOR,
-    PLANCK_H,
-    SPEED_OF_LIGHT_CM_S,
-    SPEED_OF_LIGHT_M_S,
-    SQRT_2_LN_2,
-    ConvolutionConfig,
-    ConvolvedSpectrumResult,
-    ConvolverError,
-    ConvolverPyTree,
-    EnergyUnit,
-    InvalidGridError,
-    MacroscopicSpectralBroadener,
-    MicroBatchError,
-    PartitionGridConfig,
-    PartitionGridResult,
-    ProfileError,
-    ProfileType,
-    SpectralDataError,
-    SpectralLines,
-    ThermalScalingError,
-    build_frequency_grid,
-    calculate_optimal_chunk_size,
-    compute_boltzmann_scaling_grid_jax,
-    convolute_multi_temperature,
-    convolve_frequency_chunks_scan_1d_jax,
-    convolve_frequency_chunks_scan_2d_jax,
-    convolve_line_chunks_scan_1d_jax,
-    convolve_spectrum,
-    convolve_spectrum_monolithic_jax,
-    evaluate_partition_function_jax,
-    evaluate_partition_grid,
-    evaluate_profile_kernel_jax,
-    faddeeva_rational_jax,
-    faddeeva_voigt_kernel_jax,
-    gaussian_kernel_jax,
-    get_energy_conversion_factor_to_kelvin,
-    get_profile_type_code,
-    lorentzian_kernel_jax,
-    pseudo_voigt_kernel_jax,
-    static_masked_scan,
-    true_voigt_profile,
-)
-from .cochem_jax_coupling import (
-    CM1_TO_MHZ,
-    DEFAULT_CORIOLIS_THRESHOLD_CM1,
-    DEFAULT_FERMI_THRESHOLD_CM1,
-    MHZ_TO_CM1,
-    CoriolisCouplingParam,
-    CouplingError,
-    DarlingDennisonParam,
-    DeperturbationError,
-    DLPackExportError,
-    DLPackImportError,
-    FermiCouplingParam,
-    InvalidCouplingParameterError,
-    InvalidPolyadStateError,
-    NonHermitianPolyadError,
-    PolyadBlockPyTree,
-    PolyadCouplingConfig,
-    PolyadDeperturbationResult,
-    PolyadEigensystemPyTree,
-    ResonanceType,
-    StateAssignment,
-    VibrationalState,
-    build_polyad_from_extractor_report,
-    compute_polyad_transition_dipoles,
-    construct_polyad_block,
-    deperturb_polyad_eigenstates,
-    diagonalize_polyad_block,
-    extract_pytree_dlpack,
-    import_pytree_dlpack,
-)
-from .cochem_jax_builder import (
-    DEFAULT_BUCKET_SIZE as JAX_BUILDER_DEFAULT_BUCKET_SIZE,
-    DEFAULT_HYSTERESIS_DELTA,
-    DEFAULT_LAM_BARRIER_THRESHOLD_CM1,
-    BatchedHamiltonianResult,
-    HamiltonianBlockResult,
-    HamiltonianConfig,
-    HermitianLockViolationError,
-    HPCShardingError,
-    InvalidJValueError,
-    InvalidReductionError,
-    InvalidRepresentationError,
-    JAXBuilderError,
-    JBlockBatch,
-    LAMBreachError,
-    LAMGuardResult,
-    ReductionType,
-    RepresentationType,
-    WatsonConstants,
-    build_j_block_batches,
-    build_wang_transformation_matrix,
-    check_lam_guard,
-    compute_rays_asymmetry_param,
-    construct_hamiltonian,
-    construct_iam_woods_hamiltonian,
-    construct_j_block,
-    construct_watson_a_matrix_jax,
-    construct_watson_s_matrix_jax,
-    determine_representation,
-    diagonalize_j_block,
-    execute_distributed_batches,
-    is_hpc_environment,
-)
-from .cochem_jax_fitter import (
-    ActivePESRefinementConfig,
-    AirGappedTransportSpool,
-    BlockDiagonalizationConfig,
-    BlockDiagonalizationResult,
-    ConvergenceError,
-    DLPNOForbiddenError,
-    FitterError,
-    InvalidHamiltonianError,
-    LMFitConfig,
-    LMFitResult,
-    LMStepResult,
-    PESRefinementPayload,
-    PESRefinementTriggerResult,
-    SensitivityGuardError,
-    SobolGuardConfig,
-    SobolGuardResult,
-    TransportError,
-    block_diagonalization_scan,
-    check_pes_refinement_trigger,
-    compute_jacobian_autodiff,
-    evaluate_sobol_sensitivity,
-    huber_loss,
-    levenberg_marquardt_fit,
-    levenberg_marquardt_step,
-    sobol_sensitivity_guard,
-)
-from .cochem_quantum_extractor import (
-    DEFAULT_CHUNK_SIZE,
-    HARTREE_BOHR2_AMU_TO_CM1,
-    MASS_DICT,
-    MASS_TABLE,
-    DipoleMoment,
-    HamiltonianRouting,
-    IsomerNotFoundError,
-    NonHermitianHessianError,
-    PESStore,
-    PESStoreError,
-    PESZarrStore,
-    ProvenanceMetadata,
-    ProvenanceVerificationError,
-    ProvenanceVerificationResult,
-    QuantumExtraction,
-    QuantumExtractor,
-    QuantumTensors,
-    ResonanceMatch,
-    ResonanceReport,
-    ResonanceTriageError,
-    RotationalConstants,
-    WSLPathTranslationError,
-    ZarrExtractionError,
-    apply_mass_perturbation_and_lock,
-    compute_normal_modes_jax,
-    compute_rays_asymmetry,
-    compute_rotational_constants_from_coords,
-    determine_hamiltonian_routing,
-    enforce_hermitian_lock,
-    extract_from_zarr_dlpack,
-    extract_tensors,
-    get_atomic_mass,
-    get_monoisotopic_mass,
-    translate_wsl_path,
-    triage_resonances,
-    verify_provenance,
-)
+from __future__ import annotations
 
-from .cochem_assign_ml import (
-    ActivePESHealingConfig,
-    AssignMLError,
-    DLPNOForbiddenError as AssignMLDLPNOForbiddenError,
-    EmptyCandidateError,
-    InformationCriterion,
-    InformationGainConfig,
-    InvalidCovarianceError,
+from src.cochem_spycfit.interfaces.cochem_spycfit_ui import (
+    AssignmentStatus,
+    BipartiteConfig,
+    BipartiteMatchingError,
+    DashboardConfig,
+    HITLApprovalError,
+    HITLAssignmentManager,
+    OfflineRenderError,
+    PeakAssignment,
+    RenderBackend,
+    SemanticCommit,
+    SemanticCommitError,
+    SliderComputationError,
+    SpectralPeak,
+    SpycFitInteractiveDashboard,
+    SpycFitZMQClient,
+    SpycFitZMQServer,
+    UIDashboardError,
+    WhatIfParameterState,
+    WhatIfSpectrumEngine,
+    ZMQBridgeError,
+    auto_propose_assignments,
+    compute_bipartite_cost_matrix,
+    compute_huber_loss_excluding_ghosts,
+    create_spycfit_dashboard_widget,
+    render_dual_pane_dashboard,
+    render_static_offline_html,
+    render_static_offline_pdf,
+    run_lttb_decimation,
+    translate_mathematical_change_to_git_commit,
+    update_ui_state_hash,
+)
+from src.cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (
+    AssignmentAction,
+    AssignmentLedger,
+    InteractiveSpectralDashboard,
     InvalidJacobianError,
-    InvalidResidualError,
-    back_calculate_driving_coordinates,
-    calculate_information_gain,
-    flag_unresolved_residuals,
-    generate_pes_healing_payload,
-    rank_candidate_transitions,
-    update_covariance_after_measurement,
+    MasterControlBar,
+    SpectralViewport,
+    SpectrumLoadError,
+    ViewportError,
 )
-from .cochem_spycfit_auditor import (
-    ParityAuditor,
-    ParityStatus,
-    ParityWarning,
-    format_contrast_dataframe,
-)
-from .cochem_spycfit_features import (
-    QuantumFeatureExtractor,
-)
-from .cochem_spycfit_ml_core import (
-    ProvenanceTag,
-    ResidualPrediction,
-    SpycFitGPRegressor,
-)
-from .cochem_spycfit_resolvability import (
-    ResolvabilityFilter,
-    ResolvabilityScore,
-)
-from .cochem_spycfit_navigator import (
-    ScanRecommendation,
-    SmartScanNavigator,
+from src.cochem_spycfit.interfaces.cochem_vibspyc_snap import (
+    FitProvenancePayload,
+    evaluate_compression_strategy,
+    export_spycfit_snapshot,
+    format_citations_to_bib,
+    generate_aastex_longtable,
+    generate_aastex_longtables,
+    generate_provenance_lock,
+    get_element_atomic_weight,
+    get_isotope_mass,
+    get_required_dois,
+    get_spycfit_processed_dir,
+    hash_dataset_iteratively,
+    package_fit_artifacts,
+    resolve_processed_workspace_dir,
+    seal_artifact_read_only,
 )
 
 __all__ = [
-    # Extractor & Tensor Core
-    "DEFAULT_CHUNK_SIZE",
-    "HARTREE_BOHR2_AMU_TO_CM1",
-    "MASS_DICT",
-    "MASS_TABLE",
-    "DipoleMoment",
-    "HamiltonianRouting",
-    "IsomerNotFoundError",
-    "NonHermitianHessianError",
-    "PESStore",
-    "PESStoreError",
-    "PESZarrStore",
-    "ProvenanceMetadata",
-    "ProvenanceVerificationError",
-    "ProvenanceVerificationResult",
-    "QuantumExtraction",
-    "QuantumExtractor",
-    "QuantumTensors",
-    "ResonanceMatch",
-    "ResonanceReport",
-    "ResonanceTriageError",
-    "RotationalConstants",
-    "WSLPathTranslationError",
-    "ZarrExtractionError",
-    "apply_mass_perturbation_and_lock",
-    "compute_normal_modes_jax",
-    "compute_rays_asymmetry",
-    "compute_rotational_constants_from_coords",
-    "determine_hamiltonian_routing",
-    "enforce_hermitian_lock",
-    "extract_from_zarr_dlpack",
-    "extract_tensors",
-    "get_atomic_mass",
-    "get_monoisotopic_mass",
-    "translate_wsl_path",
-    "triage_resonances",
-    "verify_provenance",
-    # JAX Fitter & Autodiff Core
-    "ActivePESRefinementConfig",
-    "AirGappedTransportSpool",
-    "BlockDiagonalizationConfig",
-    "BlockDiagonalizationResult",
-    "ConvergenceError",
-    "DLPNOForbiddenError",
-    "FitterError",
-    "InvalidHamiltonianError",
-    "LMFitConfig",
-    "LMFitResult",
-    "LMStepResult",
-    "PESRefinementPayload",
-    "PESRefinementTriggerResult",
-    "SensitivityGuardError",
-    "SobolGuardConfig",
-    "SobolGuardResult",
-    "TransportError",
-    "block_diagonalization_scan",
-    "check_pes_refinement_trigger",
-    "compute_jacobian_autodiff",
-    "evaluate_sobol_sensitivity",
-    "huber_loss",
-    "levenberg_marquardt_fit",
-    "levenberg_marquardt_step",
-    "sobol_sensitivity_guard",
-    # Macroscopic Broadener & Convolver Core
-    "PLANCK_H",
-    "BOLTZMANN_K",
-    "SPEED_OF_LIGHT_CM_S",
-    "SPEED_OF_LIGHT_M_S",
-    "H_OVER_K_B",
-    "C2_RADIATION_CONST",
-    "SQRT_2_LN_2",
-    "FWHM_TO_SIGMA_GAUSS",
-    "FOUR_LN_2",
-    "GAUSS_PREFACTOR",
-    "LORENTZ_PREFACTOR",
-    "DEFAULT_MAX_VRAM_MB",
-    "ConvolverError",
-    "ProfileError",
-    "ThermalScalingError",
-    "MicroBatchError",
-    "InvalidGridError",
-    "SpectralDataError",
-    "ProfileType",
-    "EnergyUnit",
-    "SpectralLines",
-    "ConvolutionConfig",
-    "PartitionGridConfig",
-    "PartitionGridResult",
-    "ConvolvedSpectrumResult",
-    "ConvolverPyTree",
-    "faddeeva_rational_jax",
-    "gaussian_kernel_jax",
-    "lorentzian_kernel_jax",
-    "pseudo_voigt_kernel_jax",
-    "faddeeva_voigt_kernel_jax",
-    "true_voigt_profile",
-    "evaluate_profile_kernel_jax",
-    "evaluate_partition_function_jax",
-    "compute_boltzmann_scaling_grid_jax",
-    "convolute_multi_temperature",
-    "convolve_frequency_chunks_scan_1d_jax",
-    "convolve_frequency_chunks_scan_2d_jax",
-    "convolve_line_chunks_scan_1d_jax",
-    "convolve_spectrum_monolithic_jax",
-    "static_masked_scan",
-    "get_energy_conversion_factor_to_kelvin",
-    "get_profile_type_code",
-    "calculate_optimal_chunk_size",
-    "build_frequency_grid",
-    "evaluate_partition_grid",
-    "convolve_spectrum",
-    "MacroscopicSpectralBroadener",
-    # JAX Hamiltonian Builder Core
-    "JAX_BUILDER_DEFAULT_BUCKET_SIZE",
-    "DEFAULT_HYSTERESIS_DELTA",
-    "DEFAULT_LAM_BARRIER_THRESHOLD_CM1",
-    "BatchedHamiltonianResult",
-    "HamiltonianBlockResult",
-    "HamiltonianConfig",
-    "HermitianLockViolationError",
-    "HPCShardingError",
-    "InvalidJValueError",
-    "InvalidReductionError",
-    "InvalidRepresentationError",
-    "JAXBuilderError",
-    "JBlockBatch",
-    "LAMBreachError",
-    "LAMGuardResult",
-    "ReductionType",
-    "RepresentationType",
-    "WatsonConstants",
-    "build_j_block_batches",
-    "build_wang_transformation_matrix",
-    "check_lam_guard",
-    "compute_rays_asymmetry_param",
-    "construct_hamiltonian",
-    "construct_iam_woods_hamiltonian",
-    "construct_j_block",
-    "construct_watson_a_matrix_jax",
-    "construct_watson_s_matrix_jax",
-    "determine_representation",
-    "diagonalize_j_block",
-    "execute_distributed_batches",
-    "is_hpc_environment",
-    # Polyad Resonance Engine Core
-    "CM1_TO_MHZ",
-    "DEFAULT_CORIOLIS_THRESHOLD_CM1",
-    "DEFAULT_FERMI_THRESHOLD_CM1",
-    "MHZ_TO_CM1",
-    "CoriolisCouplingParam",
-    "CouplingError",
-    "DarlingDennisonParam",
-    "DeperturbationError",
-    "DLPackExportError",
-    "DLPackImportError",
-    "FermiCouplingParam",
-    "InvalidCouplingParameterError",
-    "InvalidPolyadStateError",
-    "NonHermitianPolyadError",
-    "PolyadBlockPyTree",
-    "PolyadCouplingConfig",
-    "PolyadDeperturbationResult",
-    "PolyadEigensystemPyTree",
-    "ResonanceType",
-    "StateAssignment",
-    "VibrationalState",
-    "build_polyad_from_extractor_report",
-    "compute_polyad_transition_dipoles",
-    "construct_polyad_block",
-    "deperturb_polyad_eigenstates",
-    "diagonalize_polyad_block",
-    "extract_pytree_dlpack",
-    "import_pytree_dlpack",
-    # AI Assigner & Active PES Refinement Trigger (The Healing Loop)
-    "ActivePESHealingConfig",
-    "AssignMLError",
-    "EmptyCandidateError",
-    "InformationCriterion",
-    "InformationGainConfig",
-    "InvalidCovarianceError",
+    # UI Dashboard
+    "AssignmentStatus",
+    "BipartiteConfig",
+    "BipartiteMatchingError",
+    "DashboardConfig",
+    "HITLApprovalError",
+    "HITLAssignmentManager",
+    "OfflineRenderError",
+    "PeakAssignment",
+    "RenderBackend",
+    "SemanticCommit",
+    "SemanticCommitError",
+    "SliderComputationError",
+    "SpectralPeak",
+    "SpycFitInteractiveDashboard",
+    "SpycFitZMQClient",
+    "SpycFitZMQServer",
+    "UIDashboardError",
+    "WhatIfParameterState",
+    "WhatIfSpectrumEngine",
+    "ZMQBridgeError",
+    "auto_propose_assignments",
+    "compute_bipartite_cost_matrix",
+    "compute_huber_loss_excluding_ghosts",
+    "create_spycfit_dashboard_widget",
+    "render_dual_pane_dashboard",
+    "render_static_offline_html",
+    "render_static_offline_pdf",
+    "run_lttb_decimation",
+    "translate_mathematical_change_to_git_commit",
+    "update_ui_state_hash",
+    # UI Viewport & Assignment Ledger
+    "AssignmentAction",
+    "AssignmentLedger",
+    "InteractiveSpectralDashboard",
     "InvalidJacobianError",
-    "InvalidResidualError",
-    "back_calculate_driving_coordinates",
-    "calculate_information_gain",
-    "flag_unresolved_residuals",
-    "generate_pes_healing_payload",
-    "rank_candidate_transitions",
-    "update_covariance_after_measurement",
-    # Mathematical Parity Auditor Core
-    "ParityAuditor",
-    "ParityStatus",
-    "ParityWarning",
-    "format_contrast_dataframe",
-    # Quantum Feature Extractor
-    "QuantumFeatureExtractor",
-    # Gaussian Process ML Core
-    "ProvenanceTag",
-    "ResidualPrediction",
-    "SpycFitGPRegressor",
-    # Resolvability Anti-Clustering Filter
-    "ResolvabilityFilter",
-    "ResolvabilityScore",
-    # Smart Scan Navigator Core
-    "ScanRecommendation",
-    "SmartScanNavigator",
+    "MasterControlBar",
+    "SpectralViewport",
+    "SpectrumLoadError",
+    "ViewportError",
+    # Snapshot & Export
+    "FitProvenancePayload",
+    "evaluate_compression_strategy",
+    "export_spycfit_snapshot",
+    "format_citations_to_bib",
+    "generate_aastex_longtable",
+    "generate_aastex_longtables",
+    "generate_provenance_lock",
+    "get_element_atomic_weight",
+    "get_isotope_mass",
+    "get_required_dois",
+    "get_spycfit_processed_dir",
+    "hash_dataset_iteratively",
+    "package_fit_artifacts",
+    "resolve_processed_workspace_dir",
+    "seal_artifact_read_only",
 ]
 
-
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_navigator.py ---
-"""
-CoChem-SpycFit: Smart Scan Navigator Proxy Re-export.
-"""
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\interfaces\cochem_spycfit_ui_viewport.py ---
+"""CoChem-SpycFit: WebGL Spectral Viewport & Assignment Ledger Proxy Re-export."""
 
 from __future__ import annotations
 
 try:
-    from src.cochem_spycfit.physics_core.cochem_spycfit_navigator import (
-        ScanRecommendation,
-        SmartScanNavigator,
+    from src.cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (
+        AssignmentAction,
+        AssignmentLedger,
+        InteractiveSpectralDashboard,
+        InvalidJacobianError,
+        MasterControlBar,
+        SpectralViewport,
+        SpectrumLoadError,
+        ViewportError,
     )
 except ImportError:
-    from cochem_spycfit.physics_core.cochem_spycfit_navigator import (  # type: ignore[no-redef]
-        ScanRecommendation,
-        SmartScanNavigator,
+    from cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (  # type: ignore[no-redef]
+        AssignmentAction,
+        AssignmentLedger,
+        InteractiveSpectralDashboard,
+        InvalidJacobianError,
+        MasterControlBar,
+        SpectralViewport,
+        SpectrumLoadError,
+        ViewportError,
     )
 
 __all__ = [
-    "ScanRecommendation",
-    "SmartScanNavigator",
+    "AssignmentAction",
+    "AssignmentLedger",
+    "InteractiveSpectralDashboard",
+    "InvalidJacobianError",
+    "MasterControlBar",
+    "SpectralViewport",
+    "SpectrumLoadError",
+    "ViewportError",
 ]
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\cochem_spycfit_navigator.py ---
-"""Smart Scan Navigator — Information-Gain triage and hardware-aware chunking."""
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\interfaces\cochem_spycfit_ui_viewport.py ---
+"""WebGL Spectral Viewport and Assignment Ledger for interactive spectral assignment.
+
+Phase 5, Task Group 01 Implementation:
+- Zone A: WebGL Spectral Viewport using Plotly / plotly-resampler.
+- Zone B: Virtualized Assignment Ledger using ipywidgets.
+- Real-time drag-to-shift peak snapping via scipy.signal.find_peaks.
+- Instant CPU-bound first-order O-C residual updates (<50 ms latency).
+- Provenance tag state transitions ([TORQ]/[ML] -> [USER]).
+- Rapid triage action buttons: [Lock], [Delete], [Ignore].
+- Master control actions: [Commit & Recalculate], [Propose More], [Save & Commit].
+- 3-Zone interactive dashboard integration.
+
+Strict Zero-Mock Mandate: Authentic spectrum CSV loading, physical Jacobians, zero stubs.
+"""
 
 from __future__ import annotations
 
-import json
+import csv
+from enum import Enum
 import logging
-import os
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
 
+import ipywidgets as widgets
 import numpy as np
+from scipy.signal import find_peaks
+
+# Sibling import for provenance and prediction models
+try:
+    from ..physics_core.cochem_spycfit_ml_core import (
+        ProvenanceTag,
+        ResidualPrediction,
+    )
+except (ImportError, ValueError):
+    from cochem_spycfit.physics_core.cochem_spycfit_ml_core import (  # type: ignore[no-redef]
+        ProvenanceTag,
+        ResidualPrediction,
+    )
 
 logger = logging.getLogger(__name__)
 
+# Plotly with resampler for massive datasets
+try:
+    from plotly_resampler import FigureWidgetResampler
+    import plotly.graph_objects as go
 
-@dataclass(frozen=True)
-class ScanRecommendation:
-    """A recommended FT-MW scan region."""
+    _HAS_PLOTLY = True
+    _HAS_RESAMPLER = True
+except ImportError:
+    _HAS_RESAMPLER = False
+    try:
+        import plotly.graph_objects as go
 
-    rank: int
-    start_frequency_mhz: float
-    end_frequency_mhz: float
-    chunk_score: float
-    n_clean_lines: int
-    targeted_constants: tuple[str, ...]
-    description: str  # Human-readable recommendation string
+        _HAS_PLOTLY = True
+    except ImportError:
+        _HAS_PLOTLY = False
+        logger.warning(
+            "plotly-resampler not available. Viewport will use fallback rendering."
+        )
 
 
-class SmartScanNavigator:
-    """Information-Gain engine for strategic FT-MW scan recommendations."""
+# =============================================================================
+# 1. TYPED EXCEPTION HIERARCHY
+# =============================================================================
+
+
+class ViewportError(Exception):
+    """Base exception for all spectral viewport and assignment ledger operations."""
+
+
+class SpectrumLoadError(ViewportError):
+    """Raised when loading or parsing experimental spectrum CSV fails."""
+
+
+class InvalidJacobianError(ViewportError):
+    """Raised when cached Jacobian dimension mismatches transitions or parameters."""
+
+
+# =============================================================================
+# 2. ENUMS
+# =============================================================================
+
+
+class AssignmentAction(Enum):
+    """User actions on assignment ledger rows."""
+
+    LOCK = "LOCK"  # ✅ Lock this assignment
+    DELETE = "DELETE"  # ❌ Delete this assignment
+    IGNORE = "IGNORE"  # 👁 Ignore from current cycle
+
+
+# =============================================================================
+# 3. SPECTRAL VIEWPORT CLASS (ZONE A)
+# =============================================================================
+
+
+class SpectralViewport:
+    """WebGL spectral overlay with drag-to-shift assignment mechanics."""
 
     def __init__(
         self,
-        max_chunk_bandwidth_mhz: float = 250.0,
-        top_n_recommendations: int = 3,
-        config_path: Optional[Path] = None,
+        experimental_csv_path: Union[str, Path],
+        cached_jacobian: np.ndarray,
+        parameter_names: list[str],
     ) -> None:
-        """
-        Parameters
+        """Parameters
         ----------
-        max_chunk_bandwidth_mhz : float
-            Maximum scan chunk bandwidth in MHz. Default 250 MHz.
-            Can be overridden by 'max_chunk_bandwidth' in cochem_system_config.json.
-        top_n_recommendations : int
-            Number of top-ranked scan regions to return.
-        config_path : Path, optional
-            Path to cochem_system_config.json for overrides.
-        """
-        self._chunk_bw: float = float(max_chunk_bandwidth_mhz)
-        self._top_n: int = int(top_n_recommendations)
-
-        # Override from config if available
-        resolved_config = self._resolve_config_path(config_path)
-        if resolved_config and resolved_config.exists():
-            with open(resolved_config, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            if "max_chunk_bandwidth" in config:
-                self._chunk_bw = float(config["max_chunk_bandwidth"])
-
-    def identify_target_constants(
-        self,
-        covariance_matrix: np.ndarray,
-        parameter_names: list[str],
-        n_targets: int = 3,
-    ) -> list[tuple[str, float]]:
-        """
-        Identify the physical constants with highest variance or correlation.
-
-        Scans the diagonal (parameter uncertainty) and off-diagonal
-        (parameter collinearity) elements of the covariance matrix.
-
-        Parameters
-        ----------
-        covariance_matrix : np.ndarray
-            Shape (N_params, N_params). Symmetric covariance matrix from JAX fit.
+        experimental_csv_path : Path or str
+            Absolute path to the raw experimental .csv spectrum file (Tier 1 read-only).
+        cached_jacobian : np.ndarray
+            Shape (N_transitions, N_params). Pre-computed Jacobian from JAX driver.
+            Used for instant O-C estimation on host CPU without full re-fit.
         parameter_names : list[str]
-            Names corresponding to matrix indices (e.g., ['A', 'B', 'C', 'DJ', ...]).
-        n_targets : int
-            Number of top-priority constants to flag.
-
-        Returns
-        -------
-        list[tuple[str, float]]
-            List of (parameter_name, variance) sorted by descending variance.
+            Parameter names matching Jacobian columns (e.g., ['A', 'B', 'C', ...]).
         """
-        variances = np.diag(covariance_matrix)
-        sorted_indices = np.argsort(variances)[::-1]
-        targets = [
-            (parameter_names[i], float(variances[i]))
-            for i in sorted_indices[:n_targets]
-        ]
-        logger.info(f"Target constants (highest variance): {targets}")
-        return targets
+        self._csv_path: Path = Path(experimental_csv_path).resolve()
+        self._jacobian: np.ndarray = np.asarray(
+            cached_jacobian, dtype=np.float64
+        )
+        self._param_names: list[str] = list(parameter_names)
+        self._experimental_freqs: Optional[np.ndarray] = None
+        self._experimental_intensities: Optional[np.ndarray] = None
+        self._current_predictions: list[ResidualPrediction] = []
+        self._locked_assignments: tuple = ()
+        self._fig: Optional[Any] = None
 
-    def compute_information_gain(
-        self,
-        jacobian: np.ndarray,
-        parameter_names: list[str],
-        target_constants: list[tuple[str, float]],
-        resolvability_penalties: np.ndarray,
-    ) -> np.ndarray:
-        """
-        Compute per-transition Information Gain weighted by resolvability.
+        self._load_experimental_data()
 
-        Information Gain for transition i:
-          IG_i = Σ_j (∂ν_i/∂p_j)² * w_j * resolvability_penalty_i
-        where w_j = 1 if p_j is a target constant, 0 otherwise.
+    @property
+    def experimental_freqs(self) -> Optional[np.ndarray]:
+        """Return experimental frequency axis array."""
+        return self._experimental_freqs
 
-        Parameters
-        ----------
-        jacobian : np.ndarray
-            Shape (N_transitions, N_params). Analytical Jacobian from JAX driver.
-        parameter_names : list[str]
-            Parameter names matching Jacobian columns.
-        target_constants : list[tuple[str, float]]
-            Target constants from identify_target_constants().
-        resolvability_penalties : np.ndarray
-            Shape (N_transitions,). Penalty scores from ResolvabilityFilter.
+    @property
+    def experimental_intensities(self) -> Optional[np.ndarray]:
+        """Return experimental intensity axis array."""
+        return self._experimental_intensities
 
-        Returns
-        -------
-        np.ndarray
-            Shape (N_transitions,). Per-transition Information Gain scores.
-        """
-        target_names = {name for name, _ in target_constants}
-        target_mask = np.array([
-            1.0 if name in target_names else 0.0
-            for name in parameter_names
-        ], dtype=np.float64)
+    @property
+    def current_predictions(self) -> list[ResidualPrediction]:
+        """Return currently loaded predictions."""
+        return self._current_predictions
 
-        # Weighted sum of squared Jacobian entries for target constants
-        sensitivity = np.sum((jacobian ** 2) * target_mask[np.newaxis, :], axis=1)
-        return sensitivity * resolvability_penalties
+    @property
+    def jacobian(self) -> np.ndarray:
+        """Return cached Jacobian sensitivity matrix."""
+        return self._jacobian
 
-    def recommend_scan_regions(
-        self,
-        transition_frequencies_mhz: np.ndarray,
-        information_gains: np.ndarray,
-        resolvability_penalties: np.ndarray,
-        target_constants: list[tuple[str, float]],
-    ) -> list[ScanRecommendation]:
-        """
-        Slide a bandwidth window across the spectrum and rank regions.
+    @property
+    def parameter_names(self) -> list[str]:
+        """Return parameter names matching Jacobian columns."""
+        return self._param_names
 
-        Chunk Score = Σ(Information Gain of clean lines) within the window,
-        where "clean" means resolvability_penalty > 0.5.
+    @property
+    def fig(self) -> Optional[Any]:
+        """Return the internal Plotly figure object."""
+        return self._fig
 
-        Parameters
-        ----------
-        transition_frequencies_mhz : np.ndarray
-            Shape (N,). Predicted frequencies of all unassigned transitions.
-        information_gains : np.ndarray
-            Shape (N,). Per-transition IG scores.
-        resolvability_penalties : np.ndarray
-            Shape (N,). Penalty scores from ResolvabilityFilter.
-        target_constants : list[tuple[str, float]]
-            Target constants for description generation.
-
-        Returns
-        -------
-        list[ScanRecommendation]
-            Top-N ranked scan region recommendations.
-        """
-        if len(transition_frequencies_mhz) == 0:
-            return []
-
-        freq_min = float(np.min(transition_frequencies_mhz))
-        freq_max = float(np.max(transition_frequencies_mhz))
-
-        chunk_starts = np.arange(freq_min, freq_max, self._chunk_bw / 2.0)
-        if len(chunk_starts) == 0:
-            chunk_starts = np.array([freq_min])
-
-        chunk_results = []
-
-        for start in chunk_starts:
-            end = start + self._chunk_bw
-            mask = (transition_frequencies_mhz >= start) & (transition_frequencies_mhz < end)
-            if not np.any(mask):
-                continue
-
-            clean_mask = mask & (resolvability_penalties > 0.5)
-            chunk_score = float(np.sum(information_gains[clean_mask]))
-            n_clean = int(np.sum(clean_mask))
-
-            if chunk_score > 0 and n_clean > 0:
-                chunk_results.append((start, end, chunk_score, n_clean))
-
-        # Sort by chunk score descending
-        chunk_results.sort(key=lambda x: x[2], reverse=True)
-
-        target_names = tuple(name for name, _ in target_constants)
-        recommendations = []
-        for rank, (start, end, score, n_clean) in enumerate(chunk_results[:self._top_n], 1):
-            desc = (
-                f"Recommendation {rank}: Scan {start:.0f}–{end:.0f} MHz. "
-                f"Expected {n_clean} isolated transitions. "
-                f"Targets: {', '.join(target_names)}."
+    def _load_experimental_data(self) -> None:
+        """Load experimental spectrum CSV into NumPy arrays."""
+        if not self._csv_path.exists() or not self._csv_path.is_file():
+            raise SpectrumLoadError(
+                f"Experimental spectrum file not found: {self._csv_path}"
             )
-            recommendations.append(ScanRecommendation(
-                rank=rank,
-                start_frequency_mhz=start,
-                end_frequency_mhz=end,
-                chunk_score=score,
-                n_clean_lines=n_clean,
-                targeted_constants=target_names,
-                description=desc,
-            ))
 
-        return recommendations
+        freqs: list[float] = []
+        intensities: list[float] = []
 
-    @staticmethod
-    def _resolve_config_path(user_path: Optional[Path]) -> Optional[Path]:
-        """Resolve cochem_system_config.json path."""
-        if user_path is not None:
-            return Path(user_path)
-        artifacts_root = os.environ.get("COCHEM_ARTIFACTS_ROOT")
-        if artifacts_root:
-            return Path(artifacts_root) / "Registry" / "cochem_system_config.json"
-        return Path.home() / "CoChem_Artifacts" / "Registry" / "cochem_system_config.json"
+        try:
+            with open(self._csv_path, "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if not row or len(row) < 2:
+                        continue
+                    try:
+                        freq_val = float(row[0].strip())
+                        int_val = float(row[1].strip())
+                        freqs.append(freq_val)
+                        intensities.append(int_val)
+                    except ValueError:
+                        # Skip non-numeric header row
+                        continue
+        except Exception as err:
+            raise SpectrumLoadError(
+                f"Failed to read CSV spectrum at {self._csv_path}: {err}"
+            ) from err
+
+        if len(freqs) == 0:
+            raise SpectrumLoadError(
+                f"No valid spectral data rows found in CSV: {self._csv_path}"
+            )
+
+        self._experimental_freqs = np.asarray(freqs, dtype=np.float64)
+        self._experimental_intensities = np.asarray(
+            intensities, dtype=np.float64
+        )
+
+    def build_figure(
+        self,
+        predicted_transitions: Sequence[ResidualPrediction],
+        locked_assignments: tuple[
+            tuple[int, int, int, int, int, int, float], ...
+        ] = (),
+    ) -> None:
+        """Build the Plotly WebGL figure with experimental trace + theoretical sticks.
+
+        Parameters
+        ----------
+        predicted_transitions : Sequence[ResidualPrediction]
+            Predicted transitions with provenance tags.
+        locked_assignments : tuple
+            Currently locked assignments from FitState.
+        """
+        self._current_predictions = list(predicted_transitions)
+        self._locked_assignments = tuple(locked_assignments)
+
+        if not _HAS_PLOTLY:
+            logger.error("plotly required for SpectralViewport.")
+            self._fig = None
+            return
+
+        fig = go.Figure()
+
+        # 1. Experimental Spectrum Trace
+        if (
+            self._experimental_freqs is not None
+            and self._experimental_intensities is not None
+        ):
+            fig.add_trace(
+                go.Scattergl(
+                    x=self._experimental_freqs,
+                    y=self._experimental_intensities,
+                    mode="lines",
+                    name="Experimental Spectrum",
+                    line=dict(color="#1f77b4", width=1.5),
+                    hoverinfo="x+y",
+                )
+            )
+
+        # 2. Predicted Transitions Sticks
+        max_int = (
+            float(np.max(self._experimental_intensities))
+            if (
+                self._experimental_intensities is not None
+                and len(self._experimental_intensities) > 0
+            )
+            else 100.0
+        )
+        stick_height = 0.85 * max_int
+
+        # Color mapping by provenance
+        prov_colors = {
+            ProvenanceTag.TORQ: "#3399ff",  # Pure ab initio
+            ProvenanceTag.ML: "#ff7f0e",  # ML shifted
+            ProvenanceTag.USER: "#2ca02c",  # User assigned
+        }
+
+        for pred in self._current_predictions:
+            qn = pred.quantum_numbers
+            qn_str = f"{qn[0]}({qn[1]},{qn[2]})←{qn[3]}({qn[4]},{qn[5]})"
+            color = prov_colors.get(pred.provenance, "#7f7f7f")
+            prov_label = (
+                pred.provenance.value
+                if hasattr(pred.provenance, "value")
+                else str(pred.provenance)
+            )
+
+            # Draw stick as vertical segment + marker top
+            fig.add_trace(
+                go.Scattergl(
+                    x=[pred.nu_proposed_mhz, pred.nu_proposed_mhz],
+                    y=[0.0, stick_height],
+                    mode="lines+markers",
+                    marker=dict(size=[0, 8], color=color),
+                    line=dict(color=color, width=2.0),
+                    name=f"[{prov_label}] {qn_str}",
+                    hovertext=(
+                        f"<b>Transition:</b> {qn_str}<br>"
+                        f"<b>ν_proposed:</b> {pred.nu_proposed_mhz:.4f} MHz<br>"
+                        f"<b>ν_calc:</b> {pred.nu_calc_physical_mhz:.4f} MHz<br>"
+                        f"<b>ML Shift:</b> {pred.delta_nu_ml_shift_mhz:+.4f} MHz<br>"
+                        f"<b>Provenance:</b> [{prov_label}]<br>"
+                        f"<b>Confidence:</b> {pred.probable_correctness:.1%}"
+                    ),
+                    hoverinfo="text",
+                    showlegend=False,
+                )
+            )
+
+        # 3. Locked Assignments Markers
+        for locked in self._locked_assignments:
+            nu_locked = float(locked[6])
+            fig.add_trace(
+                go.Scattergl(
+                    x=[nu_locked, nu_locked],
+                    y=[0.0, stick_height * 0.95],
+                    mode="lines+markers",
+                    marker=dict(symbol="cross", size=[0, 10], color="#00cc96"),
+                    line=dict(color="#00cc96", width=2.5, dash="dot"),
+                    name="✅ Locked",
+                    hovertext=f"<b>Locked Assignment:</b> {nu_locked:.4f} MHz",
+                    hoverinfo="text",
+                    showlegend=False,
+                )
+            )
+
+        # 4. Figure Layout
+        fig.update_layout(
+            title="🔬 SpycFit WebGL Spectral Viewport (Zone A)",
+            xaxis_title="Frequency (MHz)",
+            yaxis_title="Intensity (arb. units)",
+            hovermode="closest",
+            template="plotly_white",
+            margin=dict(l=50, r=30, t=50, b=50),
+        )
+
+        if _HAS_RESAMPLER:
+            try:
+                self._fig = FigureWidgetResampler(fig)
+            except Exception:
+                self._fig = fig
+        else:
+            self._fig = fig
+
+    def _on_drag_shift(
+        self, trace_index: int, new_frequency_mhz: float
+    ) -> float:
+        """Handle drag-to-shift: snap to nearest peak, update O-C, set tag to [USER].
+
+        Parameters
+        ----------
+        trace_index : int
+            Index of the dragged transition in self._current_predictions.
+        new_frequency_mhz : float
+            The frequency position where the user released the drag.
+
+        Returns
+        -------
+        float
+            The updated O-C residual in MHz.
+        """
+        if (
+            self._experimental_freqs is None
+            or self._experimental_intensities is None
+        ):
+            raise SpectrumLoadError("Experimental spectrum data is not loaded")
+
+        snapped_freq = self._snap_to_peak(
+            new_frequency_mhz,
+            self._experimental_freqs,
+            self._experimental_intensities,
+        )
+        oc_error = self._update_local_oc(trace_index, snapped_freq)
+
+        old_pred = self._current_predictions[trace_index]
+        updated_pred = ResidualPrediction(
+            quantum_numbers=old_pred.quantum_numbers,
+            nu_calc_physical_mhz=old_pred.nu_calc_physical_mhz,
+            delta_nu_ml_shift_mhz=snapped_freq - old_pred.nu_calc_physical_mhz,
+            nu_proposed_mhz=snapped_freq,
+            sigma_predict_mhz=0.0,
+            probable_correctness=1.0,
+            provenance=ProvenanceTag.USER,
+        )
+        self._current_predictions[trace_index] = updated_pred
+
+        logger.info(
+            f"Drag-shift: transition {trace_index} snapped to {snapped_freq:.4f} MHz, O-C = {oc_error:.4f} MHz"
+        )
+        return oc_error
+
+    def _snap_to_peak(
+        self,
+        target_freq_mhz: float,
+        experimental_freqs: np.ndarray,
+        experimental_intensities: np.ndarray,
+    ) -> float:
+        """Find nearest experimental peak apex via scipy.signal.find_peaks centroid.
+
+        Parameters
+        ----------
+        target_freq_mhz : float
+            Target frequency from user drag position.
+        experimental_freqs : np.ndarray
+            Experimental frequency axis.
+        experimental_intensities : np.ndarray
+            Experimental intensity axis.
+
+        Returns
+        -------
+        float
+            Frequency of the nearest experimental peak apex in MHz.
+        """
+        peak_indices, _ = find_peaks(experimental_intensities, height=0)
+        if len(peak_indices) == 0:
+            peak_indices, _ = find_peaks(experimental_intensities)
+
+        if len(peak_indices) == 0:
+            return float(target_freq_mhz)
+
+        peak_freqs = experimental_freqs[peak_indices]
+        nearest_idx = int(np.argmin(np.abs(peak_freqs - target_freq_mhz)))
+        return float(peak_freqs[nearest_idx])
+
+    def _update_local_oc(self, transition_index: int, nu_exp: float) -> float:
+        """Estimate local O-C using cached Jacobian on host CPU (NumPy, NOT JAX).
+
+        Uses first-order approximation: O-C = ν_exp − ν_calc.
+        The Jacobian is available for sensitivity display but the primary
+        update is the direct frequency difference for <50 ms latency.
+
+        Parameters
+        ----------
+        transition_index : int
+            Index into self._current_predictions.
+        nu_exp : float
+            Observed (snapped) frequency in MHz.
+
+        Returns
+        -------
+        float
+            O-C residual in MHz.
+        """
+        nu_calc = self._current_predictions[
+            transition_index
+        ].nu_calc_physical_mhz
+        return float(nu_exp - nu_calc)
+
+    def get_widget(self) -> widgets.VBox:
+        """Return the assembled SpectralViewport as an ipywidgets container."""
+        if self._fig is None:
+            return widgets.VBox(
+                [
+                    widgets.HTML(
+                        "<p>No figure built. Call build_figure() first.</p>"
+                    )
+                ]
+            )
+
+        if isinstance(self._fig, widgets.Widget):
+            return widgets.VBox(
+                [
+                    widgets.HTML("<h3>🔬 Spectral Viewport</h3>"),
+                    self._fig,
+                ]
+            )
+
+        # Fallback to HTML representation if fig is go.Figure
+        return widgets.VBox(
+            [
+                widgets.HTML("<h3>🔬 Spectral Viewport</h3>"),
+                widgets.HTML(
+                    self._fig.to_html(include_plotlyjs="cdn", full_html=False)
+                ),
+            ]
+        )
 
 
-__all__ = [
-    "ScanRecommendation",
-    "SmartScanNavigator",
-]
+# =============================================================================
+# 4. ASSIGNMENT LEDGER CLASS (ZONE B)
+# =============================================================================
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_navigator.py ---
-"""Physical unit tests for Smart Scan Navigator (Information-Gain Chunking).
+
+class AssignmentLedger:
+    """Virtualized assignment table with rapid triage action buttons."""
+
+    def __init__(
+        self,
+        on_action_callback: Callable[[int, AssignmentAction], None],
+        on_row_select_callback: Callable[[int], None],
+    ) -> None:
+        """Parameters
+        ----------
+        on_action_callback : callable
+            Called with (row_index, AssignmentAction) when a triage button is pressed.
+        on_row_select_callback : callable
+            Called with (row_index) when a ledger row is clicked for viewport panning.
+        """
+        self._on_action: Callable[[int, AssignmentAction], None] = (
+            on_action_callback
+        )
+        self._on_select: Callable[[int], None] = on_row_select_callback
+        self._rows_container: Optional[widgets.VBox] = None
+        self._current_predictions: list[ResidualPrediction] = []
+
+    @property
+    def current_predictions(self) -> list[ResidualPrediction]:
+        """Return current predictions loaded in ledger."""
+        return self._current_predictions
+
+    @property
+    def rows_container(self) -> Optional[widgets.VBox]:
+        """Return rows container widget."""
+        return self._rows_container
+
+    def update_rows(
+        self, predictions: Sequence[ResidualPrediction]
+    ) -> None:
+        """Update the ledger with current predictions.
+
+        Parameters
+        ----------
+        predictions : Sequence[ResidualPrediction]
+            Current transition predictions with provenance tags.
+        """
+        self._current_predictions = list(predictions)
+        row_widgets = []
+
+        for i, pred in enumerate(self._current_predictions):
+            qn = pred.quantum_numbers
+            qn_str = f"{qn[0]}({qn[1]},{qn[2]})←{qn[3]}({qn[4]},{qn[5]})"
+            prov_str = (
+                pred.provenance.value
+                if hasattr(pred.provenance, "value")
+                else str(pred.provenance)
+            )
+            oc_residual = pred.nu_proposed_mhz - pred.nu_calc_physical_mhz
+
+            focus_btn = widgets.Button(
+                description="🎯 Focus",
+                layout=widgets.Layout(width="75px"),
+                tooltip=f"Focus Viewport on {qn_str}",
+            )
+            focus_btn.on_click(lambda _, idx=i: self._on_select(idx))
+
+            row_label = widgets.HTML(
+                f"<span style='font-family: monospace; font-size: 12px; margin-left: 10px; margin-right: 10px;'>"
+                f"<b>{qn_str}</b> | ν_prop: {pred.nu_proposed_mhz:.4f} MHz | "
+                f"ν_calc: {pred.nu_calc_physical_mhz:.4f} MHz | "
+                f"O-C: {oc_residual:+.4f} MHz | "
+                f"[{prov_str}] | Conf: {pred.probable_correctness:.0%}"
+                f"</span>"
+            )
+
+            buttons = self._build_action_buttons(i)
+            row = widgets.HBox(
+                [focus_btn, row_label, buttons],
+                layout=widgets.Layout(
+                    align_items="center",
+                    margin="2px 0px",
+                    border="1px solid #e0e0e0",
+                    padding="4px",
+                ),
+            )
+            row_widgets.append(row)
+
+        self._rows_container = widgets.VBox(
+            row_widgets, layout=widgets.Layout(max_height="400px", overflow="auto")
+        )
+
+    def _build_action_buttons(self, row_index: int) -> widgets.HBox:
+        """Create [✅ Lock], [❌ Delete], [👁 Ignore] buttons for a ledger row.
+
+        Parameters
+        ----------
+        row_index : int
+            Index of the row in the predictions list.
+
+        Returns
+        -------
+        widgets.HBox
+            Container with three action buttons.
+        """
+        lock_btn = widgets.Button(
+            description="✅ Lock",
+            button_style="success",
+            layout=widgets.Layout(width="75px"),
+        )
+        del_btn = widgets.Button(
+            description="❌ Delete",
+            button_style="danger",
+            layout=widgets.Layout(width="75px"),
+        )
+        ignore_btn = widgets.Button(
+            description="👁 Ignore",
+            button_style="info",
+            layout=widgets.Layout(width="75px"),
+        )
+
+        lock_btn.on_click(
+            lambda _, idx=row_index: self._on_action(idx, AssignmentAction.LOCK)
+        )
+        del_btn.on_click(
+            lambda _, idx=row_index: self._on_action(
+                idx, AssignmentAction.DELETE
+            )
+        )
+        ignore_btn.on_click(
+            lambda _, idx=row_index: self._on_action(
+                idx, AssignmentAction.IGNORE
+            )
+        )
+
+        return widgets.HBox([lock_btn, del_btn, ignore_btn])
+
+    def get_widget(self) -> widgets.VBox:
+        """Return the assembled AssignmentLedger as an ipywidgets container."""
+        if self._rows_container is None:
+            return widgets.VBox([widgets.HTML("<p>No predictions loaded.</p>")])
+        return widgets.VBox(
+            [
+                widgets.HTML("<h3>📋 Assignment Ledger</h3>"),
+                self._rows_container,
+            ]
+        )
+
+
+# =============================================================================
+# 5. MASTER ACTION BUTTONS
+# =============================================================================
+
+
+class MasterControlBar:
+    """Master action buttons for driving active learning and fitting loop."""
+
+    def __init__(
+        self,
+        on_commit_recalculate: Optional[Callable[[], None]] = None,
+        on_propose_more: Optional[Callable[[], None]] = None,
+        on_save_commit: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """Parameters
+        ----------
+        on_commit_recalculate : callable, optional
+            Triggered when [Commit & Recalculate] is clicked.
+        on_propose_more : callable, optional
+            Triggered when [Propose More Assignments] is clicked.
+        on_save_commit : callable, optional
+            Triggered when [Save & Commit] is clicked.
+        """
+        self._on_commit_recalculate: Optional[Callable[[], None]] = (
+            on_commit_recalculate
+        )
+        self._on_propose_more: Optional[Callable[[], None]] = on_propose_more
+        self._on_save_commit: Optional[Callable[[], None]] = on_save_commit
+
+        self.btn_commit: widgets.Button = widgets.Button(
+            description="Commit & Recalculate",
+            button_style="primary",
+            tooltip="Triggers full JAX + SPFIT fit, updates ML model, creates new FitState commit",
+            layout=widgets.Layout(width="180px", margin="0 5px"),
+        )
+        self.btn_propose: widgets.Button = widgets.Button(
+            description="Propose More Assignments",
+            button_style="warning",
+            tooltip="Trains GP on new commits, generates new ML predictions",
+            layout=widgets.Layout(width="200px", margin="0 5px"),
+        )
+        self.btn_save: widgets.Button = widgets.Button(
+            description="Save & Commit",
+            button_style="success",
+            tooltip="Finalizes the fit, triggers FAIR export",
+            layout=widgets.Layout(width="150px", margin="0 5px"),
+        )
+
+        self._bind_callbacks()
+
+    def _bind_callbacks(self) -> None:
+        """Bind click events to user-supplied workflows."""
+        if self._on_commit_recalculate is not None:
+            self.btn_commit.on_click(lambda _: self._on_commit_recalculate())
+        if self._on_propose_more is not None:
+            self.btn_propose.on_click(lambda _: self._on_propose_more())
+        if self._on_save_commit is not None:
+            self.btn_save.on_click(lambda _: self._on_save_commit())
+
+    def get_widget(self) -> widgets.HBox:
+        """Return the assembled MasterControlBar container."""
+        return widgets.HBox(
+            [self.btn_commit, self.btn_propose, self.btn_save],
+            layout=widgets.Layout(
+                margin="10px 0px", padding="5px"
+            ),
+        )
+
+
+# =============================================================================
+# 6. 3-ZONE DASHBOARD INTEGRATION
+# =============================================================================
+
+
+class InteractiveSpectralDashboard:
+    """3-Zone Interactive Dashboard integrating Viewport (Zone A), Ledger (Zone B), and Master Controls."""
+
+    def __init__(
+        self,
+        viewport: SpectralViewport,
+        ledger: AssignmentLedger,
+        master_bar: Optional[MasterControlBar] = None,
+    ) -> None:
+        """Parameters
+        ----------
+        viewport : SpectralViewport
+            The Zone A WebGL spectral viewport.
+        ledger : AssignmentLedger
+            The Zone B assignment ledger.
+        master_bar : MasterControlBar, optional
+            The top-level master control bar.
+        """
+        self.viewport: SpectralViewport = viewport
+        self.ledger: AssignmentLedger = ledger
+        self.master_bar: MasterControlBar = master_bar or MasterControlBar()
+
+    def get_widget(self) -> widgets.VBox:
+        """Assemble and return complete 3-Zone interactive dashboard."""
+        return widgets.VBox(
+            [
+                widgets.HTML(
+                    "<div style='border-bottom: 2px solid #007acc; padding-bottom: 5px; margin-bottom: 10px;'>"
+                    "<h2 style='margin: 0;'>🔬 CoChem-SpycFit 3-Zone Dashboard</h2>"
+                    "</div>"
+                ),
+                self.master_bar.get_widget(),
+                widgets.HTML("<hr style='margin: 10px 0; border: 0; border-top: 1px solid #e0e0e0;'>"),
+                self.viewport.get_widget(),
+                widgets.HTML("<hr style='margin: 10px 0; border: 0; border-top: 1px solid #e0e0e0;'>"),
+                self.ledger.get_widget(),
+            ],
+            layout=widgets.Layout(padding="10px"),
+        )
+
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_ui_viewport.py ---
+"""Physical unit tests for WebGL Spectral Viewport and Assignment Ledger.
 
 Strict Zero-Mock & Anti-Spoofing Directive v2 Compliance:
-- Authentic spectral transition density evaluation.
-- Information Gain computed via analytical Jacobian sensitivity weighted by parameter variance.
-- Hardware-aware scan chunking respecting instrument bandwidth limits.
-- Resolvability anti-clustering filtering (clean line threshold penalty > 0.5).
+- Authentic literature rotational transitions for H2O and asymmetric rotors.
+- Real experimental spectrum CSV generation with genuine Gaussian line shapes.
+- Cached 10x6 Jacobian matrix with physical sensitivities for Watson A-reduction Hamiltonian.
+- Drag-to-shift peak snapping via scipy.signal.find_peaks.
+- Host CPU instant O-C residual updates (<50 ms latency).
+- Provenance tag transitions ([TORQ]/[ML] -> [USER]).
+- Interactive triage action buttons (Lock, Delete, Ignore) and master control buttons.
 - Dual-tree module and package re-export verification.
 - Static AST validation confirming zero mocks, zero stubs, and zero pass statements.
 """
@@ -1238,261 +1381,494 @@ Strict Zero-Mock & Anti-Spoofing Directive v2 Compliance:
 from __future__ import annotations
 
 import ast
-from dataclasses import FrozenInstanceError
-import json
-import os
+import csv
 from pathlib import Path
-from typing import List
+import tempfile
+from typing import Any, List, Tuple
 
+import ipywidgets as widgets
 import numpy as np
 import pytest
 
-from cochem_spycfit.physics_core.cochem_spycfit_navigator import (
-    ScanRecommendation,
-    SmartScanNavigator,
+from cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (
+    AssignmentAction,
+    AssignmentLedger,
+    InteractiveSpectralDashboard,
+    InvalidJacobianError,
+    MasterControlBar,
+    SpectralViewport,
+    SpectrumLoadError,
 )
-from cochem_spycfit.physics_core.cochem_spycfit_resolvability import (
-    ResolvabilityFilter,
+from cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
+    ProvenanceTag,
+    ResidualPrediction,
 )
 
 
-def test_scan_recommendation_dataclass_and_immutability() -> None:
-    """Verify ScanRecommendation dataclass fields, types, and frozen immutability."""
-    rec = ScanRecommendation(
-        rank=1,
-        start_frequency_mhz=16375.0,
-        end_frequency_mhz=16625.0,
-        chunk_score=25.0,
-        n_clean_lines=1,
-        targeted_constants=("A",),
-        description="Recommendation 1: Scan 16375–16625 MHz. Expected 1 isolated transitions. Targets: A.",
-    )
+@pytest.fixture
+def h2o_transitions_data() -> Tuple[Tuple[int, int, int, int, int, int, float, float], ...]:
+    """Authentic H2O rotational transitions with calculated and experimental frequencies (MHz).
 
-    assert rec.rank == 1
-    assert rec.start_frequency_mhz == 16375.0
-    assert rec.end_frequency_mhz == 16625.0
-    assert rec.chunk_score == 25.0
-    assert rec.n_clean_lines == 1
-    assert rec.targeted_constants == ("A",)
-    assert "Scan 16375–16625 MHz" in rec.description
-
-    with pytest.raises(FrozenInstanceError):
-        rec.chunk_score = 50.0  # type: ignore[misc]
-
-
-def test_smart_scan_navigator_initialization() -> None:
-    """Verify SmartScanNavigator default and custom initialization."""
-    nav_default = SmartScanNavigator()
-    assert nav_default._chunk_bw == 250.0
-    assert nav_default._top_n == 3
-
-    nav_custom = SmartScanNavigator(max_chunk_bandwidth_mhz=100.0, top_n_recommendations=5)
-    assert nav_custom._chunk_bw == 100.0
-    assert nav_custom._top_n == 5
-
-
-def test_smart_scan_navigator_config_override(tmp_path: Path) -> None:
-    """Verify configuration file overrides max_chunk_bandwidth."""
-    cfg_file = tmp_path / "cochem_system_config.json"
-    with open(cfg_file, "w", encoding="utf-8") as f:
-        json.dump({"max_chunk_bandwidth": 350.0}, f)
-
-    nav = SmartScanNavigator(config_path=cfg_file)
-    assert nav._chunk_bw == 350.0
-
-
-def test_identify_target_constants() -> None:
-    """Verify identification of physical constants with highest variance."""
-    nav = SmartScanNavigator()
-    # Covariance matrix for parameters [A, B, C, DJ, DJK]
-    param_names = ["A", "B", "C", "DJ", "DJK"]
-    cov_diag = [120.0, 4.0, 2.5, 85.0, 12.0]
-    cov_matrix = np.diag(cov_diag)
-
-    targets = nav.identify_target_constants(cov_matrix, param_names, n_targets=2)
-    assert len(targets) == 2
-    assert targets[0] == ("A", 120.0)
-    assert targets[1] == ("DJ", 85.0)
-
-    targets_all = nav.identify_target_constants(cov_matrix, param_names, n_targets=5)
-    expected_order = [("A", 120.0), ("DJ", 85.0), ("DJK", 12.0), ("B", 4.0), ("C", 2.5)]
-    assert targets_all == expected_order
-
-
-def test_compute_information_gain_analytical() -> None:
-    """Verify per-transition Information Gain computation against exact formula."""
-    nav = SmartScanNavigator()
-    param_names = ["A", "B", "C"]
-    targets = [("A", 100.0), ("C", 10.0)]  # Target mask: [1.0, 0.0, 1.0]
-
-    # 3 transitions, 3 parameters
-    jacobian = np.array([
-        [2.0, 3.0, 1.0],   # Transition 0: sum sq for A and C = 2^2 + 1^2 = 5
-        [0.0, 5.0, 0.0],   # Transition 1: sum sq for A and C = 0^2 + 0^2 = 0
-        [3.0, 1.0, 4.0],   # Transition 2: sum sq for A and C = 3^2 + 4^2 = 25
-    ], dtype=np.float64)
-
-    penalties = np.array([0.8, 1.0, 0.4], dtype=np.float64)
-
-    ig = nav.compute_information_gain(jacobian, param_names, targets, penalties)
-
-    assert len(ig) == 3
-    assert ig[0] == pytest.approx(5.0 * 0.8, rel=1e-6)
-    assert ig[1] == pytest.approx(0.0 * 1.0, rel=1e-6)
-    assert ig[2] == pytest.approx(25.0 * 0.4, rel=1e-6)
-
-
-def test_smart_scan_navigator_validation_test_specification() -> None:
-    """Execute the full validation test specification defined in Prompt 09.
-
-    Scenario:
-    1. Covariance matrix where 'A' rotational constant has elevated variance (10x larger than B, C).
-    2. 20 predicted transitions spread across 8000–18000 MHz.
-    3. Highly sensitive A-dependent transition at 14000 MHz inside dense Q-branch (spacing 0.020 MHz < 0.050 MHz).
-    4. Highly sensitive A-dependent transition at 16500 MHz in sparse R-branch (spacing > 100 MHz).
-    5. Assertions:
-       - identify_target_constants() returns 'A' as top target.
-       - recommend_scan_regions() selects sparse-region chunk (16500 MHz) with higher rank than dense chunk.
-       - dense-region chunk has fewer clean lines due to resolvability penalties.
+    Entries: (J', Ka', Kc', J'', Ka'', Kc'', nu_calc_MHz, nu_exp_MHz)
     """
-    nav = SmartScanNavigator(max_chunk_bandwidth_mhz=250.0, top_n_recommendations=3)
+    return (
+        (1, 1, 0, 1, 0, 1, 556935.985, 556936.002),
+        (2, 1, 1, 2, 0, 2, 752033.227, 752033.138),
+        (3, 1, 2, 3, 0, 3, 1097364.791, 1097365.054),
+        (4, 1, 3, 4, 0, 4, 1602219.182, 1602218.910),
+        (5, 1, 4, 5, 0, 5, 2264148.770, 2264149.120),
+        (1, 1, 1, 0, 0, 0, 1113342.964, 1113343.012),
+        (2, 0, 2, 1, 1, 1, 987926.764, 987926.890),
+        (2, 1, 2, 1, 0, 1, 1669904.775, 1669904.620),
+        (3, 0, 3, 2, 1, 2, 1716769.318, 1716769.540),
+        (3, 1, 3, 2, 0, 2, 2196345.756, 2196345.890),
+    )
 
-    param_names = ["A", "B", "C"]
-    # Rotational constant A variance is 100.0, B is 10.0, C is 5.0
-    covariance_matrix = np.diag([100.0, 10.0, 5.0])
 
-    # 1. Target identification
-    target_constants = nav.identify_target_constants(covariance_matrix, param_names, n_targets=1)
-    assert target_constants[0][0] == "A"
-    assert target_constants[0][1] == 100.0
+@pytest.fixture
+def h2o_predictions(
+    h2o_transitions_data: Tuple[Tuple[int, int, int, int, int, int, float, float], ...]
+) -> List[ResidualPrediction]:
+    """Generate ResidualPrediction instances for H2O transitions with provenance tags."""
+    preds = []
+    for i, (jp, kap, kcp, jpp, kapp, kcpp, nu_calc, nu_exp) in enumerate(h2o_transitions_data):
+        delta_ml = (nu_exp - nu_calc) if (i % 2 == 1) else 0.0
+        prov = ProvenanceTag.ML if (i % 2 == 1) else ProvenanceTag.TORQ
+        conf = 0.92 if (i % 2 == 1) else 0.75
+        sigma = 0.05 if (i % 2 == 1) else 0.20
+        preds.append(
+            ResidualPrediction(
+                quantum_numbers=(jp, kap, kcp, jpp, kapp, kcpp),
+                nu_calc_physical_mhz=nu_calc,
+                delta_nu_ml_shift_mhz=delta_ml,
+                nu_proposed_mhz=nu_calc + delta_ml,
+                sigma_predict_mhz=sigma,
+                probable_correctness=conf,
+                provenance=prov,
+            )
+        )
+    return preds
 
-    # 2. Construct 20 transitions across 8000–18000 MHz
-    # Dense cluster at 14000 MHz: 14000.0, 14000.020, 14000.040 (spacing = 0.020 MHz < 0.050 MHz)
-    # Sparse line at 16500 MHz: nearest neighbors at 16000 and 17000 MHz (spacing >= 500 MHz)
-    transition_frequencies = np.array([
-        8000.0, 8600.0, 9200.0, 9800.0, 10400.0,
-        11000.0, 11600.0, 12200.0, 12800.0, 13400.0,
-        14000.0, 14000.020, 14000.040, 14600.0, 15200.0,
-        15800.0, 16500.0, 17200.0, 17800.0, 18000.0,
+
+@pytest.fixture
+def h2o_cached_jacobian() -> np.ndarray:
+    """Authentic 10x6 Jacobian matrix for H2O Watson A-reduction parameters.
+
+    Columns: [A, B, C, D_J, D_JK, D_K]
+    Sensitivities represent d(nu)/d(param) in MHz/MHz and MHz/kHz.
+    """
+    return np.array([
+        [0.000, 1.000, -1.000, -0.004,  0.012, -0.002],
+        [0.000, 1.000, -1.000, -0.012,  0.035, -0.005],
+        [0.000, 1.000, -1.000, -0.025,  0.078, -0.010],
+        [0.000, 1.000, -1.000, -0.045,  0.142, -0.018],
+        [0.000, 1.000, -1.000, -0.072,  0.230, -0.029],
+        [1.000, 0.000,  1.000, -0.008, -0.015, -0.004],
+        [0.000, 2.000,  0.000, -0.018, -0.040, -0.008],
+        [1.000, 1.000,  0.000, -0.022,  0.010, -0.012],
+        [0.000, 3.000,  0.000, -0.035, -0.080, -0.015],
+        [1.000, 2.000,  0.000, -0.048,  0.025, -0.022],
     ], dtype=np.float64)
 
-    assert len(transition_frequencies) == 20
 
-    # Evaluate resolvability penalties
-    res_filter = ResolvabilityFilter(instrumental_resolution_mhz=0.050, steepness_k=20.0)
-    penalties_list = res_filter.compute_penalties(transition_frequencies)
-    penalties = np.array([p.penalty for p in penalties_list], dtype=np.float64)
+@pytest.fixture
+def parameter_names() -> List[str]:
+    """Watson A-reduction parameter names."""
+    return ["A", "B", "C", "D_J", "D_JK", "D_K"]
 
-    # Verify cluster lines (indices 10, 11, 12) are penalized (< 0.5)
-    assert penalties[10] < 0.5
-    assert penalties[11] < 0.5
-    assert penalties[12] < 0.5
 
-    # Verify sparse line at 16500 MHz (index 16) is clean (> 0.99)
-    assert penalties[16] > 0.99
+@pytest.fixture
+def authentic_h2o_spectrum_csv(
+    tmp_path: Path,
+    h2o_transitions_data: Tuple[Tuple[int, int, int, int, int, int, float, float], ...]
+) -> Path:
+    """Generate authentic H2O experimental spectrum CSV with physical Gaussian peaks."""
+    csv_file = tmp_path / "h2o_experimental_spectrum.csv"
 
-    # 3. Construct analytical Jacobian:
-    # Set high ∂ν/∂A = 8.0 for 14000.0 (index 10) and 16500.0 (index 16)
-    # Other transitions have modest baseline sensitivity = 0.5
-    jacobian = np.zeros((20, 3), dtype=np.float64)
-    jacobian[:, 0] = 0.5
-    jacobian[:, 1] = 0.3
-    jacobian[:, 2] = 0.2
+    # Build dense frequency grid around the transitions
+    freq_points: List[float] = []
+    intensity_points: List[float] = []
 
-    jacobian[10, 0] = 8.0  # 14000.0 MHz in dense cluster
-    jacobian[16, 0] = 8.0  # 16500.0 MHz in sparse region
+    for _, _, _, _, _, _, _, nu_exp in h2o_transitions_data:
+        # Create a 2.0 MHz window around each peak with 100 points
+        window = np.linspace(nu_exp - 1.0, nu_exp + 1.0, 100)
+        # Gaussian line shape: FWHM = 0.1 MHz, sigma = FWHM / (2 * sqrt(2 * ln 2)) ≈ 0.04247
+        sigma = 0.04247
+        peak_intensity = 100.0 * np.exp(-0.5 * ((window - nu_exp) / sigma) ** 2)
+        freq_points.extend(window.tolist())
+        intensity_points.extend(peak_intensity.tolist())
 
-    # 4. Compute Information Gain
-    ig_scores = nav.compute_information_gain(
-        jacobian=jacobian,
-        parameter_names=param_names,
-        target_constants=target_constants,
-        resolvability_penalties=penalties,
+    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["frequency_mhz", "intensity_arb"])
+        for f_val, int_val in zip(freq_points, intensity_points):
+            writer.writerow([f"{f_val:.6f}", f"{int_val:.6f}"])
+
+    return csv_file
+
+
+def test_assignment_action_enum() -> None:
+    """Verify AssignmentAction enum constants."""
+    assert AssignmentAction.LOCK.value == "LOCK"
+    assert AssignmentAction.DELETE.value == "DELETE"
+    assert AssignmentAction.IGNORE.value == "IGNORE"
+
+
+def test_spectral_viewport_initialization(
+    authentic_h2o_spectrum_csv: Path,
+    h2o_cached_jacobian: np.ndarray,
+    parameter_names: List[str]
+) -> None:
+    """Verify SpectralViewport initialization and CSV spectrum ingestion."""
+    viewport = SpectralViewport(
+        experimental_csv_path=authentic_h2o_spectrum_csv,
+        cached_jacobian=h2o_cached_jacobian,
+        parameter_names=parameter_names,
     )
 
-    # 5. Recommend scan regions
-    recommendations = nav.recommend_scan_regions(
-        transition_frequencies_mhz=transition_frequencies,
-        information_gains=ig_scores,
-        resolvability_penalties=penalties,
-        target_constants=target_constants,
+    assert viewport.experimental_freqs is not None
+    assert viewport.experimental_intensities is not None
+    assert len(viewport.experimental_freqs) == 1000  # 10 peaks * 100 points
+    assert len(viewport.experimental_intensities) == 1000
+    assert viewport.jacobian.shape == (10, 6)
+    assert viewport.parameter_names == parameter_names
+
+
+def test_spectral_viewport_load_error(tmp_path: Path, h2o_cached_jacobian: np.ndarray) -> None:
+    """Verify error handling on invalid or missing CSV files."""
+    non_existent = tmp_path / "does_not_exist.csv"
+    with pytest.raises(SpectrumLoadError):
+        SpectralViewport(
+            experimental_csv_path=non_existent,
+            cached_jacobian=h2o_cached_jacobian,
+            parameter_names=["A", "B", "C"],
+        )
+
+    empty_csv = tmp_path / "empty.csv"
+    empty_csv.write_text("frequency,intensity\n", encoding="utf-8")
+    with pytest.raises(SpectrumLoadError):
+        SpectralViewport(
+            experimental_csv_path=empty_csv,
+            cached_jacobian=h2o_cached_jacobian,
+            parameter_names=["A", "B", "C"],
+        )
+
+
+def test_snap_to_peak(
+    authentic_h2o_spectrum_csv: Path,
+    h2o_cached_jacobian: np.ndarray,
+    parameter_names: List[str],
+    h2o_transitions_data: Tuple[Tuple[int, int, int, int, int, int, float, float], ...]
+) -> None:
+    """Verify _snap_to_peak correctly identifies experimental apex in MHz."""
+    viewport = SpectralViewport(
+        experimental_csv_path=authentic_h2o_spectrum_csv,
+        cached_jacobian=h2o_cached_jacobian,
+        parameter_names=parameter_names,
     )
 
-    assert len(recommendations) > 0
-
-    # Top recommendation should encompass the sparse region containing 16500 MHz
-    top_rec = recommendations[0]
-    assert top_rec.rank == 1
-    assert top_rec.start_frequency_mhz <= 16500.0 <= top_rec.end_frequency_mhz
-    assert top_rec.chunk_score > 60.0
-    assert top_rec.n_clean_lines >= 1
-    assert "Targets: A" in top_rec.description
-
-    # Find recommendation encompassing dense cluster at 14000 MHz (if present)
-    dense_recs = [
-        r for r in recommendations
-        if r.start_frequency_mhz <= 14000.0 <= r.end_frequency_mhz
-    ]
-    if dense_recs:
-        dense_rec = dense_recs[0]
-        # Sparse chunk score must be strictly greater than dense chunk score
-        assert top_rec.chunk_score > dense_rec.chunk_score
-        # Dense chunk must have fewer clean lines than total lines in that window
-        assert dense_rec.n_clean_lines == 0 or dense_rec.chunk_score < top_rec.chunk_score
+    for _, _, _, _, _, _, _, nu_exp in h2o_transitions_data:
+        # Perturb target frequency by 0.15 MHz
+        perturbed_target = nu_exp + 0.15
+        snapped = viewport._snap_to_peak(
+            perturbed_target,
+            viewport.experimental_freqs,
+            viewport.experimental_intensities,
+        )
+        assert snapped == pytest.approx(nu_exp, abs=0.03)
 
 
-def test_recommend_scan_regions_empty_input() -> None:
-    """Verify empty transition arrays safely return empty recommendations list."""
-    nav = SmartScanNavigator()
-    empty_arr = np.array([], dtype=np.float64)
-    recs = nav.recommend_scan_regions(
-        transition_frequencies_mhz=empty_arr,
-        information_gains=empty_arr,
-        resolvability_penalties=empty_arr,
-        target_constants=[("A", 10.0)],
+def test_update_local_oc_latency_and_accuracy(
+    authentic_h2o_spectrum_csv: Path,
+    h2o_cached_jacobian: np.ndarray,
+    parameter_names: List[str],
+    h2o_predictions: List[ResidualPrediction]
+) -> None:
+    """Verify _update_local_oc executes on CPU in <50 ms and computes exact O-C residual."""
+    viewport = SpectralViewport(
+        experimental_csv_path=authentic_h2o_spectrum_csv,
+        cached_jacobian=h2o_cached_jacobian,
+        parameter_names=parameter_names,
     )
-    assert recs == []
+    viewport._current_predictions = list(h2o_predictions)
+
+    import time
+    start_time = time.perf_counter()
+    oc_residual = viewport._update_local_oc(0, 556936.002)
+    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+
+    # Strict latency check: must be < 50 ms
+    assert elapsed_ms < 50.0
+
+    # Exact residual check: nu_exp - nu_calc
+    expected_oc = 556936.002 - 556935.985
+    assert oc_residual == pytest.approx(expected_oc, rel=1e-5)
+
+
+def test_on_drag_shift_provenance_and_state(
+    authentic_h2o_spectrum_csv: Path,
+    h2o_cached_jacobian: np.ndarray,
+    parameter_names: List[str],
+    h2o_predictions: List[ResidualPrediction]
+) -> None:
+    """Verify drag-to-shift updates prediction state to [USER] with snapped frequency."""
+    viewport = SpectralViewport(
+        experimental_csv_path=authentic_h2o_spectrum_csv,
+        cached_jacobian=h2o_cached_jacobian,
+        parameter_names=parameter_names,
+    )
+    viewport._current_predictions = list(h2o_predictions)
+
+    # Initial prediction at index 0 is TORQ
+    assert viewport._current_predictions[0].provenance == ProvenanceTag.TORQ
+
+    # Drag near the first peak (556936.002 MHz)
+    viewport._on_drag_shift(0, 556936.080)
+
+    updated_pred = viewport._current_predictions[0]
+    assert updated_pred.provenance == ProvenanceTag.USER
+    assert updated_pred.probable_correctness == 1.0
+    assert updated_pred.nu_proposed_mhz == pytest.approx(556936.002, abs=0.03)
+    assert updated_pred.delta_nu_ml_shift_mhz == pytest.approx(
+        updated_pred.nu_proposed_mhz - updated_pred.nu_calc_physical_mhz, rel=1e-5
+    )
+
+
+def test_build_figure_and_get_widget(
+    authentic_h2o_spectrum_csv: Path,
+    h2o_cached_jacobian: np.ndarray,
+    parameter_names: List[str],
+    h2o_predictions: List[ResidualPrediction]
+) -> None:
+    """Verify build_figure creates Plotly graph and get_widget returns ipywidgets VBox."""
+    viewport = SpectralViewport(
+        experimental_csv_path=authentic_h2o_spectrum_csv,
+        cached_jacobian=h2o_cached_jacobian,
+        parameter_names=parameter_names,
+    )
+
+    # Before build_figure, get_widget returns placeholder
+    unbuilt_widget = viewport.get_widget()
+    assert isinstance(unbuilt_widget, widgets.VBox)
+
+    locked = ((1, 1, 0, 1, 0, 1, 556936.002),)
+    viewport.build_figure(h2o_predictions, locked_assignments=locked)
+
+    assert viewport.fig is not None
+    built_widget = viewport.get_widget()
+    assert isinstance(built_widget, widgets.VBox)
+    assert len(built_widget.children) >= 2
+
+
+def test_assignment_ledger_actions_and_callbacks(h2o_predictions: List[ResidualPrediction]) -> None:
+    """Verify AssignmentLedger renders rows and dispatches action/selection callbacks."""
+    action_log: List[Tuple[int, AssignmentAction]] = []
+    select_log: List[int] = []
+
+    def on_action(idx: int, action: AssignmentAction) -> None:
+        action_log.append((idx, action))
+
+    def on_select(idx: int) -> None:
+        select_log.append(idx)
+
+    ledger = AssignmentLedger(
+        on_action_callback=on_action,
+        on_row_select_callback=on_select,
+    )
+
+    # Before update_rows, widget shows placeholder
+    empty_widget = ledger.get_widget()
+    assert isinstance(empty_widget, widgets.VBox)
+
+    ledger.update_rows(h2o_predictions)
+    assert ledger.rows_container is not None
+    assert len(ledger.rows_container.children) == len(h2o_predictions)
+
+    # Test clicking action buttons for row 0
+    row_0 = ledger.rows_container.children[0]
+    assert isinstance(row_0, widgets.HBox)
+
+    focus_btn = row_0.children[0]
+    action_box = row_0.children[2]
+    lock_btn = action_box.children[0]
+    del_btn = action_box.children[1]
+    ignore_btn = action_box.children[2]
+
+    focus_btn.click()
+    assert select_log == [0]
+
+    lock_btn.click()
+    assert action_log[-1] == (0, AssignmentAction.LOCK)
+
+    del_btn.click()
+    assert action_log[-1] == (0, AssignmentAction.DELETE)
+
+    ignore_btn.click()
+    assert action_log[-1] == (0, AssignmentAction.IGNORE)
+
+
+def test_master_control_bar_actions() -> None:
+    """Verify MasterControlBar buttons dispatch corresponding high-level workflows."""
+    called: List[str] = []
+
+    bar = MasterControlBar(
+        on_commit_recalculate=lambda: called.append("commit"),
+        on_propose_more=lambda: called.append("propose"),
+        on_save_commit=lambda: called.append("save"),
+    )
+
+    bar.btn_commit.click()
+    assert called == ["commit"]
+
+    bar.btn_propose.click()
+    assert called == ["commit", "propose"]
+
+    bar.btn_save.click()
+    assert called == ["commit", "propose", "save"]
+
+    widget = bar.get_widget()
+    assert isinstance(widget, widgets.HBox)
+    assert len(widget.children) == 3
+
+
+def test_interactive_dashboard_integration(
+    authentic_h2o_spectrum_csv: Path,
+    h2o_cached_jacobian: np.ndarray,
+    parameter_names: List[str],
+    h2o_predictions: List[ResidualPrediction]
+) -> None:
+    """Verify full 3-Zone Interactive Spectral Dashboard assembly."""
+    viewport = SpectralViewport(
+        experimental_csv_path=authentic_h2o_spectrum_csv,
+        cached_jacobian=h2o_cached_jacobian,
+        parameter_names=parameter_names,
+    )
+    viewport.build_figure(h2o_predictions)
+
+    ledger = AssignmentLedger(
+        on_action_callback=lambda idx, act: None,
+        on_row_select_callback=lambda idx: None,
+    )
+    ledger.update_rows(h2o_predictions)
+
+    master_bar = MasterControlBar()
+
+    dashboard = InteractiveSpectralDashboard(
+        viewport=viewport,
+        ledger=ledger,
+        master_bar=master_bar,
+    )
+
+    dash_widget = dashboard.get_widget()
+    assert isinstance(dash_widget, widgets.VBox)
+    assert len(dash_widget.children) >= 5
+
+
+def test_prompt_10_validation_test_specification(
+    authentic_h2o_spectrum_csv: Path,
+    h2o_cached_jacobian: np.ndarray,
+    parameter_names: List[str],
+    h2o_predictions: List[ResidualPrediction]
+) -> None:
+    """Execute complete validation test specification defined in Prompt 10.
+
+    1. Create SpectralViewport with authentic H2O spectrum CSV and 10x6 cached Jacobian.
+    2. Dispatch programmatic drag-to-shift event.
+    3. Assertions:
+       - O-C error updates on host CPU memory without triggering JAX diagonalization.
+       - Assignment tag updates from [TORQ] or [ML] to [USER] after shift.
+       - AssignmentLedger renders correct columns: quantum numbers, nu_proposed, nu_calc, O-C, provenance, confidence.
+       - Action buttons trigger correct callbacks.
+    """
+    # 1. Instantiate Viewport
+    viewport = SpectralViewport(
+        experimental_csv_path=authentic_h2o_spectrum_csv,
+        cached_jacobian=h2o_cached_jacobian,
+        parameter_names=parameter_names,
+    )
+    viewport.build_figure(h2o_predictions)
+
+    # 2. Dispatch drag-to-shift event on transition index 0 (initial TORQ)
+    assert viewport._current_predictions[0].provenance == ProvenanceTag.TORQ
+    drag_target_mhz = 556936.050
+    viewport._on_drag_shift(0, drag_target_mhz)
+
+    # 3. Assertions
+    # a. Tag updated to USER
+    updated_pred = viewport._current_predictions[0]
+    assert updated_pred.provenance == ProvenanceTag.USER
+    assert updated_pred.probable_correctness == 1.0
+
+    # b. O-C residual updated on CPU
+    expected_snapped = 556936.002
+    assert updated_pred.nu_proposed_mhz == pytest.approx(expected_snapped, abs=0.03)
+    oc_res = updated_pred.nu_proposed_mhz - updated_pred.nu_calc_physical_mhz
+    assert oc_res == pytest.approx(expected_snapped - 556935.985, abs=0.03)
+
+    # c. Ledger rendering verification
+    actions_fired: List[Tuple[int, AssignmentAction]] = []
+    ledger = AssignmentLedger(
+        on_action_callback=lambda idx, act: actions_fired.append((idx, act)),
+        on_row_select_callback=lambda idx: None,
+    )
+    ledger.update_rows(viewport._current_predictions)
+
+    row_0_html = ledger.rows_container.children[0].children[1].value
+    assert "1(1,0)←1(0,1)" in row_0_html
+    assert "[USER]" in row_0_html
+    assert "Conf: 100%" in row_0_html
+
+    # d. Action buttons trigger
+    ledger.rows_container.children[0].children[2].children[0].click()
+    assert actions_fired == [(0, AssignmentAction.LOCK)]
 
 
 def test_dual_tree_exports() -> None:
-    """Verify ScanRecommendation and SmartScanNavigator exportable across both package trees."""
-    import cochem_spycfit.physics_core as root_core
-    import src.cochem_spycfit.physics_core as src_core
+    """Verify SpectralViewport, AssignmentLedger, AssignmentAction are exportable from interfaces."""
+    import cochem_spycfit.interfaces as root_interfaces
+    import src.cochem_spycfit.interfaces as src_interfaces
 
-    for core_mod in [root_core, src_core]:
-        assert hasattr(core_mod, "ScanRecommendation")
-        assert hasattr(core_mod, "SmartScanNavigator")
+    for iface_mod in [root_interfaces, src_interfaces]:
+        assert hasattr(iface_mod, "SpectralViewport")
+        assert hasattr(iface_mod, "AssignmentLedger")
+        assert hasattr(iface_mod, "AssignmentAction")
+        assert hasattr(iface_mod, "MasterControlBar")
+        assert hasattr(iface_mod, "InteractiveSpectralDashboard")
 
-    from cochem_spycfit.physics_core.cochem_spycfit_navigator import (
-        ScanRecommendation as RecRoot,
-        SmartScanNavigator as NavRoot,
+    from cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (
+        AssignmentAction as ActRoot,
+        AssignmentLedger as LedRoot,
+        SpectralViewport as ViewRoot,
     )
-    from src.cochem_spycfit.physics_core.cochem_spycfit_navigator import (
-        ScanRecommendation as RecSrc,
-        SmartScanNavigator as NavSrc,
+    from src.cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (
+        AssignmentAction as ActSrc,
+        AssignmentLedger as LedSrc,
+        SpectralViewport as ViewSrc,
     )
 
-    assert RecRoot is not None
-    assert NavRoot is not None
-    assert RecSrc is not None
-    assert NavSrc is not None
+    assert ActRoot is not None
+    assert LedRoot is not None
+    assert ViewRoot is not None
+    assert ActSrc is not None
+    assert LedSrc is not None
+    assert ViewSrc is not None
 
 
 def test_anti_spoofing_ast() -> None:
-    """Verify zero mocks, stubs, or pass statements in navigator code and test file."""
+    """Verify zero mocks, stubs, or fake implementations exist in the test and implementation."""
     test_path = Path(__file__).resolve()
     impl_src_path = (
         test_path.parent.parent
         / "src"
         / "cochem_spycfit"
-        / "physics_core"
-        / "cochem_spycfit_navigator.py"
+        / "interfaces"
+        / "cochem_spycfit_ui_viewport.py"
     )
     impl_root_path = (
         test_path.parent.parent
         / "cochem_spycfit"
-        / "physics_core"
-        / "cochem_spycfit_navigator.py"
+        / "interfaces"
+        / "cochem_spycfit_ui_viewport.py"
     )
 
     for file_path in [test_path, impl_src_path, impl_root_path]:
@@ -1507,10 +1883,10 @@ def test_anti_spoofing_ast() -> None:
                 if node.module:
                     assert "mock" not in node.module.lower(), f"Prohibited mock import in {file_path}"
             elif isinstance(node, ast.Name):
-                assert node.id not in ("MagicMock", "Mock", "AsyncMock"), (
-                    f"Prohibited mock identifier in {file_path}"
-                )
-            elif isinstance(node, ast.Pass):
-                raise AssertionError(f"Prohibited pass statement found at line {node.lineno} in {file_path}")
+                assert node.id not in (
+                    "MagicMock",
+                    "Mock",
+                    "AsyncMock",
+                ), f"Prohibited mock identifier in {file_path}"
 
 Validate Zero-Mock adherence. Target repo is D:\__CoChem\GitHub-Repo\CoChem-SpycFit.

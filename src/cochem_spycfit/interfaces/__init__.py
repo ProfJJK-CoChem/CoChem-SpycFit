@@ -38,6 +38,16 @@ from .cochem_spycfit_ui import (
     translate_mathematical_change_to_git_commit,
     update_ui_state_hash,
 )
+from .cochem_spycfit_ui_viewport import (
+    AssignmentAction,
+    AssignmentLedger,
+    InteractiveSpectralDashboard,
+    InvalidJacobianError,
+    MasterControlBar,
+    SpectralViewport,
+    SpectrumLoadError,
+    ViewportError,
+)
 from .cochem_vibspyc_snap import (
     FitProvenancePayload,
     evaluate_compression_strategy,
@@ -88,6 +98,15 @@ __all__ = [
     "run_lttb_decimation",
     "translate_mathematical_change_to_git_commit",
     "update_ui_state_hash",
+    # UI Viewport & Assignment Ledger
+    "AssignmentAction",
+    "AssignmentLedger",
+    "InteractiveSpectralDashboard",
+    "InvalidJacobianError",
+    "MasterControlBar",
+    "SpectralViewport",
+    "SpectrumLoadError",
+    "ViewportError",
     # Snapshot & Export
     "FitProvenancePayload",
     "evaluate_compression_strategy",

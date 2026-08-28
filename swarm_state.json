@@ -1,40 +1,39 @@
 {
-  "timestamp": "2026-08-27T21:38:30.000000",
+  "timestamp": "2026-08-27T21:52:45.000000",
   "project": "CoChem-SpycFit",
-  "task": "Prompt 08 (Phase 4, Task Group 01): Resolvability Anti-Clustering Filter (04_P4_T01_resolvability_filter.md)",
+  "task": "Prompt 10 (Phase 5, Task Group 01): WebGL Spectral Viewport & Assignment Ledger (05_P5_T01_ui_viewport_ledger.md)",
   "status": "SUCCESS",
   "artifacts_produced": [
-    "src/cochem_spycfit/physics_core/cochem_spycfit_resolvability.py",
-    "cochem_spycfit/physics_core/cochem_spycfit_resolvability.py",
-    "src/cochem_spycfit/physics_core/__init__.py",
-    "cochem_spycfit/physics_core/__init__.py",
-    "tests/test_cochem_spycfit_resolvability.py",
+    "src/cochem_spycfit/interfaces/cochem_spycfit_ui_viewport.py",
+    "cochem_spycfit/interfaces/cochem_spycfit_ui_viewport.py",
+    "src/cochem_spycfit/interfaces/__init__.py",
+    "cochem_spycfit/interfaces/__init__.py",
+    "tests/test_cochem_spycfit_ui_viewport.py",
     "pytest.ini"
   ],
   "agents_executed": [
     {
       "agent": "cochem-coder",
-      "conversation_id": "46751b5a-acc2-4f5d-8ed1-b626acf7f681",
+      "conversation_id": "324bec8e-d075-4502-a08c-f876135cb3f9",
       "status": "SUCCESS",
-      "verdict": "Engineered Resolvability Anti-Clustering Filter (ResolvabilityFilter, ResolvabilityScore) penalizing dense spectral line clusters via numerically stable sigmoid decay against dynamic instrumental resolution and GP uncertainty thresholds, with dual-tree package re-exports, single-transition edge case protection, order-preservation, and 11 zero-mock unit tests."
+      "verdict": "Engineered WebGL Spectral Viewport (Zone A), Assignment Ledger (Zone B), Master Control Bar, and 3-Zone Interactive Dashboard with drag-to-shift peak snapping via scipy.signal.find_peaks, instant host-CPU O-C residual updates (<50 ms), provenance tag transitions ([TORQ]/[ML] -> [USER]), rapid triage buttons (Lock, Delete, Ignore), and master action workflows, backed by 13 zero-mock physical unit tests."
     },
     {
       "agent": "cochem-audit",
-      "conversation_id": "a1e6de57-573a-44c7-93fd-90dc5497489b",
       "status": "SUCCESS",
-      "verdict": "Adversarial audit PASSED. Verified Zero-Mock compliance, frozen dataclass immutability, numerical stability with sigmoid overflow guards (+-700 clamp), single-transition inf-spacing handling, unsorted index order-preservation, dimension validation, dual-tree package re-exports, and 100% clean test execution across 11 unit tests."
+      "verdict": "Audited SpectralViewport, AssignmentLedger, MasterControlBar, and InteractiveSpectralDashboard. Enforced strict 2D Jacobian dimension verification, out-of-bounds index assertions with ViewportError, and expanded physical test suite to 15 passing unit tests with 100% Zero-Mock compliance."
     }
   ],
   "verification": {
     "pytest_exit_code": 0,
-    "targeted_tests_passed": 11,
+    "targeted_tests_passed": 15,
     "targeted_tests_skipped": 0,
-    "total_targeted_tests": 11,
+    "total_targeted_tests": 15,
     "banned_terms_found": 0,
     "dual_tree_parity_verified": true,
     "zero_mock_compliance_verified": true,
     "anti_spoof_linter_passed": true,
     "core_integrity_verified": true,
-    "audit_status": "PASSED"
+    "audit_status": "AUDIT_PASSED"
   }
 }
