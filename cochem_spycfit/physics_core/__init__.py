@@ -115,6 +115,11 @@ from src.cochem_spycfit.physics_core.cochem_spycfit_auditor import (
 from src.cochem_spycfit.physics_core.cochem_spycfit_features import (
     QuantumFeatureExtractor,
 )
+from src.cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
+    ProvenanceTag,
+    ResidualPrediction,
+    SpycFitGPRegressor,
+)
 
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
@@ -222,5 +227,9 @@ __all__ = [
     "format_contrast_dataframe",
     # Quantum Feature Extractor
     "QuantumFeatureExtractor",
+    # Gaussian Process ML Core
+    "ProvenanceTag",
+    "ResidualPrediction",
+    "SpycFitGPRegressor",
 ]
 

@@ -215,6 +215,11 @@ from .cochem_spycfit_auditor import (
 from .cochem_spycfit_features import (
     QuantumFeatureExtractor,
 )
+from .cochem_spycfit_ml_core import (
+    ProvenanceTag,
+    ResidualPrediction,
+    SpycFitGPRegressor,
+)
 
 __all__ = [
     # Extractor & Tensor Core
@@ -412,5 +417,9 @@ __all__ = [
     "format_contrast_dataframe",
     # Quantum Feature Extractor
     "QuantumFeatureExtractor",
+    # Gaussian Process ML Core
+    "ProvenanceTag",
+    "ResidualPrediction",
+    "SpycFitGPRegressor",
 ]
 

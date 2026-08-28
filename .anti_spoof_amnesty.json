@@ -1,17 +1,17 @@
 [
-    "tests/test_pyproject.py",
-    "tests/test_cochem_jax_coupling.py",
-    "tests/test_requirements.py",
-    "tests/test_cochem_convolver_phase3.py",
     "tests/test_cochem_convolver.py",
-    "tests/test_cochem_spycfit_ui.py",
-    "tests/test_spycfit.py",
-    "tests/test_cochem_spycfit_ci.py",
     "tests/test_cochem_spycfit_features.py",
-    "tests/test_gitignore.py",
-    "src/cochem_spycfit/physics_core/cochem_convolver.py",
-    "src/cochem_spycfit/interfaces/cochem_spycfit_ui.py",
     "tests/test_cochem_spcat_bridge_phase4.py",
     "tests/test_cochem_spycfit_orchestrator.py",
-    "tests/generate_physical_fixtures.py"
+    "tests/test_cochem_spycfit_ui.py",
+    "src/cochem_spycfit/interfaces/cochem_spycfit_ui.py",
+    "tests/test_spycfit.py",
+    "tests/test_pyproject.py",
+    "tests/test_cochem_spycfit_ci.py",
+    "tests/test_requirements.py",
+    "tests/test_cochem_jax_coupling.py",
+    "tests/generate_physical_fixtures.py",
+    "tests/test_gitignore.py",
+    "tests/test_cochem_convolver_phase3.py",
+    "src/cochem_spycfit/physics_core/cochem_convolver.py"
 ]
