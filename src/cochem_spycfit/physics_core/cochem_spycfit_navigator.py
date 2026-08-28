@@ -32,14 +32,14 @@ class SmartScanNavigator:
 
     def __init__(
         self,
-        max_chunk_bandwidth_mhz: float = 250.0,
+        max_chunk_bandwidth_mhz: Optional[float] = None,
         top_n_recommendations: int = 3,
         config_path: Optional[Path] = None,
     ) -> None:
         """
         Parameters
         ----------
-        max_chunk_bandwidth_mhz : float
+        max_chunk_bandwidth_mhz : float, optional
             Maximum scan chunk bandwidth in MHz. Default 250 MHz.
             Can be overridden by 'max_chunk_bandwidth' in cochem_system_config.json.
         top_n_recommendations : int
@@ -47,16 +47,26 @@ class SmartScanNavigator:
         config_path : Path, optional
             Path to cochem_system_config.json for overrides.
         """
-        self._chunk_bw: float = float(max_chunk_bandwidth_mhz)
         self._top_n: int = int(top_n_recommendations)
 
-        # Override from config if available
-        resolved_config = self._resolve_config_path(config_path)
-        if resolved_config and resolved_config.exists():
-            with open(resolved_config, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            if "max_chunk_bandwidth" in config:
-                self._chunk_bw = float(config["max_chunk_bandwidth"])
+        if max_chunk_bandwidth_mhz is not None:
+            self._chunk_bw = float(max_chunk_bandwidth_mhz)
+        else:
+            self._chunk_bw = 250.0
+            resolved_config = self._resolve_config_path(config_path)
+            if resolved_config and resolved_config.exists():
+                with open(resolved_config, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                if "max_chunk_bandwidth" in config and config["max_chunk_bandwidth"]:
+                    self._chunk_bw = float(config["max_chunk_bandwidth"])
+
+        if config_path is not None:
+            resolved_config = self._resolve_config_path(config_path)
+            if resolved_config and resolved_config.exists():
+                with open(resolved_config, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                if "max_chunk_bandwidth" in config and config["max_chunk_bandwidth"]:
+                    self._chunk_bw = float(config["max_chunk_bandwidth"])
 
     def identify_target_constants(
         self,

@@ -328,7 +328,7 @@ class TensorCache:
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     config = json.load(f)
-                if isinstance(config, dict) and "tensor_cache_path" in config:
+                if isinstance(config, dict) and config.get("tensor_cache_path"):
                     return Path(config["tensor_cache_path"]).resolve()
             except Exception as _err:
                 _logger.debug("Failed reading system config: %s", _err)
