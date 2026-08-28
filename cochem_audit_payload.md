@@ -1,24 +1,24 @@
-Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.in-progress\02_P2_T03_parity_auditor.md.
+Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.in-progress\03_P3_T01_quantum_feature_extractor.md.
 Original prompt:
-# Prompt 05 — Phase 2, Task Group 03: Mathematical Parity Auditor (JAX vs. SPFIT)
+# Prompt 06 — Phase 3, Task Group 01: Quantum Feature Extractor
 
 > **Prerequisite:** Load `D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.prompts\00_GLOBAL_SYSTEM_PROMPT.md` into context first.
-> **Batch:** 2 — Dual-Engine Parity Bridge (JAX vs. SPCAT)
-> **Phase:** 2 (Tasks 21–40) — Scientific Validation & Dual-Engine Execution
-> **Dependency:** Prompt 03 (JAX driver) and Prompt 04 (SPFIT wrapper) must exist.
+> **Batch:** 3 — ML Learning Loop & Gaussian Process Regressor
+> **Phase:** 3 (Tasks 41–60) — Systematic Residual Mapping
+> **Dependency:** Prompt 01 (`FitState` for accessing locked assignments)
 
 ---
 
 ## Objective
 
-Build the mathematical difference auditor that compares rotational constants derived from the JAX engine against those from SPFIT. This module is the "Contrast Engine" that ensures publication-grade parity between the modern autodiff optimizer and the legacy Fortran gold standard. Any divergence > 0.1 kHz triggers a yellow "Parity Warning" flag.
+Build the vectorization engine that extracts and normalizes quantum-mechanical features from theoretical transition catalogs into a standardized NumPy feature matrix suitable for Gaussian Process Regression. This module transforms raw spectroscopic quantum numbers and physical observables into ML-ready input features.
 
 ---
 
 ## Target File
 
 ```
-D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_auditor.py
+D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_features.py
 ```
 
 > **Note:** NEW file in `physics_core/`.
@@ -30,185 +30,177 @@ D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfi
 ### 1. Required Imports
 
 ```python
-"""Mathematical Parity Auditor — JAX vs. SPFIT constant comparison engine."""
+"""Quantum feature extractor for ML-driven spectroscopic residual prediction."""
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from enum import Enum
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
+from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 ```
 
-### 2. `ParityStatus` Enum
+### 2. `QuantumFeatureExtractor` Class
 
 ```python
-class ParityStatus(Enum):
-    """Status of the parity check between JAX and SPFIT."""
-    VERIFIED = "VERIFIED"       # All constants within 0.1 kHz tolerance
-    WARNING = "WARNING"         # At least one constant exceeds 0.1 kHz delta
-    SPFIT_FAILED = "SPFIT_FAILED"  # SPFIT execution failed; parity cannot be verified
-```
+class QuantumFeatureExtractor:
+    """Extracts and normalizes quantum-mechanical features for GP regression."""
 
-### 3. `ParityWarning` Dataclass
-
-```python
-@dataclass(frozen=True)
-class ParityWarning:
-    """Container for parity divergence details."""
-    status: ParityStatus
-    max_delta_khz: float
-    divergent_constants: tuple[str, ...]
-    contrast_table: dict[str, dict[str, float]]
-    # contrast_table structure:
-    # {
-    #     "A": {"jax_mhz": 835840.288, "spfit_mhz": 835840.289, "delta_khz": 1.0},
-    #     "B": {"jax_mhz": ..., "spfit_mhz": ..., "delta_khz": ...},
-    #     ...
-    # }
-```
-
-### 4. `ParityAuditor` Class
-
-```python
-class ParityAuditor:
-    """Compares JAX-derived and SPFIT-derived rotational constants."""
-
-    TOLERANCE_KHZ: float = 0.1  # 0.1 kHz parity threshold
+    FEATURE_NAMES: tuple[str, ...] = (
+        "J_upper", "Ka_upper", "Kc_upper",
+        "J_lower", "Ka_lower", "Kc_lower",
+        "delta_J", "delta_Ka", "delta_Kc",
+        "mu_a", "mu_b", "mu_c",
+        "lower_state_energy_cm",
+        "transition_type",  # 0=a-type, 1=b-type, 2=c-type
+    )
 
     def __init__(self) -> None:
-        """Initialize the parity auditor. Stateless — no instance attributes required."""
+        """Initialize the feature extractor with a fitted StandardScaler."""
+        self._scaler: Optional[StandardScaler] = None
+        self._is_fitted: bool = False
 
-    def audit(
+    def extract_raw_features(
         self,
-        jax_constants: dict[str, float],
-        spfit_constants: dict[str, float],
-        jax_uncertainties: Optional[dict[str, float]] = None,
-        spfit_uncertainties: Optional[dict[str, float]] = None,
-    ) -> ParityWarning:
+        assignments: tuple[tuple[int, int, int, int, int, int, float], ...],
+        dipole_components: dict[str, float],
+        lower_state_energies: Optional[dict[tuple[int, int, int], float]] = None,
+    ) -> np.ndarray:
         """
-        Compare rotational constants from JAX and SPFIT engines.
+        Extract raw (unnormalized) features from assignment data.
 
         Parameters
         ----------
-        jax_constants : dict
-            Constants from the JAX driver (A, B, C, DJ, DJK, DK, etc.) in MHz.
-        spfit_constants : dict
-            Constants from the SPFIT wrapper in MHz.
-        jax_uncertainties : dict, optional
-            Uncertainties from JAX fit in MHz.
-        spfit_uncertainties : dict, optional
-            Uncertainties from SPFIT fit in MHz.
+        assignments : tuple of 7-tuples
+            Each entry: (J', Ka', Kc', J'', Ka'', Kc'', nu_exp_MHz).
+        dipole_components : dict
+            {'mu_a': float, 'mu_b': float, 'mu_c': float} in Debye.
+        lower_state_energies : dict, optional
+            Map from (J'', Ka'', Kc'') → lower-state energy in cm⁻¹.
+            If None, estimated from rigid-rotor approximation.
 
         Returns
         -------
-        ParityWarning
-            Contains status, max delta, divergent constants list, and
-            full contrast table for UI rendering.
+        np.ndarray
+            Shape (N_assignments, N_features). Feature matrix.
         """
-        # 1. Identify the union of constant names present in both engines
-        common_keys = sorted(set(jax_constants.keys()) & set(spfit_constants.keys()))
+        n = len(assignments)
+        features = np.zeros((n, len(self.FEATURE_NAMES)), dtype=np.float64)
 
-        # 2. Build the contrast table with float64 precision
-        contrast_table: dict[str, dict[str, float]] = {}
-        divergent: list[str] = []
-        max_delta = 0.0
+        for i, (j_u, ka_u, kc_u, j_l, ka_l, kc_l, _nu) in enumerate(assignments):
+            # Quantum numbers
+            features[i, 0] = j_u
+            features[i, 1] = ka_u
+            features[i, 2] = kc_u
+            features[i, 3] = j_l
+            features[i, 4] = ka_l
+            features[i, 5] = kc_l
+            features[i, 6] = j_u - j_l  # delta_J
+            features[i, 7] = ka_u - ka_l  # delta_Ka
+            features[i, 8] = kc_u - kc_l  # delta_Kc
 
-        for key in common_keys:
-            jax_val = float(jax_constants[key])
-            spfit_val = float(spfit_constants[key])
-            delta_khz = abs(jax_val - spfit_val) * 1000.0  # MHz → kHz
+            # Dipole components
+            features[i, 9] = dipole_components.get("mu_a", 0.0)
+            features[i, 10] = dipole_components.get("mu_b", 0.0)
+            features[i, 11] = dipole_components.get("mu_c", 0.0)
 
-            contrast_table[key] = {
-                "jax_mhz": jax_val,
-                "spfit_mhz": spfit_val,
-                "delta_khz": delta_khz,
-            }
-            # Optionally include uncertainties
-            if jax_uncertainties and key in jax_uncertainties:
-                contrast_table[key]["jax_unc_mhz"] = jax_uncertainties[key]
-            if spfit_uncertainties and key in spfit_uncertainties:
-                contrast_table[key]["spfit_unc_mhz"] = spfit_uncertainties[key]
+            # Lower-state energy
+            if lower_state_energies and (j_l, ka_l, kc_l) in lower_state_energies:
+                features[i, 12] = lower_state_energies[(j_l, ka_l, kc_l)]
+            else:
+                features[i, 12] = 0.0  # Will be estimated downstream
 
-            if delta_khz > self.TOLERANCE_KHZ:
-                divergent.append(key)
-            max_delta = max(max_delta, delta_khz)
+            # Transition type classification
+            # a-type: ΔKa=0, ΔKc=±1; b-type: ΔKa=±1, ΔKc=±1; c-type: ΔKa=±1, ΔKc=0
+            dk_a = abs(ka_u - ka_l)
+            dk_c = abs(kc_u - kc_l)
+            if dk_a == 0:
+                features[i, 13] = 0  # a-type
+            elif dk_c == 0:
+                features[i, 13] = 2  # c-type
+            else:
+                features[i, 13] = 1  # b-type
 
-        # 3. Determine status
-        if divergent:
-            status = ParityStatus.WARNING
-            logger.warning(
-                f"Parity WARNING: {len(divergent)} constants exceed "
-                f"{self.TOLERANCE_KHZ} kHz threshold: {divergent}"
-            )
-        else:
-            status = ParityStatus.VERIFIED
-            logger.info(
-                f"Parity VERIFIED: All {len(common_keys)} constants "
-                f"within {self.TOLERANCE_KHZ} kHz (max Δ = {max_delta:.4f} kHz)"
-            )
+        return features
 
-        return ParityWarning(
-            status=status,
-            max_delta_khz=max_delta,
-            divergent_constants=tuple(divergent),
-            contrast_table=contrast_table,
-        )
-
-    def format_contrast_dataframe(self, warning: ParityWarning) -> "pandas.DataFrame":
+    def fit_scaler(self, raw_features: np.ndarray) -> None:
         """
-        Convert a ParityWarning into a Pandas DataFrame for UI display.
+        Fit the StandardScaler on the raw feature matrix.
+
+        Parameters
+        ----------
+        raw_features : np.ndarray
+            Shape (N, N_features). Raw feature matrix from extract_raw_features.
+        """
+        self._scaler = StandardScaler()
+        self._scaler.fit(raw_features)
+        self._is_fitted = True
+
+    def transform(self, raw_features: np.ndarray) -> np.ndarray:
+        """
+        Scale features using the fitted StandardScaler.
+
+        Parameters
+        ----------
+        raw_features : np.ndarray
+            Shape (N, N_features).
 
         Returns
         -------
-        pandas.DataFrame
-            Side-by-side comparison table with columns:
-            Constant | JAX (MHz) | SPFIT (MHz) | Δ (kHz) | Status
+        np.ndarray
+            Normalized feature matrix.
+
+        Raises
+        ------
+        RuntimeError
+            If the scaler has not been fitted.
         """
-        import pandas as pd
-        rows = []
-        for key, vals in warning.contrast_table.items():
-            status_flag = "⚠️" if vals["delta_khz"] > self.TOLERANCE_KHZ else "✅"
-            rows.append({
-                "Constant": key,
-                "JAX (MHz)": vals["jax_mhz"],
-                "SPFIT (MHz)": vals["spfit_mhz"],
-                "Δ (kHz)": vals["delta_khz"],
-                "Status": status_flag,
-            })
-        return pd.DataFrame(rows)
+        if not self._is_fitted or self._scaler is None:
+            raise RuntimeError("Scaler not fitted. Call fit_scaler() first.")
+        return self._scaler.transform(raw_features)
+
+    def fit_transform(
+        self,
+        assignments: tuple[tuple[int, int, int, int, int, int, float], ...],
+        dipole_components: dict[str, float],
+        lower_state_energies: Optional[dict[tuple[int, int, int], float]] = None,
+    ) -> np.ndarray:
+        """
+        Extract, fit, and transform features in one call.
+
+        Returns
+        -------
+        np.ndarray
+            Normalized feature matrix.
+        """
+        raw = self.extract_raw_features(assignments, dipole_components, lower_state_energies)
+        self.fit_scaler(raw)
+        return self.transform(raw)
 ```
 
 ---
 
 ## Validation Test Specification
 
-1. Create a `ParityAuditor` instance
-2. **Test VERIFIED case:** Pass identical H₂O constants to both `jax_constants` and `spfit_constants`:
-   - A = 835840.288 MHz, B = 435351.717 MHz, C = 278138.700 MHz
-   - Assert `status == ParityStatus.VERIFIED` and `max_delta_khz == 0.0`
-3. **Test WARNING case:** Perturb the JAX `A` constant by +0.0002 MHz (= 0.2 kHz delta):
-   - Assert `status == ParityStatus.WARNING`
-   - Assert `"A"` is in `divergent_constants`
-   - Assert `max_delta_khz == pytest.approx(0.2, abs=0.001)`
-4. **Test threshold boundary:** Perturb by exactly 0.0001 MHz (= 0.1 kHz — at the boundary):
-   - Assert `status == ParityStatus.VERIFIED` (delta == tolerance, not exceeding)
-5. **Test format_contrast_dataframe:** Assert the returned DataFrame has correct columns and row count
+1. Create a `QuantumFeatureExtractor` instance
+2. Pass 10 authentic H₂O transitions (from the table in Prompt 01) with dipole components μ_a = 1.8546 D, μ_b = 0.0 D, μ_c = 0.0 D (water is a-type only)
+3. Assert `extract_raw_features()` returns shape `(10, 14)`
+4. Assert transition type classification is correct (all a-type → column 13 == 0)
+5. Assert `fit_transform()` produces zero-mean, unit-variance features (within floating-point tolerance)
+6. Assert delta quantum numbers (columns 6-8) match expected selection rules
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `ParityStatus` enum defines VERIFIED, WARNING, and SPFIT_FAILED states
-- [ ] `ParityWarning` is a frozen dataclass with contrast table structure
-- [ ] `audit()` computes deltas in float64 precision with 0.1 kHz threshold
-- [ ] Divergent constants are explicitly identified and logged
-- [ ] `format_contrast_dataframe()` produces a Pandas DataFrame for UI rendering
-- [ ] Validation tests cover VERIFIED, WARNING, and boundary cases
-- [ ] No hardcoded atomic masses or synthetic data
+- [ ] Feature matrix includes all 14 quantum-mechanical features listed in `FEATURE_NAMES`
+- [ ] Transition type classification correctly identifies a-type, b-type, c-type
+- [ ] `StandardScaler` fitted on training data, applicable to new unassigned transitions
+- [ ] All file paths use `pathlib.Path`
+- [ ] Validation test uses authentic H₂O spectroscopic data and real dipole moments
 
 Modified files content:
 
@@ -327,6 +319,9 @@ from src.cochem_spycfit.physics_core.cochem_spycfit_auditor import (
     ParityWarning,
     format_contrast_dataframe,
 )
+from src.cochem_spycfit.physics_core.cochem_spycfit_features import (
+    QuantumFeatureExtractor,
+)
 
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
@@ -432,6 +427,8 @@ __all__ = [
     "ParityStatus",
     "ParityWarning",
     "format_contrast_dataframe",
+    # Quantum Feature Extractor
+    "QuantumFeatureExtractor",
 ]
 
 
@@ -650,6 +647,9 @@ from .cochem_spycfit_auditor import (
     ParityWarning,
     format_contrast_dataframe,
 )
+from .cochem_spycfit_features import (
+    QuantumFeatureExtractor,
+)
 
 __all__ = [
     # Extractor & Tensor Core
@@ -845,586 +845,476 @@ __all__ = [
     "ParityStatus",
     "ParityWarning",
     "format_contrast_dataframe",
+    # Quantum Feature Extractor
+    "QuantumFeatureExtractor",
 ]
 
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_auditor.py ---
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\cochem_spycfit_features.py ---
 """
-CoChem-SpycFit: Mathematical Parity Auditor Proxy Re-export.
+CoChem-SpycFit: Quantum Feature Extractor Proxy Re-export.
 """
 
 from __future__ import annotations
 
-from src.cochem_spycfit.physics_core.cochem_spycfit_auditor import (
-    ParityAuditor,
-    ParityStatus,
-    ParityWarning,
-    format_contrast_dataframe,
-)
+try:
+    from src.cochem_spycfit.physics_core.cochem_spycfit_features import (
+        QuantumFeatureExtractor,
+    )
+except ImportError:
+    from cochem_spycfit.physics_core.cochem_spycfit_features import (  # type: ignore[no-redef]
+        QuantumFeatureExtractor,
+    )
 
 __all__ = [
-    "ParityAuditor",
-    "ParityStatus",
-    "ParityWarning",
-    "format_contrast_dataframe",
+    "QuantumFeatureExtractor",
 ]
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\cochem_spycfit_auditor.py ---
-"""Mathematical Parity Auditor: JAX autodiff Hamiltonian vs. Pickett SPFIT.
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\cochem_spycfit_features.py ---
+"""Quantum feature extractor for ML-driven spectroscopic residual prediction.
 
-This module provides high-precision cross-validation between pure-JAX Hamiltonian
-eigenvalue / Levenberg-Marquardt solutions and Pickett SPFIT / SPCAT legacy Fortran
-solutions. It rigorously verifies rotational and centrifugal distortion parameter
-congruence against a strict 0.1 kHz mathematical parity tolerance (in FP64).
+Transforms raw spectroscopic quantum numbers, physical dipole moments, and state
+energies into standardized NumPy feature matrices suitable for Gaussian Process Regression.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-import enum
 import logging
-import math
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# 1. PARITY STATUS & DATA STRUCTURES
-# =============================================================================
+class QuantumFeatureExtractor:
+    """Extracts and normalizes quantum-mechanical features for GP regression."""
 
-@enum.unique
-class ParityStatus(str, enum.Enum):
-    """Execution and mathematical parity audit status."""
+    FEATURE_NAMES: Tuple[str, ...] = (
+        "J_upper",
+        "Ka_upper",
+        "Kc_upper",
+        "J_lower",
+        "Ka_lower",
+        "Kc_lower",
+        "delta_J",
+        "delta_Ka",
+        "delta_Kc",
+        "mu_a",
+        "mu_b",
+        "mu_c",
+        "lower_state_energy_cm",
+        "transition_type",  # 0=a-type, 1=b-type, 2=c-type
+    )
 
-    VERIFIED = "VERIFIED"
-    WARNING = "WARNING"
-    SPFIT_FAILED = "SPFIT_FAILED"
-
-    def __str__(self) -> str:
-        return self.value
-
-
-@dataclass(frozen=True)
-class ParityWarning:
-    """Immutable report of mathematical parity audit between JAX and SPFIT.
-
-    Attributes:
-        status: Overall parity status (VERIFIED, WARNING, SPFIT_FAILED).
-        max_delta_khz: Maximum absolute discrepancy between JAX and SPFIT in kHz.
-        divergent_constants: Tuple of parameter names exceeding the parity tolerance.
-        contrast_table: Detailed dictionary mapping parameter names to comparative values.
-        jax_uncertainties: Optional mapping of JAX parameter standard errors (MHz).
-        spfit_uncertainties: Optional mapping of SPFIT parameter standard errors (MHz).
-    """
-
-    status: ParityStatus
-    max_delta_khz: float
-    divergent_constants: Tuple[str, ...] = ()
-    contrast_table: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    jax_uncertainties: Optional[Dict[str, float]] = None
-    spfit_uncertainties: Optional[Dict[str, float]] = None
+    def __init__(self) -> None:
+        """Initialize the feature extractor with an unfitted state."""
+        self._scaler: Optional[StandardScaler] = None
+        self._is_fitted: bool = False
 
     @property
-    def is_verified(self) -> bool:
-        """Return True if mathematical parity was successfully verified."""
-        return self.status == ParityStatus.VERIFIED
+    def scaler(self) -> Optional[StandardScaler]:
+        """Return the internal fitted StandardScaler instance, or None if unfitted."""
+        return self._scaler
 
     @property
-    def has_divergence(self) -> bool:
-        """Return True if one or more constants diverged beyond tolerance."""
-        return len(self.divergent_constants) > 0
+    def is_fitted(self) -> bool:
+        """Return True if the internal scaler has been successfully fitted."""
+        return self._is_fitted
 
-    def to_dataframe(self) -> Any:
-        """Format contrast table as a pandas DataFrame."""
-        return ParityAuditor.format_contrast_dataframe(self)
-
-
-# =============================================================================
-# 2. PARITY AUDITOR CORE
-# =============================================================================
-
-class ParityAuditor:
-    """Rigorous mathematical parity auditor comparing JAX and SPFIT spectroscopic constants.
-
-    Audits Watson A-reduction and S-reduction rotational and distortion constants
-    in FP64 precision with a default tolerance of 0.1 kHz (1e-4 MHz).
-    """
-
-    TOLERANCE_KHZ: float = 0.1
-
-    def __init__(self, default_tolerance_khz: float = TOLERANCE_KHZ) -> None:
-        """Initialize the stateless ParityAuditor.
-
-        Args:
-            default_tolerance_khz: Default divergence threshold in kHz (default: 0.1 kHz).
-        """
-        self.default_tolerance_khz: float = float(default_tolerance_khz)
-
-    def audit(
+    def extract_raw_features(
         self,
-        jax_constants: Mapping[str, float],
-        spfit_constants: Optional[Mapping[str, float]] = None,
-        jax_uncertainties: Optional[Mapping[str, float]] = None,
-        spfit_uncertainties: Optional[Mapping[str, float]] = None,
-        tolerance_khz: Optional[float] = None,
-    ) -> ParityWarning:
-        """Audit parity between JAX-optimized constants and SPFIT constants.
+        assignments: Sequence[Tuple[int, int, int, int, int, int, float]],
+        dipole_components: Mapping[str, float],
+        lower_state_energies: Optional[Mapping[Tuple[int, int, int], float]] = None,
+    ) -> np.ndarray:
+        """Extract raw (unnormalized) features from assignment data.
 
-        Args:
-            jax_constants: Mapping of constant names to JAX-optimized values (MHz).
-            spfit_constants: Mapping of constant names to SPFIT values (MHz), or None if SPFIT failed.
-            jax_uncertainties: Optional mapping of JAX parameter uncertainties (MHz).
-            spfit_uncertainties: Optional mapping of SPFIT parameter uncertainties (MHz).
-            tolerance_khz: Override tolerance threshold in kHz (defaults to instance setting).
+        Parameters
+        ----------
+        assignments : Sequence of 7-tuples
+            Each entry: (J', Ka', Kc', J'', Ka'', Kc'', nu_exp_MHz).
+        dipole_components : Mapping[str, float]
+            {'mu_a': float, 'mu_b': float, 'mu_c': float} in Debye.
+        lower_state_energies : Mapping[Tuple[int, int, int], float], optional
+            Map from (J'', Ka'', Kc'') -> lower-state energy in cm^-1.
+            If None or level missing, defaults to 0.0.
 
-        Returns:
-            ParityWarning frozen dataclass detailing parity status and contrast metrics.
+        Returns
+        -------
+        np.ndarray
+            Shape (N_assignments, 14). Feature matrix of dtype float64.
         """
-        tol = float(tolerance_khz) if tolerance_khz is not None else self.default_tolerance_khz
+        n = len(assignments)
+        features = np.zeros((n, len(self.FEATURE_NAMES)), dtype=np.float64)
 
-        # Handle failed SPFIT execution
-        if spfit_constants is None:
-            logger.warning("SPFIT constants are None: flagging SPFIT_FAILED.")
-            return ParityWarning(
-                status=ParityStatus.SPFIT_FAILED,
-                max_delta_khz=float("inf"),
-                divergent_constants=tuple(jax_constants.keys()),
-                contrast_table={},
-                jax_uncertainties=dict(jax_uncertainties) if jax_uncertainties is not None else None,
-                spfit_uncertainties=None,
-            )
+        for i, (j_u, ka_u, kc_u, j_l, ka_l, kc_l, _nu) in enumerate(assignments):
+            # Quantum numbers
+            features[i, 0] = float(j_u)
+            features[i, 1] = float(ka_u)
+            features[i, 2] = float(kc_u)
+            features[i, 3] = float(j_l)
+            features[i, 4] = float(ka_l)
+            features[i, 5] = float(kc_l)
+            features[i, 6] = float(j_u - j_l)  # delta_J
+            features[i, 7] = float(ka_u - ka_l)  # delta_Ka
+            features[i, 8] = float(kc_u - kc_l)  # delta_Kc
 
-        # Audit only common keys present in both parameter sets
-        common_keys = [k for k in jax_constants.keys() if k in spfit_constants]
+            # Dipole components
+            features[i, 9] = float(dipole_components.get("mu_a", 0.0))
+            features[i, 10] = float(dipole_components.get("mu_b", 0.0))
+            features[i, 11] = float(dipole_components.get("mu_c", 0.0))
 
-        if not common_keys:
-            logger.warning("No overlapping parameter keys found between JAX and SPFIT sets.")
-            return ParityWarning(
-                status=ParityStatus.VERIFIED,
-                max_delta_khz=0.0,
-                divergent_constants=(),
-                contrast_table={},
-                jax_uncertainties=dict(jax_uncertainties) if jax_uncertainties is not None else None,
-                spfit_uncertainties=dict(spfit_uncertainties) if spfit_uncertainties is not None else None,
-            )
+            # Lower-state energy
+            if lower_state_energies and (j_l, ka_l, kc_l) in lower_state_energies:
+                features[i, 12] = float(lower_state_energies[(j_l, ka_l, kc_l)])
+            else:
+                features[i, 12] = 0.0
 
-        contrast_table: Dict[str, Dict[str, Any]] = {}
-        divergent_list: List[str] = []
-        max_delta = 0.0
+            # Transition type classification
+            # a-type: ΔKa=0, ΔKc=±1; b-type: ΔKa=±1, ΔKc=±1; c-type: ΔKa=±1, ΔKc=0
+            dk_a = abs(ka_u - ka_l)
+            dk_c = abs(kc_u - kc_l)
+            if dk_a == 0:
+                features[i, 13] = 0.0  # a-type
+            elif dk_c == 0:
+                features[i, 13] = 2.0  # c-type
+            else:
+                features[i, 13] = 1.0  # b-type
 
-        for key in common_keys:
-            val_jax = float(np.float64(jax_constants[key]))
-            val_spfit = float(np.float64(spfit_constants[key]))
+        return features
 
-            delta_mhz = abs(val_jax - val_spfit)
-            delta_khz = float(delta_mhz * 1000.0)
+    def fit_scaler(self, raw_features: np.ndarray) -> None:
+        """Fit the StandardScaler on the raw feature matrix.
 
-            # Check divergence: delta > tol and not within float64 representation precision
-            is_divergent = (delta_khz > tol) and not math.isclose(delta_khz, tol, rel_tol=1e-7, abs_tol=1e-9)
-
-            if is_divergent:
-                divergent_list.append(key)
-
-            if delta_khz > max_delta:
-                max_delta = delta_khz
-
-            jax_unc = (
-                float(jax_uncertainties[key])
-                if jax_uncertainties is not None and key in jax_uncertainties and jax_uncertainties[key] is not None
-                else None
-            )
-            spfit_unc = (
-                float(spfit_uncertainties[key])
-                if spfit_uncertainties is not None and key in spfit_uncertainties and spfit_uncertainties[key] is not None
-                else None
-            )
-
-            status_emoji = "⚠️" if is_divergent else "✅"
-
-            contrast_table[key] = {
-                "jax_mhz": val_jax,
-                "spfit_mhz": val_spfit,
-                "delta_khz": delta_khz,
-                "status": status_emoji,
-                "is_divergent": is_divergent,
-                "jax_unc": jax_unc,
-                "spfit_unc": spfit_unc,
-                "jax_unc_mhz": jax_unc,
-                "spfit_unc_mhz": spfit_unc,
-            }
-
-        status = ParityStatus.WARNING if len(divergent_list) > 0 else ParityStatus.VERIFIED
-
-        return ParityWarning(
-            status=status,
-            max_delta_khz=float(max_delta),
-            divergent_constants=tuple(divergent_list),
-            contrast_table=contrast_table,
-            jax_uncertainties=dict(jax_uncertainties) if jax_uncertainties is not None else None,
-            spfit_uncertainties=dict(spfit_uncertainties) if spfit_uncertainties is not None else None,
-        )
-
-    @staticmethod
-    def format_contrast_dataframe(warning: ParityWarning) -> Any:
-        """Format contrast table from a ParityWarning into a presentation pandas DataFrame.
-
-        Deferred pandas import to preserve zero-overhead CLI startup.
-
-        Args:
-            warning: ParityWarning object to format.
-
-        Returns:
-            pandas.DataFrame with columns ['Constant', 'JAX (MHz)', 'SPFIT (MHz)', 'Δ (kHz)', 'Status'].
+        Parameters
+        ----------
+        raw_features : np.ndarray
+            Shape (N, N_features). Raw feature matrix from extract_raw_features.
         """
-        import pandas as pd  # type: ignore[import-untyped]
+        self._scaler = StandardScaler()
+        self._scaler.fit(raw_features)
+        self._is_fitted = True
 
-        columns = ["Constant", "JAX (MHz)", "SPFIT (MHz)", "Δ (kHz)", "Status"]
-        if not warning.contrast_table:
-            return pd.DataFrame(columns=columns)
+    def transform(self, raw_features: np.ndarray) -> np.ndarray:
+        """Scale features using the fitted StandardScaler.
 
-        rows = []
-        for const_name, data in warning.contrast_table.items():
-            jax_val = data.get("jax_mhz", np.nan)
-            spfit_val = data.get("spfit_mhz", np.nan)
-            delta_khz = data.get("delta_khz", 0.0)
-            status_emoji = data.get("status", "⚠️" if const_name in warning.divergent_constants else "✅")
-            if status_emoji not in ("✅", "⚠️"):
-                status_emoji = "⚠️" if const_name in warning.divergent_constants else "✅"
+        Parameters
+        ----------
+        raw_features : np.ndarray
+            Shape (N, N_features).
 
-            rows.append({
-                "Constant": const_name,
-                "JAX (MHz)": jax_val,
-                "SPFIT (MHz)": spfit_val,
-                "Δ (kHz)": delta_khz,
-                "Status": status_emoji,
-            })
+        Returns
+        -------
+        np.ndarray
+            Normalized feature matrix.
 
-        return pd.DataFrame(rows, columns=columns)
+        Raises
+        ------
+        RuntimeError
+            If the scaler has not been fitted.
+        """
+        if not self._is_fitted or self._scaler is None:
+            raise RuntimeError("Scaler not fitted. Call fit_scaler() first.")
+        return self._scaler.transform(raw_features)
 
+    def fit_transform(
+        self,
+        assignments: Sequence[Tuple[int, int, int, int, int, int, float]],
+        dipole_components: Mapping[str, float],
+        lower_state_energies: Optional[Mapping[Tuple[int, int, int], float]] = None,
+    ) -> np.ndarray:
+        """Extract, fit, and transform features in one atomic call.
 
-format_contrast_dataframe = ParityAuditor.format_contrast_dataframe
+        Parameters
+        ----------
+        assignments : Sequence of 7-tuples
+            Each entry: (J', Ka', Kc', J'', Ka'', Kc'', nu_exp_MHz).
+        dipole_components : Mapping[str, float]
+            {'mu_a': float, 'mu_b': float, 'mu_c': float} in Debye.
+        lower_state_energies : Mapping[Tuple[int, int, int], float], optional
+            Map from (J'', Ka'', Kc'') -> lower-state energy in cm^-1.
+
+        Returns
+        -------
+        np.ndarray
+            Normalized feature matrix of shape (N, 14).
+        """
+        raw = self.extract_raw_features(assignments, dipole_components, lower_state_energies)
+        self.fit_scaler(raw)
+        return self.transform(raw)
+
 
 __all__ = [
-    "ParityAuditor",
-    "ParityStatus",
-    "ParityWarning",
-    "format_contrast_dataframe",
+    "QuantumFeatureExtractor",
 ]
 
---- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_auditor.py ---
-"""Physical unit tests for Mathematical Parity Auditor (JAX autodiff vs. Pickett SPFIT).
+--- D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_features.py ---
+"""Physical unit tests for QuantumFeatureExtractor (spectroscopic ML feature vectorizer).
 
 Strict Zero-Mock & Anti-Spoofing Directive v2 Compliance:
-- Authentic literature rotational and centrifugal distortion constants for H2O.
-- Physical mathematical divergence checks against strict 0.1 kHz threshold.
-- Direct validation of frozen dataclass immutability, boundary conditions, and uncertainty preservation.
+- Authentic literature rotational transitions for H2O and asymmetric rotors.
+- Verification of 14-feature quantum numbers, delta quantum selection rules, dipole components, and energies.
+- Scaler fitting, transform normalization, and stateful invariants.
 - Static AST validation confirming zero synthetic mocks, zero stubs, and zero pass statements.
 """
 
 from __future__ import annotations
 
 import ast
-from dataclasses import FrozenInstanceError
-import math
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Tuple
 
+import numpy as np
 import pytest
 
-from cochem_spycfit.physics_core.cochem_spycfit_auditor import (
-    ParityAuditor,
-    ParityStatus,
-    ParityWarning,
-    format_contrast_dataframe,
-)
+from cochem_spycfit.physics_core.cochem_spycfit_features import QuantumFeatureExtractor
 
 
 @pytest.fixture
-def h2o_constants() -> Dict[str, float]:
-    """Authentic literature Watson A-reduction parameters for H2O in MHz."""
+def h2o_transitions() -> Tuple[Tuple[int, int, int, int, int, int, float], ...]:
+    """Authentic low-J rotational transitions for H2O (nu_exp in MHz).
+
+    Entries: (J', Ka', Kc', J'', Ka'', Kc'', nu_exp_MHz)
+    """
+    return (
+        (1, 1, 0, 1, 0, 1, 556935.985),
+        (2, 1, 1, 2, 0, 2, 752033.227),
+        (3, 1, 2, 3, 0, 3, 1097364.791),
+        (4, 1, 3, 4, 0, 4, 1602219.182),
+        (5, 1, 4, 5, 0, 5, 2264148.770),
+        (1, 1, 1, 0, 0, 0, 1113342.964),
+        (2, 0, 2, 1, 1, 1, 987926.764),
+        (2, 1, 2, 1, 0, 1, 1669904.775),
+        (3, 0, 3, 2, 1, 2, 1716769.318),
+        (3, 1, 3, 2, 0, 2, 2196345.756),
+    )
+
+
+@pytest.fixture
+def h2o_dipole() -> Dict[str, float]:
+    """Authentic permanent dipole components for H2O in Debye."""
     return {
-        "A": 835840.288,
-        "B": 435351.717,
-        "C": 278138.700,
-        "DJ": 37.594,
-        "DJK": -172.91,
-        "DK": 973.29,
-        "dJ": 9.423,
-        "dK": 41.25,
+        "mu_a": 0.0,
+        "mu_b": 1.8546,
+        "mu_c": 0.0,
     }
 
 
-def test_parity_verified_identical_constants(h2o_constants: Dict[str, float]) -> None:
-    """Verify VERIFIED parity status when JAX and SPFIT constants are identical."""
-    auditor = ParityAuditor()
-    warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=h2o_constants)
-
-    assert isinstance(warning, ParityWarning)
-    assert warning.status == ParityStatus.VERIFIED
-    assert warning.status == "VERIFIED"
-    assert warning.is_verified is True
-    assert warning.has_divergence is False
-    assert warning.max_delta_khz == 0.0
-    assert warning.divergent_constants == ()
-    assert len(warning.contrast_table) == len(h2o_constants)
-
-    for const_name in h2o_constants:
-        entry = warning.contrast_table[const_name]
-        assert entry["status"] == "✅"
-        assert entry["delta_khz"] == 0.0
-        assert entry["is_divergent"] is False
-
-
-def test_parity_warning_perturbed_constant(h2o_constants: Dict[str, float]) -> None:
-    """Verify WARNING parity status when constant A is perturbed by +0.0002 MHz (0.2 kHz > 0.1 kHz)."""
-    auditor = ParityAuditor()
-    spfit_constants = dict(h2o_constants)
-    spfit_constants["A"] += 0.0002  # 0.2 kHz divergence
-
-    warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=spfit_constants)
-
-    assert warning.status == ParityStatus.WARNING
-    assert warning.status == "WARNING"
-    assert warning.is_verified is False
-    assert warning.has_divergence is True
-    assert "A" in warning.divergent_constants
-    assert len(warning.divergent_constants) == 1
-    assert warning.max_delta_khz == pytest.approx(0.2, abs=0.001)
-
-    assert warning.contrast_table["A"]["status"] == "⚠️"
-    assert warning.contrast_table["A"]["is_divergent"] is True
-    assert warning.contrast_table["B"]["status"] == "✅"
-    assert warning.contrast_table["B"]["is_divergent"] is False
-
-
-def test_parity_exact_boundary_tolerance(h2o_constants: Dict[str, float]) -> None:
-    """Verify boundary condition: perturbation of exactly 0.0001 MHz (0.1 kHz) remains VERIFIED."""
-    auditor = ParityAuditor()
-    spfit_constants = dict(h2o_constants)
-    spfit_constants["A"] += 0.0001  # Exactly 0.1 kHz = tolerance threshold
-
-    warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=spfit_constants)
-
-    assert warning.status == ParityStatus.VERIFIED
-    assert warning.divergent_constants == ()
-    assert warning.max_delta_khz == pytest.approx(0.1, abs=0.001)
-    assert warning.contrast_table["A"]["status"] == "✅"
-    assert warning.contrast_table["A"]["is_divergent"] is False
-
-
-def test_parity_slight_threshold_breach(h2o_constants: Dict[str, float]) -> None:
-    """Verify boundary breach: perturbation of 0.0001001 MHz (0.1001 kHz > 0.1 kHz) triggers WARNING."""
-    auditor = ParityAuditor()
-    spfit_constants = dict(h2o_constants)
-    spfit_constants["A"] += 0.0001001  # 0.1001 kHz > 0.1 kHz threshold
-
-    warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=spfit_constants)
-
-    assert warning.status == ParityStatus.WARNING
-    assert "A" in warning.divergent_constants
-    assert warning.max_delta_khz == pytest.approx(0.1001, abs=0.001)
-    assert warning.contrast_table["A"]["status"] == "⚠️"
-    assert warning.contrast_table["A"]["is_divergent"] is True
-
-
-def test_uncertainty_preservation(h2o_constants: Dict[str, float]) -> None:
-    """Verify uncertainty preservation when jax_uncertainties and spfit_uncertainties are passed."""
-    auditor = ParityAuditor()
-    jax_unc = {
-        "A": 0.0050,
-        "B": 0.0030,
-        "C": 0.0020,
-        "DJ": 0.0001,
-        "DJK": 0.0010,
-        "DK": 0.0100,
-        "dJ": 0.0001,
-        "dK": 0.0005,
-    }
-    spfit_unc = {
-        "A": 0.0048,
-        "B": 0.0031,
-        "C": 0.0019,
-        "DJ": 0.0001,
-        "DJK": 0.0011,
-        "DK": 0.0098,
-        "dJ": 0.0001,
-        "dK": 0.00049,
+@pytest.fixture
+def h2o_lower_state_energies() -> Dict[Tuple[int, int, int], float]:
+    """Authentic lower state energies for H2O rotational levels in cm^-1."""
+    return {
+        (0, 0, 0): 0.0,
+        (1, 0, 1): 23.794,
+        (1, 1, 1): 37.137,
+        (2, 0, 2): 70.091,
+        (2, 1, 2): 79.496,
+        (3, 0, 3): 136.762,
+        (4, 0, 4): 222.052,
+        (5, 0, 5): 325.348,
     }
 
-    warning = auditor.audit(
-        jax_constants=h2o_constants,
-        spfit_constants=h2o_constants,
-        jax_uncertainties=jax_unc,
-        spfit_uncertainties=spfit_unc,
+
+def test_feature_names_constant() -> None:
+    """Verify FEATURE_NAMES tuple matches exact 14 spectroscopic feature specifications."""
+    expected = (
+        "J_upper", "Ka_upper", "Kc_upper",
+        "J_lower", "Ka_lower", "Kc_lower",
+        "delta_J", "delta_Ka", "delta_Kc",
+        "mu_a", "mu_b", "mu_c",
+        "lower_state_energy_cm",
+        "transition_type",
+    )
+    assert QuantumFeatureExtractor.FEATURE_NAMES == expected
+    assert len(QuantumFeatureExtractor.FEATURE_NAMES) == 14
+
+
+def test_extract_raw_features_shape_and_values(
+    h2o_transitions: Tuple[Tuple[int, int, int, int, int, int, float], ...],
+    h2o_dipole: Dict[str, float],
+    h2o_lower_state_energies: Dict[Tuple[int, int, int], float],
+) -> None:
+    """Verify raw feature matrix extraction shape (N, 14) and exact quantum column mappings."""
+    extractor = QuantumFeatureExtractor()
+    raw = extractor.extract_raw_features(
+        assignments=h2o_transitions,
+        dipole_components=h2o_dipole,
+        lower_state_energies=h2o_lower_state_energies,
     )
 
-    assert warning.jax_uncertainties == jax_unc
-    assert warning.spfit_uncertainties == spfit_unc
-    assert warning.contrast_table["A"]["jax_unc"] == 0.0050
-    assert warning.contrast_table["A"]["spfit_unc"] == 0.0048
-    assert warning.contrast_table["DK"]["jax_unc"] == 0.0100
-    assert warning.contrast_table["DK"]["spfit_unc"] == 0.0098
+    assert isinstance(raw, np.ndarray)
+    assert raw.shape == (10, 14)
+    assert raw.dtype == np.float64
+
+    # Check first transition: (1, 1, 0, 1, 0, 1, 556935.985)
+    # J_u=1, Ka_u=1, Kc_u=0, J_l=1, Ka_l=0, Kc_l=1
+    # delta_J=0, delta_Ka=1, delta_Kc=-1
+    assert raw[0, 0] == 1.0
+    assert raw[0, 1] == 1.0
+    assert raw[0, 2] == 0.0
+    assert raw[0, 3] == 1.0
+    assert raw[0, 4] == 0.0
+    assert raw[0, 5] == 1.0
+    assert raw[0, 6] == 0.0  # delta_J = 1 - 1
+    assert raw[0, 7] == 1.0  # delta_Ka = 1 - 0
+    assert raw[0, 8] == -1.0  # delta_Kc = 0 - 1
+
+    # Dipole components: mu_a=0.0, mu_b=1.8546, mu_c=0.0
+    assert raw[0, 9] == 0.0
+    assert raw[0, 10] == 1.8546
+    assert raw[0, 11] == 0.0
+
+    # Lower state energy for (1, 0, 1) -> 23.794 cm^-1
+    assert raw[0, 12] == 23.794
+
+    # Transition type: dk_a = |1-0|=1, dk_c = |0-1|=1 -> b-type (1)
+    assert raw[0, 13] == 1.0
 
 
-def test_disjoint_constant_sets() -> None:
-    """Verify that when parameter sets are disjoint, only common keys are audited."""
-    auditor = ParityAuditor()
-    jax_constants = {
-        "A": 835840.288,
-        "B": 435351.717,
-        "C": 278138.700,
-        "HJ": 0.0001,
-    }
-    spfit_constants = {
-        "A": 835840.288,
-        "B": 435351.717,
-        "C": 278138.700,
-        "LK": 0.00005,
-    }
+def test_transition_type_classification() -> None:
+    """Verify transition type classification for a-type (0), b-type (1), and c-type (2)."""
+    extractor = QuantumFeatureExtractor()
 
-    warning = auditor.audit(jax_constants=jax_constants, spfit_constants=spfit_constants)
-
-    assert warning.status == ParityStatus.VERIFIED
-    assert warning.max_delta_khz == 0.0
-    assert warning.divergent_constants == ()
-    assert set(warning.contrast_table.keys()) == {"A", "B", "C"}
-    assert "HJ" not in warning.contrast_table
-    assert "LK" not in warning.contrast_table
-
-
-def test_format_contrast_dataframe(h2o_constants: Dict[str, float]) -> None:
-    """Verify format_contrast_dataframe returns valid pandas DataFrame with correct columns and emojis."""
-    import pandas as pd  # type: ignore[import-untyped]
-
-    auditor = ParityAuditor()
-    spfit_constants = dict(h2o_constants)
-    spfit_constants["A"] += 0.0003  # 0.3 kHz divergence (⚠️)
-    spfit_constants["B"] += 0.00005  # 0.05 kHz within tolerance (✅)
-
-    warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=spfit_constants)
-    df = auditor.format_contrast_dataframe(warning)
-
-    assert isinstance(df, pd.DataFrame)
-    assert list(df.columns) == ["Constant", "JAX (MHz)", "SPFIT (MHz)", "Δ (kHz)", "Status"]
-    assert len(df) == len(h2o_constants)
-
-    a_row = df[df["Constant"] == "A"].iloc[0]
-    assert a_row["Status"] == "⚠️"
-    assert a_row["Δ (kHz)"] == pytest.approx(0.3, abs=0.001)
-
-    b_row = df[df["Constant"] == "B"].iloc[0]
-    assert b_row["Status"] == "✅"
-    assert b_row["Δ (kHz)"] == pytest.approx(0.05, abs=0.001)
-
-    # Test direct module-level function call
-    df_direct = format_contrast_dataframe(warning)
-    assert isinstance(df_direct, pd.DataFrame)
-    assert list(df_direct.columns) == list(df.columns)
-    assert len(df_direct) == len(df)
-
-    # Test instance helper method parity
-    df_helper = warning.to_dataframe()
-    assert isinstance(df_helper, pd.DataFrame)
-    assert list(df_helper.columns) == list(df.columns)
-    assert len(df_helper) == len(df)
-
-
-def test_dataclass_immutability(h2o_constants: Dict[str, float]) -> None:
-    """Verify ParityWarning is a strictly frozen immutable dataclass."""
-    auditor = ParityAuditor()
-    warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=h2o_constants)
-
-    with pytest.raises(FrozenInstanceError):
-        warning.status = ParityStatus.WARNING  # type: ignore[misc]
-
-    with pytest.raises(FrozenInstanceError):
-        warning.max_delta_khz = 100.0  # type: ignore[misc]
-
-    with pytest.raises(FrozenInstanceError):
-        warning.divergent_constants = ("A",)  # type: ignore[misc]
-
-
-def test_spfit_failed_state(h2o_constants: Dict[str, float]) -> None:
-    """Verify SPFIT_FAILED state when spfit_constants is None."""
-    auditor = ParityAuditor()
-    warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=None)
-
-    assert warning.status == ParityStatus.SPFIT_FAILED
-    assert warning.is_verified is False
-    assert math.isinf(warning.max_delta_khz)
-    assert warning.contrast_table == {}
-    assert set(warning.divergent_constants) == set(h2o_constants.keys())
-
-
-def test_custom_tolerance(h2o_constants: Dict[str, float]) -> None:
-    """Verify custom tolerance thresholds via constructor and method argument overrides."""
-    auditor_relaxed = ParityAuditor(default_tolerance_khz=0.5)
-    spfit_constants = dict(h2o_constants)
-    spfit_constants["A"] += 0.0003  # 0.3 kHz divergence
-
-    # Relaxed tolerance of 0.5 kHz accepts 0.3 kHz delta
-    warning_relaxed = auditor_relaxed.audit(jax_constants=h2o_constants, spfit_constants=spfit_constants)
-    assert warning_relaxed.status == ParityStatus.VERIFIED
-
-    # Overridden strict tolerance of 0.1 kHz flags 0.3 kHz delta
-    warning_strict = auditor_relaxed.audit(
-        jax_constants=h2o_constants,
-        spfit_constants=spfit_constants,
-        tolerance_khz=0.1,
+    # a-type: ΔKa = 0, ΔKc = ±1  e.g. 2(1,1) <- 1(1,0) [Ka_u=1, Ka_l=1 -> dk_a=0]
+    # b-type: ΔKa = ±1, ΔKc = ±1 e.g. 1(1,1) <- 0(0,0) [Ka_u=1, Ka_l=0, Kc_u=1, Kc_l=0]
+    # c-type: ΔKa = ±1, ΔKc = 0  e.g. 1(1,0) <- 0(0,0) [Ka_u=1, Ka_l=0, Kc_u=0, Kc_l=0 -> dk_c=0]
+    transitions = (
+        (2, 1, 1, 1, 1, 0, 100000.0),  # a-type -> 0
+        (1, 1, 1, 0, 0, 0, 200000.0),  # b-type -> 1
+        (1, 1, 0, 0, 0, 0, 300000.0),  # c-type -> 2
     )
-    assert warning_strict.status == ParityStatus.WARNING
-    assert "A" in warning_strict.divergent_constants
+    dipole = {"mu_a": 1.0, "mu_b": 2.0, "mu_c": 3.0}
+    raw = extractor.extract_raw_features(transitions, dipole)
+
+    assert raw[0, 13] == 0.0  # a-type
+    assert raw[1, 13] == 1.0  # b-type
+    assert raw[2, 13] == 2.0  # c-type
 
 
-def test_multiple_divergences(h2o_constants: Dict[str, float]) -> None:
-    """Verify handling of multiple diverging parameters."""
-    auditor = ParityAuditor()
-    spfit_constants = dict(h2o_constants)
-    spfit_constants["A"] += 0.0005  # 0.5 kHz
-    spfit_constants["DJK"] += 0.0008  # 0.8 kHz
+def test_dipole_and_energy_defaults(
+    h2o_transitions: Tuple[Tuple[int, int, int, int, int, int, float], ...]
+) -> None:
+    """Verify missing dipole keys and missing lower-state energies default gracefully to 0.0."""
+    extractor = QuantumFeatureExtractor()
+    raw = extractor.extract_raw_features(
+        assignments=h2o_transitions[:3],
+        dipole_components={},  # Empty dipole dict
+        lower_state_energies=None,  # No lower state energies
+    )
 
-    warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=spfit_constants)
+    assert raw.shape == (3, 14)
+    # Dipoles must be 0.0
+    assert np.all(raw[:, 9:12] == 0.0)
+    # Lower state energy must be 0.0
+    assert np.all(raw[:, 12] == 0.0)
 
-    assert warning.status == ParityStatus.WARNING
-    assert set(warning.divergent_constants) == {"A", "DJK"}
-    assert warning.max_delta_khz == pytest.approx(0.8, abs=0.001)
+
+def test_fit_scaler_and_transform(
+    h2o_transitions: Tuple[Tuple[int, int, int, int, int, int, float], ...],
+    h2o_dipole: Dict[str, float],
+    h2o_lower_state_energies: Dict[Tuple[int, int, int], float],
+) -> None:
+    """Verify StandardScaler fitting, scaling, and zero-mean unit-variance transformation."""
+    extractor = QuantumFeatureExtractor()
+    assert extractor.is_fitted is False
+    assert extractor.scaler is None
+
+    raw = extractor.extract_raw_features(
+        assignments=h2o_transitions,
+        dipole_components=h2o_dipole,
+        lower_state_energies=h2o_lower_state_energies,
+    )
+
+    extractor.fit_scaler(raw)
+    assert extractor.is_fitted is True
+    assert extractor.scaler is not None
+
+    scaled = extractor.transform(raw)
+    assert scaled.shape == raw.shape
+    assert isinstance(scaled, np.ndarray)
+
+    # For columns with non-zero variance, verify mean is ~0 and std is ~1
+    for col in range(raw.shape[1]):
+        col_raw = raw[:, col]
+        if np.std(col_raw) > 1e-9:
+            assert np.mean(scaled[:, col]) == pytest.approx(0.0, abs=1e-7)
+            assert np.std(scaled[:, col]) == pytest.approx(1.0, abs=1e-7)
 
 
-def test_dual_tree_parity_exports() -> None:
-    """Verify dual-tree imports from src and proxy directories are properly exported."""
-    import cochem_spycfit.physics_core as proxy_core
+def test_fit_transform_equivalence(
+    h2o_transitions: Tuple[Tuple[int, int, int, int, int, int, float], ...],
+    h2o_dipole: Dict[str, float],
+    h2o_lower_state_energies: Dict[Tuple[int, int, int], float],
+) -> None:
+    """Verify fit_transform produces identical result to fit_scaler + transform."""
+    extractor_1 = QuantumFeatureExtractor()
+    scaled_1 = extractor_1.fit_transform(
+        assignments=h2o_transitions,
+        dipole_components=h2o_dipole,
+        lower_state_energies=h2o_lower_state_energies,
+    )
+
+    extractor_2 = QuantumFeatureExtractor()
+    raw_2 = extractor_2.extract_raw_features(
+        assignments=h2o_transitions,
+        dipole_components=h2o_dipole,
+        lower_state_energies=h2o_lower_state_energies,
+    )
+    extractor_2.fit_scaler(raw_2)
+    scaled_2 = extractor_2.transform(raw_2)
+
+    np.testing.assert_allclose(scaled_1, scaled_2, rtol=1e-12, atol=1e-12)
+
+
+def test_unfitted_transform_raises() -> None:
+    """Verify calling transform() on an unfitted QuantumFeatureExtractor raises RuntimeError."""
+    extractor = QuantumFeatureExtractor()
+    dummy_input = np.ones((5, 14), dtype=np.float64)
+
+    with pytest.raises(RuntimeError, match="Scaler not fitted. Call fit_scaler\\(\\) first."):
+        extractor.transform(dummy_input)
+
+
+def test_empty_assignments() -> None:
+    """Verify extract_raw_features gracefully handles empty assignments tuple."""
+    extractor = QuantumFeatureExtractor()
+    raw = extractor.extract_raw_features(
+        assignments=(),
+        dipole_components={"mu_a": 1.0},
+    )
+    assert raw.shape == (0, 14)
+
+
+def test_dual_tree_exports() -> None:
+    """Verify QuantumFeatureExtractor is exportable from root and src physics_core packages."""
+    import cochem_spycfit.physics_core as root_core
     import src.cochem_spycfit.physics_core as src_core
 
-    assert hasattr(src_core, "ParityAuditor")
-    assert hasattr(src_core, "ParityStatus")
-    assert hasattr(src_core, "ParityWarning")
-    assert hasattr(src_core, "format_contrast_dataframe")
+    assert hasattr(root_core, "QuantumFeatureExtractor")
+    assert hasattr(src_core, "QuantumFeatureExtractor")
 
-    assert hasattr(proxy_core, "ParityAuditor")
-    assert hasattr(proxy_core, "ParityStatus")
-    assert hasattr(proxy_core, "ParityWarning")
-    assert hasattr(proxy_core, "format_contrast_dataframe")
+    from cochem_spycfit.physics_core.cochem_spycfit_features import (
+        QuantumFeatureExtractor as ExtractorRoot,
+    )
+    from src.cochem_spycfit.physics_core.cochem_spycfit_features import (
+        QuantumFeatureExtractor as ExtractorSrc,
+    )
 
-    assert "ParityAuditor" in src_core.__all__
-    assert "ParityStatus" in src_core.__all__
-    assert "ParityWarning" in src_core.__all__
-    assert "format_contrast_dataframe" in src_core.__all__
-
-    assert "ParityAuditor" in proxy_core.__all__
-    assert "ParityStatus" in proxy_core.__all__
-    assert "ParityWarning" in proxy_core.__all__
-    assert "format_contrast_dataframe" in proxy_core.__all__
+    assert ExtractorRoot is not None
+    assert ExtractorSrc is not None
 
 
-def test_anti_spoofing_compliance_ast() -> None:
-    """Enforce strict Zero-Mock and Anti-Spoofing rules via AST inspection."""
-    test_file = Path(__file__).resolve()
-    impl_file = test_file.parent.parent / "src" / "cochem_spycfit" / "physics_core" / "cochem_spycfit_auditor.py"
+def test_anti_spoofing_ast() -> None:
+    """Verify zero mocks, stubs, or fake implementations exist in the test and implementation."""
+    test_path = Path(__file__).resolve()
+    impl_src_path = test_path.parent.parent / "src" / "cochem_spycfit" / "physics_core" / "cochem_spycfit_features.py"
+    impl_root_path = test_path.parent.parent / "cochem_spycfit" / "physics_core" / "cochem_spycfit_features.py"
 
-    for file_path in [test_file, impl_file]:
+    for file_path in [test_path, impl_src_path, impl_root_path]:
+        if not file_path.exists():
+            continue
         tree = ast.parse(file_path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):

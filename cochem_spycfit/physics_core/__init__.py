@@ -112,6 +112,9 @@ from src.cochem_spycfit.physics_core.cochem_spycfit_auditor import (
     ParityWarning,
     format_contrast_dataframe,
 )
+from src.cochem_spycfit.physics_core.cochem_spycfit_features import (
+    QuantumFeatureExtractor,
+)
 
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
@@ -217,5 +220,7 @@ __all__ = [
     "ParityStatus",
     "ParityWarning",
     "format_contrast_dataframe",
+    # Quantum Feature Extractor
+    "QuantumFeatureExtractor",
 ]
 

@@ -212,6 +212,9 @@ from .cochem_spycfit_auditor import (
     ParityWarning,
     format_contrast_dataframe,
 )
+from .cochem_spycfit_features import (
+    QuantumFeatureExtractor,
+)
 
 __all__ = [
     # Extractor & Tensor Core
@@ -407,5 +410,7 @@ __all__ = [
     "ParityStatus",
     "ParityWarning",
     "format_contrast_dataframe",
+    # Quantum Feature Extractor
+    "QuantumFeatureExtractor",
 ]
 
