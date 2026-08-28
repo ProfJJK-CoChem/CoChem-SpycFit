@@ -76,6 +76,11 @@ from cochem_spycfit.serialization.cochem_spcat_bridge import (
     resolve_fortran_binary,
     write_spycfit_telemetry,
 )
+from cochem_spycfit.serialization.cochem_spycfit_spcat_wrapper import (
+    PARAM_ID_TO_NAME_MAP,
+    SPFIT_WATSON_A_PARAM_MAP,
+    SpfitSandbox,
+)
 
 __all__ = [
     "CatalogCompilerConfig",
@@ -140,4 +145,7 @@ __all__ = [
     "stream_chunked_catalog",
     "verify_catalog_integrity",
     "write_spycfit_telemetry",
+    "SpfitSandbox",
+    "SPFIT_WATSON_A_PARAM_MAP",
+    "PARAM_ID_TO_NAME_MAP",
 ]

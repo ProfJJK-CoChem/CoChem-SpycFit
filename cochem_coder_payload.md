@@ -1,1 +1,4 @@
-Cycle 1: Implement code for prompt at D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.in-progress\02_P2_T01_jax_hamiltonian_driver.md strictly adhering to Zero-Mock mandate. Target repo is D:\__CoChem\GitHub-Repo\CoChem-SpycFit. Generate unit tests first. IMPORTANT: You MUST update/create `pytest.ini` to restrict `testpaths` to ONLY the tests you are writing for this prompt, otherwise the global 1500+ test suite will run and crash your context. 
+Cycle 3: Implement code for prompt at D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit-ML\.in-progress\02_P2_T02_spcat_spfit_sandbox_wrapper.md strictly adhering to Zero-Mock mandate. Target repo is D:\__CoChem\GitHub-Repo\CoChem-SpycFit. Generate unit tests first. IMPORTANT: You MUST update/create `pytest.ini` to restrict `testpaths` to ONLY the tests you are writing for this prompt, otherwise the global 1500+ test suite will run and crash your context. 
+Test Failures from previous run:
+Zero-Mock mandate violation:
+Mock usage found in D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\test_cochem_spycfit_spcat_wrapper.py
