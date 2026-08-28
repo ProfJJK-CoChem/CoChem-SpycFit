@@ -3,36 +3,26 @@ Thread-safe SWMR HDF5 TensorCache for out-of-core spectroscopic matrix persisten
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 from pathlib import Path
 import threading
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
+from filelock import FileLock
 import h5py
 import numpy as np
 
 _logger = logging.getLogger("CoChem-SpycFit.TensorCache")
 
-_cache_path_locks: Dict[Path, threading.RLock] = {}
-_cache_path_locks_guard = threading.Lock()
-
-
-def _get_path_lock(path: Path) -> threading.RLock:
-    """Retrieve or create a re-entrant lock for a specific resolved filesystem path."""
-    with _cache_path_locks_guard:
-        resolved = path.resolve()
-        if resolved not in _cache_path_locks:
-            _cache_path_locks[resolved] = threading.RLock()
-        return _cache_path_locks[resolved]
-
 
 class TensorCache:
     """
-    Thread-Safe Single-Writer Multiple-Reader (SWMR) HDF5 Tensor Cache.
+    Thread-safe, cross-process SWMR HDF5 tensor cache for FitState heavy data.
 
-    Persists heavy float64 covariance matrices, Hamiltonian sub-blocks,
+    Persists heavy float64 covariance matrices, Hamiltonian eigenvectors,
     and Gaussian Process weight vectors indexed by FitState state_id hashes.
     """
 
@@ -47,14 +37,18 @@ class TensorCache:
         Parameters
         ----------
         cache_path : str or Path, optional
-            Explicit filesystem path to the HDF5 cache file.
-            If None, resolved via COCHEM_ARTIFACTS_ROOT, config file, or default.
+            Absolute path to the HDF5 cache file. Defaults to
+            Path.home() / "CoChem_Artifacts" / "spycfit_tensor_cache.h5".
+            Honors COCHEM_ARTIFACTS_ROOT environment variable.
         lustre_bypass : bool, default False
-            If True, bypasses advisory file locks for HPC/Lustre parallel filesystems.
+            If True, disables advisory file locks for Lustre/NFS parallel
+            filesystems where POSIX locks are unreliable.
         """
         self._cache_path: Path = self._resolve_cache_path(cache_path)
         self._lustre_bypass: bool = bool(lustre_bypass)
-        self._lock: threading.RLock = _get_path_lock(self._cache_path)
+        self._thread_lock: threading.RLock = threading.RLock()
+        lock_path = self._cache_path.with_suffix(".lock")
+        self._file_lock: FileLock = FileLock(str(lock_path), timeout=30)
 
     @property
     def cache_path(self) -> Path:
@@ -70,160 +64,223 @@ class TensorCache:
         self,
         state_id: str,
         covariance: Optional[np.ndarray] = None,
-        gp_weights: Optional[np.ndarray] = None,
         hamiltonian: Optional[np.ndarray] = None,
+        gp_weights: Optional[np.ndarray] = None,
         **extra_tensors: np.ndarray,
     ) -> None:
         """
-        Store spectroscopic tensors for a specific FitState state_id.
+        Chunk and write heavy spectroscopic tensors to HDF5, indexed by state_id.
 
         Parameters
         ----------
         state_id : str
-            SHA-256 hash identifying the FitState commit.
+            Unique state identifier hash for the FitState commit.
         covariance : np.ndarray, optional
             Fitted parameter covariance matrix (typically 6x6 float64).
-        gp_weights : np.ndarray, optional
-            Gaussian Process regression weight vector (length-20 float64).
         hamiltonian : np.ndarray, optional
             Asymmetric rotor Hamiltonian matrix or block.
+        gp_weights : np.ndarray, optional
+            Gaussian Process regression weight vector (length-20 float64).
         **extra_tensors : np.ndarray
             Additional named tensor arrays to persist under the state group.
         """
-        with self._lock:
-            self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+        # Guard 1: In-process thread lock
+        with self._thread_lock:
+            # Guard 2: Cross-process file lock (skip on Lustre/NFS)
+            lock_ctx = (
+                contextlib.nullcontext()
+                if self._lustre_bypass
+                else self._file_lock
+            )
+            with lock_ctx:
+                self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+                # Guard 3: SWMR-mode HDF5 write
+                with h5py.File(str(self._cache_path), "a", libver="latest") as f:
+                    try:
+                        f.swmr_mode = True
+                    except (ValueError, OSError, RuntimeError):
+                        pass
 
-            with h5py.File(str(self._cache_path), "a", libver="latest") as h5_file:
-                if state_id in h5_file:
-                    state_group = h5_file[state_id]
-                else:
-                    state_group = h5_file.create_group(state_id)
+                    group = f.require_group(state_id)
 
-                tensors_to_write: Dict[str, np.ndarray] = {}
-                if covariance is not None:
-                    tensors_to_write["covariance"] = np.asarray(covariance, dtype=np.float64)
-                if gp_weights is not None:
-                    tensors_to_write["gp_weights"] = np.asarray(gp_weights, dtype=np.float64)
-                if hamiltonian is not None:
-                    tensors_to_write["hamiltonian"] = np.asarray(hamiltonian, dtype=np.float64)
+                    tensors_to_write: Dict[str, np.ndarray] = {}
+                    if covariance is not None:
+                        tensors_to_write["covariance"] = np.asarray(covariance, dtype=np.float64)
+                    if hamiltonian is not None:
+                        tensors_to_write["hamiltonian"] = np.asarray(hamiltonian, dtype=np.float64)
+                    if gp_weights is not None:
+                        tensors_to_write["gp_weights"] = np.asarray(gp_weights, dtype=np.float64)
 
-                for key, tensor in extra_tensors.items():
-                    if tensor is not None:
-                        tensors_to_write[key] = np.asarray(tensor, dtype=np.float64)
+                    for extra_key, extra_val in extra_tensors.items():
+                        if extra_val is not None:
+                            tensors_to_write[extra_key] = np.asarray(extra_val, dtype=np.float64)
 
-                for tensor_name, tensor_data in tensors_to_write.items():
-                    if tensor_name in state_group:
-                        del state_group[tensor_name]
-                    state_group.create_dataset(
-                        tensor_name,
-                        data=tensor_data,
-                        dtype=np.float64,
-                    )
-
-                h5_file.flush()
+                    for key, data in tensors_to_write.items():
+                        if key in group:
+                            del group[key]
+                        group.create_dataset(
+                            key,
+                            data=data,
+                            chunks=True,
+                            compression="gzip",
+                            compression_opts=4,
+                        )
+                    f.flush()
 
     def restore_state_tensors(self, state_id: str) -> Dict[str, np.ndarray]:
         """
-        Retrieve all stored tensors for a specific FitState in <100ms.
+        Retrieve all tensors for a given state_id from HDF5 into RAM in <100 ms.
 
         Parameters
         ----------
         state_id : str
-            SHA-256 hash identifying the FitState commit.
+            Unique state identifier hash for the FitState commit.
 
         Returns
         -------
         dict[str, np.ndarray]
-            Dictionary mapping tensor names to high-precision float64 numpy arrays.
+            Dictionary mapping tensor keys to high-precision float64 numpy arrays.
 
         Raises
         ------
         KeyError
-            If the cache file does not exist or the state_id is not cached.
+            If the cache file does not exist or the state_id is not found in cache.
         """
-        with self._lock:
-            if not self._cache_path.exists() or not self._cache_path.is_file():
-                raise KeyError(
-                    f"Tensor cache file '{self._cache_path}' does not exist."
-                )
-
-            with h5py.File(str(self._cache_path), "r", libver="latest", swmr=False) as h5_file:
-                if state_id not in h5_file:
+        # Guard 1: In-process thread lock
+        with self._thread_lock:
+            # Guard 2: Cross-process file lock (skip on Lustre/NFS)
+            lock_ctx = (
+                contextlib.nullcontext()
+                if self._lustre_bypass
+                else self._file_lock
+            )
+            with lock_ctx:
+                if not self._cache_path.exists() or not self._cache_path.is_file():
                     raise KeyError(
-                        f"State ID '{state_id}' not found in tensor cache."
+                        f"Tensor cache file '{self._cache_path}' does not exist."
                     )
 
-                state_group = h5_file[state_id]
-                restored_dict: Dict[str, np.ndarray] = {}
-                for key in state_group.keys():
-                    dataset = state_group[key]
-                    restored_dict[key] = np.array(dataset, dtype=np.float64)
+                # Guard 3: SWMR-mode HDF5 read
+                try:
+                    f = h5py.File(str(self._cache_path), "r", libver="latest", swmr=True)
+                except (ValueError, OSError, RuntimeError):
+                    f = h5py.File(str(self._cache_path), "r", libver="latest")
 
-                return restored_dict
+                with f:
+                    if state_id not in f:
+                        raise KeyError(
+                            f"State ID '{state_id}' not found in tensor cache."
+                        )
+
+                    group = f[state_id]
+                    restored: Dict[str, np.ndarray] = {}
+                    for key in group.keys():
+                        dataset = group[key]
+                        restored[key] = np.asarray(dataset, dtype=np.float64)
+
+                    return restored
+
+    def delete_state_tensors(self, state_id: str) -> None:
+        """
+        Remove a state's tensor group from the cache (used during DAG branch purging).
+
+        Parameters
+        ----------
+        state_id : str
+            Unique state identifier hash for the FitState commit to remove.
+        """
+        # Guard 1: In-process thread lock
+        with self._thread_lock:
+            # Guard 2: Cross-process file lock (skip on Lustre/NFS)
+            lock_ctx = (
+                contextlib.nullcontext()
+                if self._lustre_bypass
+                else self._file_lock
+            )
+            with lock_ctx:
+                if not self._cache_path.exists() or not self._cache_path.is_file():
+                    return
+
+                with h5py.File(str(self._cache_path), "a", libver="latest") as f:
+                    try:
+                        f.swmr_mode = True
+                    except (ValueError, OSError, RuntimeError):
+                        pass
+
+                    if state_id in f:
+                        del f[state_id]
+                        f.flush()
 
     def list_cached_states(self) -> List[str]:
         """
-        Return a list of all state_id hashes currently stored in the cache.
+        Return all state_id keys currently in the HDF5 file.
 
         Returns
         -------
         list[str]
             List of state_id string keys.
         """
-        with self._lock:
-            if not self._cache_path.exists() or not self._cache_path.is_file():
-                return []
+        # Guard 1: In-process thread lock
+        with self._thread_lock:
+            # Guard 2: Cross-process file lock (skip on Lustre/NFS)
+            lock_ctx = (
+                contextlib.nullcontext()
+                if self._lustre_bypass
+                else self._file_lock
+            )
+            with lock_ctx:
+                if not self._cache_path.exists() or not self._cache_path.is_file():
+                    return []
 
-            with h5py.File(str(self._cache_path), "r", libver="latest", swmr=False) as h5_file:
-                return list(h5_file.keys())
+                try:
+                    f = h5py.File(str(self._cache_path), "r", libver="latest", swmr=True)
+                except (ValueError, OSError, RuntimeError):
+                    f = h5py.File(str(self._cache_path), "r", libver="latest")
 
-    def delete_state_tensors(self, state_id: str) -> None:
+                with f:
+                    return list(f.keys())
+
+    def _write_dataset(self, state_id: str, key: str, data: np.ndarray) -> None:
         """
-        Remove stored tensors for a specific FitState commit.
+        Write a tensor dataset to the HDF5 cache under a state_id group.
 
         Parameters
         ----------
         state_id : str
-            SHA-256 hash identifying the FitState commit to delete.
-        """
-        with self._lock:
-            if not self._cache_path.exists() or not self._cache_path.is_file():
-                return
-
-            with h5py.File(str(self._cache_path), "a", libver="latest") as h5_file:
-                if state_id in h5_file:
-                    del h5_file[state_id]
-                    h5_file.flush()
-
-    def _write_dataset(self, state_id: str, name: str, tensor: np.ndarray) -> None:
-        """
-        Write or replace an individual dataset array under a state group.
-
-        Parameters
-        ----------
-        state_id : str
-            SHA-256 hash identifying the FitState commit.
-        name : str
+            Unique state identifier hash.
+        key : str
             Dataset name key.
-        tensor : np.ndarray
-            Numpy array to write as float64.
+        data : np.ndarray
+            Numpy array to persist.
         """
-        with self._lock:
-            self._cache_path.parent.mkdir(parents=True, exist_ok=True)
-            with h5py.File(str(self._cache_path), "a", libver="latest") as h5_file:
-                if state_id in h5_file:
-                    state_group = h5_file[state_id]
-                else:
-                    state_group = h5_file.create_group(state_id)
+        # Guard 1: In-process thread lock
+        with self._thread_lock:
+            # Guard 2: Cross-process file lock (skip on Lustre/NFS)
+            lock_ctx = (
+                contextlib.nullcontext()
+                if self._lustre_bypass
+                else self._file_lock
+            )
+            with lock_ctx:
+                self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+                # Guard 3: SWMR-mode HDF5 write
+                with h5py.File(str(self._cache_path), "a", libver="latest") as f:
+                    try:
+                        f.swmr_mode = True
+                    except (ValueError, OSError, RuntimeError):
+                        pass
 
-                if name in state_group:
-                    del state_group[name]
-                state_group.create_dataset(
-                    name,
-                    data=np.asarray(tensor, dtype=np.float64),
-                    dtype=np.float64,
-                )
-                h5_file.flush()
+                    group = f.require_group(state_id)
+                    if key in group:
+                        del group[key]
+                    group.create_dataset(
+                        key,
+                        data=np.asarray(data, dtype=np.float64),
+                        chunks=True,
+                        compression="gzip",
+                        compression_opts=4,
+                    )
+                    f.flush()
 
     def get_cache_size_bytes(self) -> int:
         """
@@ -234,7 +291,7 @@ class TensorCache:
         int
             Size in bytes, or 0 if the cache file does not exist.
         """
-        with self._lock:
+        with self._thread_lock:
             if self._cache_path.exists() and self._cache_path.is_file():
                 return self._cache_path.stat().st_size
             return 0
@@ -242,16 +299,16 @@ class TensorCache:
     @staticmethod
     def _resolve_cache_path(user_path: Optional[Union[str, Path]]) -> Path:
         """
-        Resolve the tensor cache HDF5 path via the CoChem hierarchy:
+        Resolve the HDF5 cache file path using the Tier 2 hierarchy:
         1. Explicit user_path argument.
         2. COCHEM_ARTIFACTS_ROOT environment variable.
         3. cochem_system_config.json configuration file.
-        4. Default: Path.home() / "CoChem_Artifacts" / "spycfit_tensor_cache.h5".
+        4. Default fallback: Path.home() / "CoChem_Artifacts" / "spycfit_tensor_cache.h5".
 
         Parameters
         ----------
         user_path : str or Path, optional
-            Caller-specified path.
+            User specified path.
 
         Returns
         -------
@@ -261,18 +318,18 @@ class TensorCache:
         if user_path is not None:
             return Path(user_path).resolve()
 
-        env_root = os.environ.get("COCHEM_ARTIFACTS_ROOT")
-        if env_root:
-            return (Path(env_root) / "spycfit_tensor_cache.h5").resolve()
+        artifacts_root = os.environ.get("COCHEM_ARTIFACTS_ROOT")
+        if artifacts_root:
+            return (Path(artifacts_root) / "spycfit_tensor_cache.h5").resolve()
 
         default_dir = Path.home() / "CoChem_Artifacts"
-        config_candidate = default_dir / "Registry" / "cochem_system_config.json"
-        if config_candidate.exists() and config_candidate.is_file():
+        config_path = default_dir / "Registry" / "cochem_system_config.json"
+        if config_path.exists() and config_path.is_file():
             try:
-                with open(config_candidate, "r", encoding="utf-8") as f:
-                    config_data = json.load(f)
-                if isinstance(config_data, dict) and "tensor_cache_path" in config_data:
-                    return Path(config_data["tensor_cache_path"]).resolve()
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                if isinstance(config, dict) and "tensor_cache_path" in config:
+                    return Path(config["tensor_cache_path"]).resolve()
             except Exception as _err:
                 _logger.debug("Failed reading system config: %s", _err)
 
@@ -285,8 +342,12 @@ class TensorCache:
 
     def __contains__(self, state_id: str) -> bool:
         """Check if a state_id exists in the cache container."""
-        with self._lock:
+        with self._thread_lock:
             if not self._cache_path.exists() or not self._cache_path.is_file():
                 return False
-            with h5py.File(str(self._cache_path), "r", libver="latest", swmr=False) as h5_file:
-                return state_id in h5_file
+            try:
+                f = h5py.File(str(self._cache_path), "r", libver="latest", swmr=True)
+            except (ValueError, OSError, RuntimeError):
+                f = h5py.File(str(self._cache_path), "r", libver="latest")
+            with f:
+                return state_id in f
