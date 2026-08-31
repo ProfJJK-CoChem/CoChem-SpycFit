@@ -9,13 +9,82 @@ Provenance:
 from __future__ import annotations
 
 from enum import Enum
+import hashlib
+import json
 import re
-from typing import Dict, List, Literal, Optional, Set, Tuple
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from cochem.core.models import (
     IncompatibleAuxiliaryBasisError,
     RIConfigurationPayload,
 )
+
+
+class DispersionConfig(BaseModel):
+    """Configuration for empirical dispersion corrections."""
+    model_config = ConfigDict(frozen=True)
+    scheme: Optional[str] = Field(default=None, description="Dispersion scheme, e.g. D3BJ, D4, None")
+    damping: Optional[str] = Field(default=None, description="Damping function, e.g. BJ, zero")
+    s6: Optional[float] = Field(default=None)
+    s8: Optional[float] = Field(default=None)
+    a1: Optional[float] = Field(default=None)
+    a2: Optional[float] = Field(default=None)
+
+
+class SolvationSpec(BaseModel):
+    """Specification of implicit continuum solvation model."""
+    model_config = ConfigDict(frozen=True)
+    model_name: str = Field(description="Solvation model name, e.g. SMD, CPCM")
+    solvent_name: str = Field(description="Solvent name, e.g. water, benzene")
+    dielectric_constant: Optional[float] = Field(default=None, description="Static dielectric constant eps")
+    probe_radius_angstrom: Optional[float] = Field(default=None, description="Solvent probe radius in Angstroms")
+
+
+class LevelOfTheory(BaseModel):
+    """Canonical representation of a quantum mechanical Level of Theory."""
+    model_config = ConfigDict(frozen=True)
+    hamiltonian: str = Field(..., description="Electronic Hamiltonian or DFT functional, e.g. B3LYP, wB97X-D4")
+    basis_set: str = Field(..., description="Primary GTO orbital basis set, e.g. def2-TZVP")
+    auxiliary_basis_set: Optional[str] = Field(default=None, description="Auxiliary Coulomb/correlation fitting basis set")
+    dispersion: Optional[Union[str, DispersionConfig]] = Field(default=None, description="Dispersion correction or configuration")
+    grid: Optional[str] = Field(default="DefGrid2", description="Numerical integration quadrature grid")
+    solvation: Optional[Union[str, SolvationSpec]] = Field(default=None, description="Solvation model or specification")
+    max_gradient_residual_au: Optional[float] = Field(default=None, ge=0.0)
+
+
+class IncompatibleLevelOfTheoryError(ValueError):
+    """Raised when an unphysical or incompatible Level-of-Theory combination is requested."""
+    pass
+
+
+def compute_lot_fingerprint(lot: Union[LevelOfTheory, Dict[str, Any]]) -> str:
+    """
+    [D] Generate deterministic, RFC 8785-compliant canonical SHA-256 fingerprint for a LevelOfTheory.
+    """
+    if isinstance(lot, LevelOfTheory):
+        lot_dict = lot.model_dump(exclude_none=True)
+    elif isinstance(lot, dict):
+        lot_dict = {k: v for k, v in lot.items() if v is not None}
+    else:
+        raise TypeError(f"Expected LevelOfTheory or dict, got {type(lot)}")
+
+    norm_dict = {}
+    for k, v in lot_dict.items():
+        if isinstance(v, str):
+            norm_dict[k.lower()] = v.strip().lower()
+        elif isinstance(v, dict):
+            norm_dict[k.lower()] = {ik.lower(): (iv.strip().lower() if isinstance(iv, str) else iv) for ik, iv in v.items()}
+        else:
+            norm_dict[k.lower()] = v
+
+    canonical_json = json.dumps(norm_dict, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+# Alias for compute_lot_fingerprint
+compute_canonical_lot_hash = compute_lot_fingerprint
 
 
 class FunctionalType(str, Enum):
@@ -24,6 +93,8 @@ class FunctionalType(str, Enum):
     PURE_GGA = "PURE_GGA"
     META_GGA = "META_GGA"
     HYBRID = "HYBRID"
+    GLOBAL_HYBRID = "GLOBAL_HYBRID"
+    RANGE_SEPARATED_HYBRID = "RANGE_SEPARATED_HYBRID"
     DOUBLE_HYBRID = "DOUBLE_HYBRID"
     POST_HF = "POST_HF"
 
@@ -47,17 +118,17 @@ FUNCTIONAL_TAXONOMY: Dict[str, FunctionalType] = {
     "revm06-l": FunctionalType.META_GGA,
     "scan": FunctionalType.META_GGA,
     # HYBRID
-    "b3lyp": FunctionalType.HYBRID,
-    "pbe0": FunctionalType.HYBRID,
-    "tpssh": FunctionalType.HYBRID,
-    "wb97x-d4": FunctionalType.HYBRID,
-    "wb97x-d3": FunctionalType.HYBRID,
-    "wb97x-3c": FunctionalType.HYBRID,
-    "m06-2x": FunctionalType.HYBRID,
-    "cam-b3lyp": FunctionalType.HYBRID,
-    "b3pw91": FunctionalType.HYBRID,
-    "pbeh-3c": FunctionalType.HYBRID,
-    "hf-3c": FunctionalType.HYBRID,
+    "b3lyp": FunctionalType.GLOBAL_HYBRID,
+    "pbe0": FunctionalType.GLOBAL_HYBRID,
+    "tpssh": FunctionalType.GLOBAL_HYBRID,
+    "wb97x-d4": FunctionalType.RANGE_SEPARATED_HYBRID,
+    "wb97x-d3": FunctionalType.RANGE_SEPARATED_HYBRID,
+    "wb97x-3c": FunctionalType.RANGE_SEPARATED_HYBRID,
+    "m06-2x": FunctionalType.GLOBAL_HYBRID,
+    "cam-b3lyp": FunctionalType.RANGE_SEPARATED_HYBRID,
+    "b3pw91": FunctionalType.GLOBAL_HYBRID,
+    "pbeh-3c": FunctionalType.GLOBAL_HYBRID,
+    "hf-3c": FunctionalType.GLOBAL_HYBRID,
     # DOUBLE_HYBRID
     "b2plyp": FunctionalType.DOUBLE_HYBRID,
     "dsd-pbep86": FunctionalType.DOUBLE_HYBRID,

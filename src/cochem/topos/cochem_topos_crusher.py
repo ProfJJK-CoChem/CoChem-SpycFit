@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from cochem.core.cochem_elements import batch_get_masses
 from cochem.topos.cochem_topos_siever import (
@@ -267,3 +267,57 @@ class ToposCrusherEngine:
             early_stopped=early_stopped,
             convergence_message=last_message,
         )
+
+
+class ToposConformerGraph(BaseModel):
+    """Data contract representing a conformer with its associated QTAIM molecular graph."""
+    model_config = ConfigDict(frozen=True)
+
+    conformer_id: str
+    energy_hartree: float
+    symbols: List[str]
+    coordinates_angstrom: List[Tuple[float, float, float]]
+    ncp_count: int
+    bcp_count: int
+    bcp_bonds: List[Tuple[int, int]]
+    graph_hash: str
+
+
+class ConformerClusterResult(BaseModel):
+    """Data contract representing clustered conformers segregated by constitutional/topological isomorphism."""
+    model_config = ConfigDict(frozen=True)
+
+    cluster_id: int
+    representative_conformer_id: str
+    is_constitutional_isomer: bool
+    conformers: List[ToposConformerGraph]
+    lowest_energy_hartree: float
+
+
+def cluster_conformers_by_qtaim_topology(
+    conformer_graphs: Sequence[ToposConformerGraph],
+) -> List[ConformerClusterResult]:
+    """
+    [REQ-QC-088] Group conformer pool by QTAIM graph isomorphism.
+    Conformers with different BCP edge sets or graph hashes are segregated as constitutional/coordination isomers.
+    """
+    clusters_dict: Dict[str, List[ToposConformerGraph]] = {}
+    for cg in conformer_graphs:
+        clusters_dict.setdefault(cg.graph_hash, []).append(cg)
+
+    results: List[ConformerClusterResult] = []
+    base_hash = conformer_graphs[0].graph_hash if conformer_graphs else ""
+
+    for idx, (ghash, c_list) in enumerate(clusters_dict.items()):
+        c_list_sorted = sorted(c_list, key=lambda c: c.energy_hartree)
+        is_isomer = (ghash != base_hash) if base_hash else False
+        results.append(
+            ConformerClusterResult(
+                cluster_id=idx,
+                representative_conformer_id=c_list_sorted[0].conformer_id,
+                is_constitutional_isomer=is_isomer,
+                conformers=c_list_sorted,
+                lowest_energy_hartree=c_list_sorted[0].energy_hartree,
+            )
+        )
+    return results

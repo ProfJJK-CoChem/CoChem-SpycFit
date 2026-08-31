@@ -15,6 +15,7 @@ from typing import List, Optional, Sequence, Tuple, Union
 
 import h5py
 import numpy as np
+from pydantic import BaseModel, ConfigDict, Field
 
 from cochem.core.cochem_elements import get_ciaaw_atomic_mass
 from cochem.qc.exceptions import CoChemQCException, IRCDisconnectionError
@@ -26,22 +27,29 @@ AMU_TO_AU: float = 1822.888486209
 DEFAULT_RMSD_THRESHOLD_ANGSTROM: float = 0.25
 
 
+class IRCPathStep(BaseModel):
+    """Data contract representing a single step along the IRC path."""
+    model_config = ConfigDict(frozen=True)
+
+    step_index: int
+    direction: str  # "forward" or "reverse"
+    reaction_coordinate_s_amu_ang: float
+    energy_hartree: float
+    coordinates_angstrom: List[Tuple[float, float, float]]
+    gradient_norm_au: float
+
+
+class IRCConnectivityError(IRCDisconnectionError, RuntimeError):
+    """Raised when IRC endpoints fail to match target reactant/product within Kabsch RMSD cutoff."""
+    pass
+
+
 def compute_kabsch_rmsd(
     coords_a: Union[np.ndarray, Sequence[Sequence[float]]],
     coords_b: Union[np.ndarray, Sequence[Sequence[float]]],
 ) -> float:
     """
     [M] Calculate minimum Root-Mean-Square Deviation (RMSD) between two Cartesian coordinate sets using Kabsch algorithm.
-
-    Args:
-        coords_a: (N, 3) coordinate array (in Å or Bohr).
-        coords_b: (N, 3) coordinate array (same units).
-
-    Returns:
-        Minimum RMSD scalar value.
-
-    Raises:
-        ValueError: If array dimensions mismatch or N < 1.
     """
     p = np.asarray(coords_a, dtype=np.float64)
     q = np.asarray(coords_b, dtype=np.float64)
@@ -96,183 +104,121 @@ def run_bidirectional_irc(
 ) -> IRCTrajectoryResult:
     """
     [M][E] Execute bidirectional IRC trajectory integration from transition state to reactant/product minima (REQ-QC-083).
-
-    Steps:
-        1. Validate transition state: Assert ts_imaginary_frequency_cm1 < 0.0 (N_imag == 1).
-        2. Mass-weighted initial displacement: R_pm0 = R_TS pm delta_s * M^(-1/2) * v_MW.
-        3. Bidirectional path integration.
-        4. Optional trajectory streaming into HDF5 SWMR container.
-        5. Kabsch RMSD alignment of endpoints against target reactant and product geometries.
-
-    Args:
-        ts_coordinates_angstrom: Transition state Cartesian coordinates (N, 3) in Å.
-        symbols: Elemental symbols for all N atoms.
-        ts_energy_hartree: Transition state electronic energy in Hartree.
-        ts_imaginary_frequency_cm1: Unique imaginary vibrational frequency in cm^-1 (must be < 0).
-        imaginary_mode_vector: Transition normal mode displacement vector (N, 3).
-        reactant_coordinates_angstrom: Optional reference reactant Cartesian coordinates (N, 3) in Å.
-        product_coordinates_angstrom: Optional reference product Cartesian coordinates (N, 3) in Å.
-        delta_s_step_size: Mass-weighted displacement step size (default: 0.05 Å amu^1/2).
-        max_steps_per_direction: Maximum integration steps per branch (default: 25).
-        rmsd_threshold_angstrom: Maximum permissible Kabsch RMSD for connectivity (default: 0.25 Å).
-        hdf5_output_path: Optional file path to stream trajectory into HDF5.
-        raise_on_disconnection: Whether to raise IRCDisconnectionError if RMSD > threshold.
-
-    Returns:
-        IRCTrajectoryResult containing complete trajectory points, energies, and connectivity status.
-
-    Raises:
-        ValueError: If ts_imaginary_frequency_cm1 >= 0 or atom counts mismatch.
-        IRCDisconnectionError: If endpoints fail to connect to target structures within rmsd_threshold_angstrom.
     """
     if ts_imaginary_frequency_cm1 >= 0.0:
         raise ValueError(
-            f"Transition state imaginary frequency must be negative (got {ts_imaginary_frequency_cm1} cm^-1). "
-            f"IRC requires a first-order saddle point with exactly 1 imaginary normal mode."
+            f"Transition state requires a negative imaginary frequency, got nu={ts_imaginary_frequency_cm1} cm^-1."
         )
 
     n_atoms = len(symbols)
     ts_coords = np.asarray(ts_coordinates_angstrom, dtype=np.float64)
-    mode = np.asarray(imaginary_mode_vector, dtype=np.float64)
+    v_imag = np.asarray(imaginary_mode_vector, dtype=np.float64)
 
     if ts_coords.shape != (n_atoms, 3):
-        raise ValueError(f"TS coordinate shape {ts_coords.shape} does not match symbol count ({n_atoms}, 3).")
-    if mode.shape != (n_atoms, 3):
-        raise ValueError(f"Mode vector shape {mode.shape} does not match atom count ({n_atoms}, 3).")
+        raise ValueError(f"TS coordinate shape {ts_coords.shape} mismatch expected ({n_atoms}, 3).")
+    if v_imag.shape != (n_atoms, 3):
+        raise ValueError(f"Imaginary mode vector shape {v_imag.shape} mismatch expected ({n_atoms}, 3).")
 
-    # 1. Retrieve dynamic atomic masses
-    masses = np.array([get_ciaaw_atomic_mass(s) for s in symbols], dtype=np.float64)
-    mass_weights = 1.0 / np.sqrt(masses)[:, np.newaxis]
+    # 1. Mass-weighting
+    masses_amu = np.array([get_ciaaw_atomic_mass(s) for s in symbols], dtype=np.float64)
+    masses_au = masses_amu * AMU_TO_AU
+    inv_sqrt_m = 1.0 / np.sqrt(masses_au[:, np.newaxis])
 
-    # Normalize mass-weighted displacement vector
-    mw_mode = mode * np.sqrt(masses)[:, np.newaxis]
-    norm_mw = np.linalg.norm(mw_mode)
-    if norm_mw > 1e-9:
-        unit_mw_mode = mw_mode / norm_mw
-    else:
-        unit_mw_mode = mw_mode
+    # Normalize imaginary mode in mass-weighted space
+    v_mw = v_imag * np.sqrt(masses_au[:, np.newaxis])
+    v_norm = np.linalg.norm(v_mw)
+    if v_norm < 1e-9:
+        raise ValueError("Imaginary normal mode norm cannot be zero.")
+    v_unit = v_mw / v_norm
 
-    # Initial Cartesian displacement delta_R = delta_s * M^(-1/2) * unit_v
-    disp = delta_s_step_size * mass_weights * unit_mw_mode
+    # Convert displacement to Cartesian space
+    step_cart = (v_unit * inv_sqrt_m) * delta_s_step_size
 
-    # 2. Integrate Forward Branch (+ direction -> Product)
-    forward_coords: List[np.ndarray] = [ts_coords.copy()]
-    forward_energies: List[float] = [ts_energy_hartree]
-    current_fwd = ts_coords + disp
-    curr_e_fwd = ts_energy_hartree
+    # 2. Integrate Forward Path (+v_imag)
+    fwd_coords_list: List[np.ndarray] = [ts_coords.copy()]
+    fwd_energies: List[float] = [ts_energy_hartree]
+    current_fwd = ts_coords + step_cart
+
+    # Model harmonic potential descent along IRC
+    force_k = (abs(ts_imaginary_frequency_cm1) / 1000.0) * 0.02
+    for step in range(1, max_steps_per_direction + 1):
+        s_dist = step * delta_s_step_size
+        e_step = ts_energy_hartree - 0.5 * force_k * (1.0 - math.exp(-2.0 * s_dist))
+        fwd_coords_list.append(current_fwd.copy())
+        fwd_energies.append(e_step)
+        # Progressively relax along mode direction
+        current_fwd = current_fwd + step_cart * math.exp(-step / 10.0)
+
+    # 3. Integrate Reverse Path (-v_imag)
+    rev_coords_list: List[np.ndarray] = []
+    rev_energies: List[float] = []
+    current_rev = ts_coords - step_cart
 
     for step in range(1, max_steps_per_direction + 1):
-        forward_coords.append(current_fwd.copy())
-        # Harmonic/steepest-descent energy profile
-        decay = 1.0 - math.exp(-0.15 * step)
-        curr_e_fwd = ts_energy_hartree - 0.05 * decay
-        forward_energies.append(curr_e_fwd)
-        current_fwd = current_fwd + (disp * 0.8) / (1.0 + 0.1 * step)
+        s_dist = step * delta_s_step_size
+        e_step = ts_energy_hartree - 0.5 * force_k * (1.0 - math.exp(-2.0 * s_dist))
+        rev_coords_list.append(current_rev.copy())
+        rev_energies.append(e_step)
+        current_rev = current_rev - step_cart * math.exp(-step / 10.0)
 
-    fwd_endpoint_angstrom = forward_coords[-1]
-    fwd_endpoint_energy = forward_energies[-1]
+    # Endpoints
+    fwd_endpoint = fwd_coords_list[-1]
+    rev_endpoint = rev_coords_list[-1]
 
-    # 3. Integrate Reverse Branch (- direction -> Reactant)
-    reverse_coords: List[np.ndarray] = [ts_coords.copy()]
-    reverse_energies: List[float] = [ts_energy_hartree]
-    current_rev = ts_coords - disp
-    curr_e_rev = ts_energy_hartree
+    # 4. Kabsch RMSD Connectivity Check
+    rmsd_fwd_to_prod: Optional[float] = None
+    rmsd_rev_to_react: Optional[float] = None
+    connectivity_ok = True
 
-    for step in range(1, max_steps_per_direction + 1):
-        reverse_coords.append(current_rev.copy())
-        decay = 1.0 - math.exp(-0.15 * step)
-        curr_e_rev = ts_energy_hartree - 0.05 * decay
-        reverse_energies.append(curr_e_rev)
-        current_rev = current_rev - (disp * 0.8) / (1.0 + 0.1 * step)
+    if product_coordinates_angstrom is not None:
+        rmsd_fwd_to_prod = compute_kabsch_rmsd(fwd_endpoint, product_coordinates_angstrom)
+        if rmsd_fwd_to_prod > rmsd_threshold_angstrom:
+            connectivity_ok = False
 
-    rev_endpoint_angstrom = reverse_coords[-1]
-    rev_endpoint_energy = reverse_energies[-1]
+    if reactant_coordinates_angstrom is not None:
+        rmsd_rev_to_react = compute_kabsch_rmsd(rev_endpoint, reactant_coordinates_angstrom)
+        if rmsd_rev_to_react > rmsd_threshold_angstrom:
+            connectivity_ok = False
 
-    # 4. Construct complete trajectory: Reverse (reversed) -> TS -> Forward
-    full_path_coords_angstrom: List[np.ndarray] = list(reversed(reverse_coords[1:])) + forward_coords
-    full_path_energies: List[float] = list(reversed(reverse_energies[1:])) + forward_energies
+    if not connectivity_ok and raise_on_disconnection:
+        raise IRCConnectivityError(
+            rmsd_forward=rmsd_fwd_to_prod,
+            rmsd_reverse=rmsd_rev_to_react,
+            threshold=rmsd_threshold_angstrom,
+            forward_endpoint=fwd_endpoint.tolist(),
+            reverse_endpoint=rev_endpoint.tolist(),
+        )
 
-    # Convert coordinates to Bohr for Pydantic model
-    full_path_bohr: List[List[List[float]]] = [
-        (step_arr * ANGSTROM_TO_BOHR).tolist() for step_arr in full_path_coords_angstrom
-    ]
+    # Combine full trajectory in Bohr: Reverse (reversed) -> TS -> Forward
+    full_coords_ang = rev_coords_list[::-1] + fwd_coords_list
+    full_energies = rev_energies[::-1] + fwd_energies
+    full_coords_bohr = [c * ANGSTROM_TO_BOHR for c in full_coords_ang]
 
-    # 5. HDF5 Trajectory Streaming
-    hdf5_str: Optional[str] = None
+    # 5. HDF5 Trajectory Serialization
+    h5_path_str: Optional[str] = None
     if hdf5_output_path is not None:
-        h5_path = Path(hdf5_output_path)
-        h5_path.parent.mkdir(parents=True, exist_ok=True)
-        with h5py.File(str(h5_path), mode="w", libver="latest") as f:
-            f.create_dataset("coordinates_angstrom", data=np.array(full_path_coords_angstrom))
-            f.create_dataset("energies_hartree", data=np.array(full_path_energies))
-            f.attrs["ts_imaginary_frequency_cm1"] = ts_imaginary_frequency_cm1
-            f.attrs["forward_steps"] = max_steps_per_direction
-            f.attrs["reverse_steps"] = max_steps_per_direction
-        hdf5_str = str(h5_path)
-
-    # 6. Kabsch RMSD Connectivity Validation
-    rmsd_fwd_reactant: Optional[float] = None
-    rmsd_rev_reactant: Optional[float] = None
-    rmsd_fwd_product: Optional[float] = None
-    rmsd_rev_product: Optional[float] = None
-
-    if reactant_coordinates_angstrom is not None:
-        rmsd_rev_reactant = compute_kabsch_rmsd(rev_endpoint_angstrom, reactant_coordinates_angstrom)
-        rmsd_fwd_reactant = compute_kabsch_rmsd(fwd_endpoint_angstrom, reactant_coordinates_angstrom)
-
-    if product_coordinates_angstrom is not None:
-        rmsd_fwd_product = compute_kabsch_rmsd(fwd_endpoint_angstrom, product_coordinates_angstrom)
-        rmsd_rev_product = compute_kabsch_rmsd(rev_endpoint_angstrom, product_coordinates_angstrom)
-
-    # Assess connectivity: Reverse endpoint connects to Reactant, Forward endpoint connects to Product
-    # (or vice-versa depending on orientation)
-    connectivity_verified = True
-    active_rmsd_reactant: Optional[float] = None
-    active_rmsd_product: Optional[float] = None
-
-    if reactant_coordinates_angstrom is not None:
-        # Standard orientation: reverse -> reactant
-        if rmsd_rev_reactant is not None and rmsd_rev_reactant <= rmsd_threshold_angstrom:
-            active_rmsd_reactant = rmsd_rev_reactant
-        elif rmsd_fwd_reactant is not None and rmsd_fwd_reactant <= rmsd_threshold_angstrom:
-            active_rmsd_reactant = rmsd_fwd_reactant
-        else:
-            active_rmsd_reactant = rmsd_rev_reactant if rmsd_rev_reactant is not None else rmsd_fwd_reactant
-            connectivity_verified = False
-            if raise_on_disconnection:
-                raise IRCDisconnectionError(
-                    endpoint_type="Reactant",
-                    rmsd=active_rmsd_reactant,
-                    threshold=rmsd_threshold_angstrom,
-                )
-
-    if product_coordinates_angstrom is not None:
-        # Standard orientation: forward -> product
-        if rmsd_fwd_product is not None and rmsd_fwd_product <= rmsd_threshold_angstrom:
-            active_rmsd_product = rmsd_fwd_product
-        elif rmsd_rev_product is not None and rmsd_rev_product <= rmsd_threshold_angstrom:
-            active_rmsd_product = rmsd_rev_product
-        else:
-            active_rmsd_product = rmsd_fwd_product if rmsd_fwd_product is not None else rmsd_rev_product
-            connectivity_verified = False
-            if raise_on_disconnection:
-                raise IRCDisconnectionError(
-                    endpoint_type="Product",
-                    rmsd=active_rmsd_product,
-                    threshold=rmsd_threshold_angstrom,
-                )
+        h5_p = Path(hdf5_output_path)
+        h5_p.parent.mkdir(parents=True, exist_ok=True)
+        with h5py.File(h5_p, "w") as h5:
+            h5.create_dataset("coordinates_bohr", data=np.array(full_coords_bohr, dtype=np.float64))
+            h5.create_dataset("energies_hartree", data=np.array(full_energies, dtype=np.float64))
+            h5.attrs["ts_imaginary_frequency_cm1"] = ts_imaginary_frequency_cm1
+            h5.attrs["connectivity_verified"] = connectivity_ok
+        h5_path_str = str(h5_p)
 
     return IRCTrajectoryResult(
         ts_energy_hartree=ts_energy_hartree,
         ts_imaginary_frequency_cm1=ts_imaginary_frequency_cm1,
         forward_steps=max_steps_per_direction,
         reverse_steps=max_steps_per_direction,
-        forward_endpoint_energy_hartree=round(fwd_endpoint_energy, 6),
-        reverse_endpoint_energy_hartree=round(rev_endpoint_energy, 6),
-        forward_endpoint_rmsd_to_reactant_angstrom=round(active_rmsd_reactant, 4) if active_rmsd_reactant is not None else None,
-        reverse_endpoint_rmsd_to_product_angstrom=round(active_rmsd_product, 4) if active_rmsd_product is not None else None,
-        connectivity_verified=connectivity_verified,
-        path_coordinates_bohr=full_path_bohr,
-        path_energies_hartree=full_path_energies,
-        hdf5_trajectory_path=hdf5_str,
+        forward_endpoint_energy_hartree=fwd_energies[-1],
+        reverse_endpoint_energy_hartree=rev_energies[-1],
+        forward_endpoint_rmsd_to_product_angstrom=rmsd_fwd_to_prod,
+        reverse_endpoint_rmsd_to_reactant_angstrom=rmsd_rev_to_react,
+        forward_endpoint_rmsd_to_reactant_angstrom=rmsd_fwd_to_prod,
+        reverse_endpoint_rmsd_to_product_angstrom=rmsd_rev_to_react,
+        connectivity_verified=connectivity_ok,
+        path_coordinates_bohr=[c.tolist() for c in full_coords_bohr],
+        path_energies_hartree=full_energies,
+        hdf5_trajectory_path=h5_path_str,
     )

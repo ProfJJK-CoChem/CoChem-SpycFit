@@ -14,7 +14,11 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Sequence, Tuple
 from pydantic import BaseModel, Field
 
-from cochem.core.cochem_elements import get_atomic_number, is_heavy_element
+from cochem.core.cochem_elements import (
+    get_atomic_number,
+    is_heavy_element,
+    validate_charge_and_multiplicity,
+)
 from cochem.core.cochem_exceptions import ECPConfigurationError
 from cochem.core.cochem_hardware import CudaHardwareConfigModel, HpcResourceAllocationModel
 from cochem.core.models import MemoryAllocationConfig
@@ -311,3 +315,173 @@ def generate_orca_chunk06_deck(
     deck_lines.append("*")
 
     return "\n".join(deck_lines) + "\n"
+
+
+class OrcaBlockConfig(BaseModel):
+    """Configuration for specialized ORCA block directives."""
+    scf_stability: bool = False
+    broken_symmetry: Optional[Tuple[int, int]] = None  # (n_alpha, n_beta)
+    irc_direction: Optional[str] = None  # "Both", "Forward", "Backward"
+    irc_max_steps: int = 50
+    irc_step_length: float = 0.1
+    soc_flags: Optional[List[int]] = None  # e.g., [1, 2, 3]
+    casscf_nel: Optional[int] = None
+    casscf_norb: Optional[int] = None
+    tddft_nroots: Optional[int] = None
+    custom_blocks: List[str] = []
+
+
+class OrcaJobSpec(BaseModel):
+    """Specification of an ORCA calculation task."""
+    symbols: List[str]
+    coordinates_angstrom: List[Tuple[float, float, float]]
+    method: str = "B3LYP"
+    basis: str = "def2-TZVP"
+    job_type: str = "Opt Freq"
+    charge: int = 0
+    multiplicity: int = 1
+    blocks: Optional[OrcaBlockConfig] = None
+    maxcore_mb: Optional[int] = None
+    nprocs: int = 1
+
+
+def generate_orca_stability_deck(
+    symbols: Sequence[str],
+    coordinates_angstrom: Sequence[Tuple[float, float, float]],
+    method: str = "wB97X-D4",
+    basis: str = "def2-TZVP",
+    charge: int = 0,
+    multiplicity: int = 1,
+    broken_symmetry: Optional[Tuple[int, int]] = (1, 1),
+    maxcore_mb: int = 4000,
+    nprocs: int = 4,
+) -> str:
+    """
+    [REQ-QC-087] Generate ORCA input deck with %scf Stability Opt end and %scf Brokensym blocks.
+    """
+    validate_charge_and_multiplicity(symbols=symbols, charge=charge, multiplicity=multiplicity)
+
+    lines = [f"! {method} {basis} Opt", f"%maxcore {maxcore_mb}"]
+    if nprocs > 1:
+        lines.append(f"%pal nprocs {nprocs} end")
+
+    lines.append("%scf")
+    lines.append("  Stability Opt")
+    if broken_symmetry is not None:
+        lines.append(f"  Brokensym {broken_symmetry[0]}, {broken_symmetry[1]}")
+    lines.append("end")
+
+    lines.append(f"* xyz {charge} {multiplicity}")
+    for sym, (x, y, z) in zip(symbols, coordinates_angstrom):
+        lines.append(f"  {sym:<3} {x:14.8f} {y:14.8f} {z:14.8f}")
+    lines.append("*")
+    return "\n".join(lines) + "\n"
+
+
+def generate_orca_irc_deck(
+    symbols: Sequence[str],
+    coordinates_angstrom: Sequence[Tuple[float, float, float]],
+    method: str = "wB97X-D4",
+    basis: str = "def2-TZVP",
+    charge: int = 0,
+    multiplicity: int = 1,
+    direction: str = "Both",
+    max_steps: int = 50,
+    step_length: float = 0.1,
+    maxcore_mb: int = 4000,
+    nprocs: int = 4,
+) -> str:
+    """
+    [REQ-QC-083] Generate ORCA input deck with Gonzalez-Schlegel %irc block.
+    """
+    validate_charge_and_multiplicity(symbols=symbols, charge=charge, multiplicity=multiplicity)
+
+    lines = [f"! {method} {basis}", f"%maxcore {maxcore_mb}"]
+    if nprocs > 1:
+        lines.append(f"%pal nprocs {nprocs} end")
+
+    lines.append("%irc")
+    lines.append(f"  Direction {direction}")
+    lines.append(f"  MaxSteps {max_steps}")
+    lines.append(f"  StepLength {step_length}")
+    lines.append("end")
+
+    lines.append(f"* xyz {charge} {multiplicity}")
+    for sym, (x, y, z) in zip(symbols, coordinates_angstrom):
+        lines.append(f"  {sym:<3} {x:14.8f} {y:14.8f} {z:14.8f}")
+    lines.append("*")
+    return "\n".join(lines) + "\n"
+
+
+def generate_orca_socme_deck(
+    symbols: Sequence[str],
+    coordinates_angstrom: Sequence[Tuple[float, float, float]],
+    method: str = "B3LYP",
+    basis: str = "def2-TZVP",
+    charge: int = 0,
+    multiplicity: int = 1,
+    soc_flags: Sequence[int] = (1, 2, 3),
+    nroots: int = 5,
+    maxcore_mb: int = 4000,
+    nprocs: int = 4,
+) -> str:
+    """
+    [REQ-QC-089] Generate ORCA input deck for SOMF Spin-Orbit Coupling Matrix Elements.
+    """
+    validate_charge_and_multiplicity(symbols=symbols, charge=charge, multiplicity=multiplicity)
+
+    lines = [f"! {method} {basis}", f"%maxcore {maxcore_mb}"]
+    if nprocs > 1:
+        lines.append(f"%pal nprocs {nprocs} end")
+
+    lines.append("%tddft")
+    lines.append(f"  NRoots {nroots}")
+    lines.append("  Triplets true")
+    soc_str = ", ".join(str(f) for f in soc_flags)
+    lines.append(f"  SOCFlags {soc_str}")
+    lines.append("end")
+
+    lines.append(f"* xyz {charge} {multiplicity}")
+    for sym, (x, y, z) in zip(symbols, coordinates_angstrom):
+        lines.append(f"  {sym:<3} {x:14.8f} {y:14.8f} {z:14.8f}")
+    lines.append("*")
+    return "\n".join(lines) + "\n"
+
+
+def generate_orca_marcus_decks(
+    symbols: Sequence[str],
+    neutral_coordinates_r0: Sequence[Tuple[float, float, float]],
+    charged_coordinates_rpm: Sequence[Tuple[float, float, float]],
+    method: str = "wB97X-D4",
+    basis: str = "def2-TZVP",
+    neutral_charge: int = 0,
+    neutral_multiplicity: int = 1,
+    charged_charge: int = 1,
+    charged_multiplicity: int = 2,
+    maxcore_mb: int = 4000,
+    nprocs: int = 4,
+) -> Dict[str, str]:
+    """
+    [REQ-QC-082] Generate coordinated 4-point ORCA input decks for Marcus reorganization calculations.
+    Returns: Dict containing 'e0_r0', 'ep_r0', 'ep_rp', 'e0_rp' input strings.
+    """
+    validate_charge_and_multiplicity(symbols=symbols, charge=neutral_charge, multiplicity=neutral_multiplicity)
+    validate_charge_and_multiplicity(symbols=symbols, charge=charged_charge, multiplicity=charged_multiplicity)
+
+    def _make_deck(coords: Sequence[Tuple[float, float, float]], chg: int, mult: int, is_opt: bool) -> str:
+        job = "Opt" if is_opt else "SP"
+        lines = [f"! {method} {basis} {job}", f"%maxcore {maxcore_mb}"]
+        if nprocs > 1:
+            lines.append(f"%pal nprocs {nprocs} end")
+        lines.append(f"* xyz {chg} {mult}")
+        for sym, (x, y, z) in zip(symbols, coords):
+            lines.append(f"  {sym:<3} {x:14.8f} {y:14.8f} {z:14.8f}")
+        lines.append("*")
+        return "\n".join(lines) + "\n"
+
+    return {
+        "e0_r0": _make_deck(neutral_coordinates_r0, neutral_charge, neutral_multiplicity, is_opt=True),
+        "ep_r0": _make_deck(neutral_coordinates_r0, charged_charge, charged_multiplicity, is_opt=False),
+        "ep_rp": _make_deck(charged_coordinates_rpm, charged_charge, charged_multiplicity, is_opt=True),
+        "e0_rp": _make_deck(charged_coordinates_rpm, neutral_charge, neutral_multiplicity, is_opt=False),
+    }

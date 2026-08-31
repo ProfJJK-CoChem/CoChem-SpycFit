@@ -1,5 +1,5 @@
 """
-CoChem Dynamic Mendeleev Isotopic Substitution and Bigeleisen-Mayer KIE Engine (REQ-QC-086).
+CoChem Dynamic Mendeleev Isotopic Substitution and Bigeleisen-Mayer KIE/EIE Engine (REQ-QC-086).
 
 Provenance:
 - Method Matrix [M]: Mass-weighted Cartesian Hessian re-diagonalization, Bigeleisen-Mayer KIE/EIE formulation.
@@ -13,6 +13,7 @@ import math
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
+from pydantic import BaseModel, ConfigDict, Field
 
 from cochem.core.cochem_elements import get_ciaaw_atomic_mass, get_ciaaw_isotope_mass
 from cochem.qc.exceptions import IsotopeNotFoundError
@@ -24,6 +25,36 @@ AU_TO_CM1: float = 219474.63136320
 CM1_TO_KCAL_MOL: float = 2.85914316e-3
 R_GAS_KCAL_MOL_K: float = 1.98720425864083e-3
 H_C_OVER_K_B: float = 1.438776877  # hc/k_B in cm * K
+
+
+class IsotopeSubstitutionSpec(BaseModel):
+    """Specification of an isotopic substitution pattern."""
+    model_config = ConfigDict(frozen=True)
+
+    substituted_atoms: Dict[int, int] = Field(description="0-based atom index -> isotope mass number")
+    description: Optional[str] = None
+
+
+class KIEResult(BaseModel):
+    """Result of Bigeleisen-Mayer Kinetic Isotope Effect calculation."""
+    model_config = ConfigDict(frozen=True)
+
+    kie_total: float
+    mmi_factor: float
+    exc_factor: float
+    zpe_factor: float
+    tun_factor: float = 1.0
+    temperature_k: float
+
+
+class EIEResult(BaseModel):
+    """Result of Equilibrium Isotope Effect calculation."""
+    model_config = ConfigDict(frozen=True)
+
+    eie_total: float
+    reactant_zpe_shift_kcal_mol: float
+    product_zpe_shift_kcal_mol: float
+    temperature_k: float
 
 
 def _diagonalize_hessian_to_frequencies(
@@ -56,19 +87,6 @@ def compute_isotopic_substitution_kie(
 ) -> IsotopeSubstitutionPayload:
     """
     [M][D] Compute dynamic isotopic substitution frequencies, Zero-Point Energies, and Bigeleisen-Mayer KIE (REQ-QC-086).
-
-    Args:
-        symbols: Elemental symbols for all N atoms.
-        cartesian_hessian_hartree_bohr2: (3N, 3N) Cartesian electronic Hessian in Hartree/Bohr^2.
-        substituted_atoms: Dict mapping 0-based atom index -> target isotope mass number A (e.g. {0: 2} for H -> D).
-        temperature_k: Absolute temperature in Kelvin (default: 298.15 K).
-
-    Returns:
-        IsotopeSubstitutionPayload containing dynamic CIAAW masses, frequencies, ZPEs, and Bigeleisen-Mayer terms.
-
-    Raises:
-        ValueError: If Hessian shape does not match (3N, 3N) or substituted index is out of bounds.
-        IsotopeNotFoundError: If requested isotope mass number is absent in IUPAC CIAAW dataset.
     """
     n_atoms = len(symbols)
     h_cart = np.asarray(cartesian_hessian_hartree_bohr2, dtype=np.float64)
@@ -124,8 +142,7 @@ def compute_isotopic_substitution_kie(
             mmi_terms.append(nu_ref / nu_iso)
             u_ref = (H_C_OVER_K_B * nu_ref) / temperature_k
             u_iso = (H_C_OVER_K_B * nu_iso) / temperature_k
-            
-            # Avoid overflow in exp(u)
+
             exp_u_ref = math.exp(-u_ref) if u_ref < 50 else 0.0
             exp_u_iso = math.exp(-u_iso) if u_iso < 50 else 0.0
             exc_terms.append((1.0 - exp_u_ref) / (1.0 - exp_u_iso) if (1.0 - exp_u_iso) > 1e-9 else 1.0)
@@ -145,4 +162,26 @@ def compute_isotopic_substitution_kie(
         mmi_factor=round(mmi_factor, 4),
         exc_factor=round(exc_factor, 4),
         zpe_factor=round(zpe_factor, 4),
+    )
+
+
+def compute_eie_equilibrium_isotope_effect(
+    reactants_payload: IsotopeSubstitutionPayload,
+    products_payload: IsotopeSubstitutionPayload,
+    temperature_k: float = 298.15,
+) -> EIEResult:
+    """
+    [REQ-QC-086] Compute Equilibrium Isotope Effect (EIE) between reactant and product isotopologues.
+    """
+    delta_zpe_react = reactants_payload.reference_zpe_kcal_mol - reactants_payload.substituted_zpe_kcal_mol
+    delta_zpe_prod = products_payload.reference_zpe_kcal_mol - products_payload.substituted_zpe_kcal_mol
+
+    delta_delta_zpe = delta_zpe_react - delta_zpe_prod
+    eie_val = math.exp(delta_delta_zpe / (R_GAS_KCAL_MOL_K * temperature_k))
+
+    return EIEResult(
+        eie_total=round(eie_val, 4),
+        reactant_zpe_shift_kcal_mol=round(delta_zpe_react, 4),
+        product_zpe_shift_kcal_mol=round(delta_zpe_prod, 4),
+        temperature_k=temperature_k,
     )

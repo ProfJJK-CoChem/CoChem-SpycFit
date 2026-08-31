@@ -19,6 +19,8 @@ from mendeleev import element as _mendeleev_element
 from mendeleev.models import Element
 import numpy as np
 
+from pydantic import BaseModel, Field
+
 from cochem.qc.exceptions import (
     CoChemQCException,
     IsotopeNotFoundError,
@@ -26,6 +28,45 @@ from cochem.qc.exceptions import (
     UnphysicalValenceError,
 )
 from cochem.qc.models import SpinChargeValidationResult
+
+# Aliases for terminology consistency
+SpinParityError = SpinParityViolationError
+SpinParityValidationResult = SpinChargeValidationResult
+
+
+class ElementData(BaseModel):
+    """Data contract representing essential chemical element data."""
+    symbol: str
+    atomic_number: int
+    name: str
+    atomic_weight: float
+    covalent_radius_angstrom: Optional[float] = None
+    vdw_radius_angstrom: Optional[float] = None
+    pauling_electronegativity: Optional[float] = None
+
+
+class IsotopeData(BaseModel):
+    """Data contract representing isotope data."""
+    symbol: str
+    mass_number: int
+    atomic_mass_amu: float
+    natural_abundance: Optional[float] = None
+    is_stable: Optional[bool] = None
+
+
+class MolecularSpinState(BaseModel):
+    """Data contract representing molecular spin configuration and parity status."""
+    symbols: List[str]
+    charge: int
+    multiplicity: int
+    total_electrons: int
+    total_nuclear_charge: int
+    state_classification: str = "closed-shell singlet"
+
+
+class MendeleevLookupError(KeyError):
+    """Raised when an element or isotope lookup in Mendeleev fails."""
+    pass
 
 
 @functools.lru_cache(maxsize=128)
@@ -136,8 +177,18 @@ def get_ciaaw_atomic_mass(symbol: str) -> float:
     return get_atomic_mass(symbol)
 
 
+def get_element_mass(symbol: str) -> float:
+    """Retrieve standard atomic mass for an element symbol."""
+    return get_atomic_mass(symbol)
+
+
 def get_ciaaw_isotope_mass(symbol: str, mass_number: int) -> float:
     """Alias for get_atomic_mass(symbol, isotope=mass_number) for backwards compatibility."""
+    return get_atomic_mass(symbol, isotope=mass_number)
+
+
+def get_isotope_mass(symbol: str, mass_number: int) -> float:
+    """Retrieve dynamic IUPAC CIAAW isotopic mass in amu."""
     return get_atomic_mass(symbol, isotope=mass_number)
 
 

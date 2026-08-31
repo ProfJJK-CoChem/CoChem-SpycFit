@@ -77,11 +77,17 @@ class IRCTrajectoryResult(BaseModel):
     reverse_steps: int = Field(ge=1, description="Number of reverse IRC integration steps")
     forward_endpoint_energy_hartree: float = Field(description="Energy of optimized forward minimum in Hartree")
     reverse_endpoint_energy_hartree: float = Field(description="Energy of optimized reverse minimum in Hartree")
+    forward_endpoint_rmsd_to_product_angstrom: Optional[float] = Field(
+        default=None, ge=0.0, description="Kabsch RMSD from forward endpoint to product minimum in Å"
+    )
+    reverse_endpoint_rmsd_to_reactant_angstrom: Optional[float] = Field(
+        default=None, ge=0.0, description="Kabsch RMSD from reverse endpoint to reactant minimum in Å"
+    )
     forward_endpoint_rmsd_to_reactant_angstrom: Optional[float] = Field(
-        default=None, ge=0.0, description="Kabsch RMSD from forward endpoint to reactant minimum in Å"
+        default=None, ge=0.0, description="Legacy alias for forward endpoint RMSD in Å"
     )
     reverse_endpoint_rmsd_to_product_angstrom: Optional[float] = Field(
-        default=None, ge=0.0, description="Kabsch RMSD from reverse endpoint to product minimum in Å"
+        default=None, ge=0.0, description="Legacy alias for reverse endpoint RMSD in Å"
     )
     connectivity_verified: bool = Field(description="Whether endpoints match expected reactant/product within 0.25 Å")
     path_coordinates_bohr: List[List[List[float]]] = Field(description="Trajectory coordinates per step [step, atom, xyz] in Bohr")
@@ -121,7 +127,7 @@ class LevelOfTheoryEnvelope(BaseModel):
     basis_set: str = Field(description="Primary orbital basis set (e.g., 'def2-TZVP')")
     auxiliary_basis_set: Optional[str] = Field(default=None, description="Auxiliary/Coulomb fitting basis set (e.g., 'def2/J')")
     dispersion_correction: Optional[str] = Field(default=None, description="Dispersion correction scheme (e.g., 'D3BJ', 'D4')")
-    integration_grid: str = Field(description="Numerical integration grid (e.g., 'DefGrid3', 'UltraFine')")
+    integration_grid: str = Field(default="DefGrid2", description="Numerical integration grid (e.g., 'DefGrid3', 'UltraFine')")
     solvation_model: Optional[str] = Field(default=None, description="Implicit solvation model (e.g., 'CPCM(water)', 'SMD(benzene)')")
     max_gradient_residual_au: float = Field(ge=0.0, description="Maximum Cartesian gradient component residual in a.u.")
 

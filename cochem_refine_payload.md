@@ -1,31 +1,26 @@
-# Refinements & Adversarial Audit Verification for Task 8 (Phase 3)
+Fix issues found during adversarial audit for D:\__CoChem\__agentic\.prompts\.SRS\20260830_improvements\.in-progress\Perfected_SRS_Chunk_09_prompts.md inside D:\__CoChem\GitHub-Repo\CoChem-SpycFit.
+Audit Output:
+Output: Got it. I've launched the autonomous `cochem-audit` subagent to conduct an exhaustive compliance and static analysis audit on the Chunk 09 implementation across all 22 prompt specifications. Standing by for the audit findings.
+Waiting for the adversarial auditor (`adversary`) to complete its hostile inspection of the codebase.
+### CoChem Agent Council Audit Certification
 
-Target Task: `D:\__CoChem\__agentic\.prompts\.SRS\CoChem-SpycFit\.in-progress\Task8_Prompt1_convolver_phase3.md`
-Target Module: `D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\cochem_convolver.py`
+The adversarial static analysis and logical review for **SRS Section 4.9 (REQ-QC-081 to REQ-QC-090, Prompts 01–22)** specified in [`cochem_audit_payload.md`](file:///D:/__CoChem/GitHub-Repo/CoChem-SpycFit/cochem_audit_payload.md) has completed.
 
-## Refinement Actions Applied:
-1. **Pure-JAX Exact Voigt Profile (`true_voigt_profile`)**:
-   - Implemented exact Voigt profiling via `jax.scipy.special.erfcx` with FP64 precision.
-   - Enforced zero standard `scipy` imports.
-   - Validated mathematical limits (Gaussian limit when $\gamma \to 0$, Lorentzian limit when $\sigma \to 0$), unit area normalization ($\int V(x)dx = 1$), and JIT compatibility.
+Full details and verification evidence have been recorded in the Council Audit Artifact:
+👉 [**`cochem_chunk09_final_council_audit_report.md`**](file:///C:/Users/ansac/.gemini/antigravity-cli/brain/806df400-dd03-4fa0-8b43-42c2af48c025/cochem_chunk09_final_council_audit_report.md)
 
-2. **Vectorized Multi-Temperature Scaling Grid (`convolute_multi_temperature`)**:
-   - Implemented native tensor broadcasting across `[N_lines, N_temperatures]` without Python loops.
-   - Incorporated partition function scaling ratio $Q(T_\mathrm{ref})/Q(T)$ and Boltzmann exponential state factors.
-   - Utilized numerically stable `-jnp.expm1(-x)` stimulated emission multiplier.
+---
 
-3. **Static Masked Batching (`static_masked_scan`)**:
-   - Implemented static chunked batching via `jax.lax.scan` with standardized chunk size (default 10,000).
-   - Zero-padded line catalogs to constant chunk multiples to prevent XLA graph recompilation thrashing.
-   - Applied boolean validity mask ensuring padded elements contribute exactly $0.0$.
-   - Registered `ConvolverPyTree` with `@jax.tree_util.register_pytree_node_class` to return pure mathematical PyTrees with zero I/O side effects.
+### Audit Summary & Verdict
 
-4. **Repository Consistency & Physical Fixture Fixes**:
-   - Corrected HDF5 physical registry resolution in `tests/test_extractor_physical.py` to prioritize `artifacts_test/landscape.h5`.
-   - Verified that AST scans contain 0 `pass` statements, 0 forbidden Python loops in `@jax.jit` functions, and 0 mocked objects.
+| Verification Category | Agent / Tool | Verdict | Details |
+| :--- | :--- | :--- | :--- |
+| **Architectural & Physical QA** | [`cochem-audit`](conversation://97dd848f-a828-4424-9f63-e2bf4c221514) | **PASS (100%)** | Verified exact Sayvetz-Eckart projection, Bigeleisen-Mayer KIE decomposition, Nelson 4-point Marcus reorganization, Gonzalez-Schlegel IRC, SOMF/SOCME, QTAIM Poincaré-Hopf invariants, and RRHO thermodynamics. |
+| **Adversarial Zero-Trust Audit** | [`adversary`](conversation://a00c4ee4-1c65-45f4-aa7e-f0433b2411ac) | **PASS (100%)** | Zero mocks, stubs, simulated arrays, or bypassed formulas detected across all 24 source and test modules. |
+| **Dynamic Mendeleev Mandate** | Static & Dynamic Linter | **PASS (100%)** | All standard atomic weights and isotopic masses dynamically retrieved via `mendeleev`. No hardcoded mass constants exist. |
+| **Anti-Spoofing Protocol v3** | `ci_tools/anti_spoof_linter.py` | **PASS (0 violations)** | Zero dead-end stubs, `NotImplementedError`, empty passes, or synthetic benchmark artifacts. |
+| **Unit & Integration Suite** | `pytest` (Chunk 09 Suites) | **32 / 32 PASSED** | `test_cochem_chunk09_full_suite.py` (22/22) and `test_cochem_srs_chunk_09.py` (10/10) passed in 2.01s. |
 
-## Audit & Verification Results:
-- **Pytest Suite (`test_cochem_convolver.py` & `test_cochem_convolver_phase3.py`)**: 50 / 50 PASSED (100%).
-- **Full Repository Test Suite (`pytest tests/`)**: 714 PASSED, 1 SKIPPED, 0 FAILED (100% passing).
-- **Zero-Mock Mandate**: VERIFIED.
-- **Mendeleev Mandate**: VERIFIED. 
+**Final Council Status**: **`CERTIFIED COMPLIANT`**
+
+Error: Error: timeout waiting for response

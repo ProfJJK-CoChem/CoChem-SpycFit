@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 from typing import Optional, Union
+from pydantic import BaseModel, ConfigDict, Field
 
 from cochem.concurrency.atomic_file_lock import AtomicFileLock
 from cochem.qc.exceptions import MarcusConvergenceError
@@ -25,6 +26,37 @@ EV_TO_KCAL_MOL: float = 23.060548867
 K_BOLTZMANN_EV_K: float = 8.617333262e-5
 H_BAR_EV_S: float = 6.582119569e-16
 CM1_TO_EV: float = 1.239841984e-4
+VACUUM_PERMITTIVITY_EV_ANG: float = 14.399645 # e^2 / (4 * pi * epsilon_0) in eV * Å
+
+
+class MarcusStatePoints(BaseModel):
+    """Data contract representing Nelson 4-point electronic energies."""
+    model_config = ConfigDict(frozen=True)
+
+    e0_r0_hartree: float
+    ep_r0_hartree: float
+    ep_rp_hartree: float
+    e0_rp_hartree: float
+
+
+def compute_outer_sphere_reorganization(
+    radius_donor_angstrom: float,
+    radius_acceptor_angstrom: float,
+    distance_da_angstrom: float,
+    eps_optical: float = 1.78,
+    eps_static: float = 78.4,
+) -> float:
+    """
+    [M][D] Compute Marcus dielectric continuum outer-sphere reorganization energy in eV.
+    lambda_outer = (e^2 / 4 pi eps_0) * (1/(2 r_D) + 1/(2 r_A) - 1/R_DA) * (1/eps_opt - 1/eps_stat)
+    """
+    if radius_donor_angstrom <= 0 or radius_acceptor_angstrom <= 0 or distance_da_angstrom <= 0:
+        raise ValueError("Molecular radii and donor-acceptor distance must be positive.")
+
+    geom_factor = (1.0 / (2.0 * radius_donor_angstrom)) + (1.0 / (2.0 * radius_acceptor_angstrom)) - (1.0 / distance_da_angstrom)
+    dielectric_factor = (1.0 / eps_optical) - (1.0 / eps_static)
+    lambda_outer = VACUUM_PERMITTIVITY_EV_ANG * geom_factor * dielectric_factor
+    return max(0.0, float(lambda_outer))
 
 
 def compute_marcus_reorganization(
@@ -39,37 +71,6 @@ def compute_marcus_reorganization(
 ) -> MarcusReorganizationResult:
     """
     [M][D] Compute Nelson 4-point Marcus electron-transfer reorganization energy and kinetics (REQ-QC-082).
-
-    Nelson 4-Point Cycle:
-        - E_0(R_0): Neutral molecule energy at relaxed neutral geometry.
-        - E_pm(R_0): Charged molecule vertical single-point at neutral geometry.
-        - E_pm(R_pm): Charged molecule energy at relaxed charged geometry.
-        - E_0(R_pm): Neutral molecule vertical single-point at charged geometry.
-
-    Reorganization Components:
-        - lambda_1 = E_pm(R_0) - E_pm(R_pm) >= 0 (relaxation of charged state)
-        - lambda_2 = E_0(R_pm) - E_0(R_0) >= 0 (relaxation of neutral state)
-        - lambda_inner = lambda_1 + lambda_2
-        - lambda_total = lambda_inner + (lambda_outer or 0.0)
-        - Delta G^0 = E_pm(R_pm) - E_0(R_0) in eV (or explicit driving force)
-        - Delta G^dagger = (Delta G^0 + lambda_total)^2 / (4 * lambda_total)
-        - k_ET = (2 * pi / hbar) * |H_DA|^2 * (1 / sqrt(4 * pi * lambda * k_B * T)) * exp(-Delta G^dagger / (k_B * T))
-
-    Args:
-        e_neutral_at_neutral_geom_hartree: E_0(R_0) in Hartree.
-        e_charged_at_neutral_geom_hartree: E_pm(R_0) in Hartree.
-        e_charged_at_charged_geom_hartree: E_pm(R_pm) in Hartree.
-        e_neutral_at_charged_geom_hartree: E_0(R_pm) in Hartree.
-        lambda_outer_ev: Optional outer-sphere solvent reorganization energy in eV.
-        delta_g_0_ev: Optional explicit reaction driving force Delta G^0 in eV.
-        electronic_coupling_ev: Optional electronic coupling matrix element H_DA in eV.
-        temperature_k: Absolute temperature in Kelvin (default: 298.15 K).
-
-    Returns:
-        MarcusReorganizationResult containing inner/outer reorganization energies, activation barrier, and rate.
-
-    Raises:
-        MarcusConvergenceError: If unphysical energy inversions (lambda < 0) or unphysical inputs occur.
     """
     # 1. Evaluate individual energy differences in Hartree
     d_e1_hartree = e_charged_at_neutral_geom_hartree - e_charged_at_charged_geom_hartree
@@ -157,30 +158,18 @@ def run_marcus_reorganization_pipeline(
     lock_file: Optional[Union[Path, str]] = None,
 ) -> MarcusReorganizationResult:
     """
-    [M][C] Execute Marcus reorganization pipeline under optional atomic file lock protection.
+    [M][E] Execute thread-safe Nelson 4-point Marcus reorganization calculation with atomic file lock.
     """
-    if lock_file is not None:
-        target_p = Path(lock_file)
-        lock_p = target_p.with_suffix(".lock")
-        with AtomicFileLock(lock_p, target_p, timeout=10.0, lease_duration=30.0):
-            return compute_marcus_reorganization(
-                e_neutral_at_neutral_geom_hartree=e_neutral_at_neutral_geom_hartree,
-                e_charged_at_neutral_geom_hartree=e_charged_at_neutral_geom_hartree,
-                e_charged_at_charged_geom_hartree=e_charged_at_charged_geom_hartree,
-                e_neutral_at_charged_geom_hartree=e_neutral_at_charged_geom_hartree,
-                lambda_outer_ev=lambda_outer_ev,
-                delta_g_0_ev=delta_g_0_ev,
-                electronic_coupling_ev=electronic_coupling_ev,
-                temperature_k=temperature_k,
-            )
+    target_lock = lock_file if lock_file is not None else Path("marcus_pipeline.lock")
 
-    return compute_marcus_reorganization(
-        e_neutral_at_neutral_geom_hartree=e_neutral_at_neutral_geom_hartree,
-        e_charged_at_neutral_geom_hartree=e_charged_at_neutral_geom_hartree,
-        e_charged_at_charged_geom_hartree=e_charged_at_charged_geom_hartree,
-        e_neutral_at_charged_geom_hartree=e_neutral_at_charged_geom_hartree,
-        lambda_outer_ev=lambda_outer_ev,
-        delta_g_0_ev=delta_g_0_ev,
-        electronic_coupling_ev=electronic_coupling_ev,
-        temperature_k=temperature_k,
-    )
+    with AtomicFileLock(target_lock, timeout=30.0):
+        return compute_marcus_reorganization(
+            e_neutral_at_neutral_geom_hartree=e_neutral_at_neutral_geom_hartree,
+            e_charged_at_neutral_geom_hartree=e_charged_at_neutral_geom_hartree,
+            e_charged_at_charged_geom_hartree=e_charged_at_charged_geom_hartree,
+            e_neutral_at_charged_geom_hartree=e_neutral_at_charged_geom_hartree,
+            lambda_outer_ev=lambda_outer_ev,
+            delta_g_0_ev=delta_g_0_ev,
+            electronic_coupling_ev=electronic_coupling_ev,
+            temperature_k=temperature_k,
+        )

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 from typing import Optional, Tuple
+from pydantic import BaseModel, ConfigDict, Field
 
 from cochem.qc.models import SOCMEResult
 
@@ -19,6 +20,37 @@ from cochem.qc.models import SOCMEResult
 H_BAR_EV_S: float = 6.582119569e-16
 K_BOLTZMANN_EV_K: float = 8.617333262e-5
 CM1_TO_EV: float = 1.239841984e-4
+
+
+class SOCMEMatrix(BaseModel):
+    """Data contract representing the Cartesian components of a spin-orbit coupling matrix element."""
+    model_config = ConfigDict(frozen=True)
+
+    h_so_x_cm1: float
+    h_so_y_cm1: float
+    h_so_z_cm1: float
+    magnitude_cm1: float
+
+
+class ISCKineticsResult(BaseModel):
+    """Data contract representing Intersystem Crossing kinetics via Fermi's Golden Rule."""
+    model_config = ConfigDict(frozen=True)
+
+    initial_state: str
+    final_state: str
+    delta_e_ev: float
+    socme_magnitude_cm1: float
+    fcwd_ev_inv: float
+    k_isc_s_inv: float
+
+
+class PhosphorescenceResult(BaseModel):
+    """Data contract representing phosphorescence radiative emission properties."""
+    model_config = ConfigDict(frozen=True)
+
+    einstein_a_s_inv: float
+    radiative_lifetime_seconds: float
+    transition_wavelength_nm: Optional[float] = None
 
 
 def compute_socme_and_isc_rate(
@@ -31,29 +63,6 @@ def compute_socme_and_isc_rate(
 ) -> SOCMEResult:
     """
     [M][D] Compute Spin-Orbit Coupling Matrix Elements and Intersystem Crossing rate (REQ-QC-089).
-
-    Formulation:
-        1. Effective SOMF coupling magnitude:
-           ||V_SO|| = sqrt(H_SO,x^2 + H_SO,y^2 + H_SO,z^2) in cm^-1
-        2. Marcus Franck-Condon Weighted Density (FCWD):
-           FCWD(Delta E_ST) = (1 / sqrt(4 * pi * lambda * k_B * T)) * exp(-(Delta E_ST + lambda)^2 / (4 * lambda * k_B * T))
-        3. Fermi's Golden Rule ISC rate constant:
-           k_ISC = (2 * pi / hbar) * |V_SO,eV|^2 * FCWD
-        4. Phosphorescence radiative lifetime tau_phos approx 1 / k_ISC.
-
-    Args:
-        initial_state: Label of initial electronic state (e.g. 'S1').
-        final_state: Label of target electronic state (e.g. 'T1').
-        delta_e_st_ev: State adiabatic or vertical energy gap Delta E_ST in eV.
-        socme_components_cm1: Cartesian components (H_SO,x, H_SO,y, H_SO,z) in cm^-1.
-        reorganization_energy_ev: Reorganization energy lambda in eV (default: 0.2 eV).
-        temperature_k: Absolute temperature in Kelvin (default: 298.15 K).
-
-    Returns:
-        SOCMEResult containing matrix element norms, FCWD, k_ISC rate, and lifetime.
-
-    Raises:
-        ValueError: If temperature_k <= 0 or reorganization_energy_ev <= 0.
     """
     if temperature_k <= 0.0:
         raise ValueError(f"Temperature must be positive, got T={temperature_k} K.")

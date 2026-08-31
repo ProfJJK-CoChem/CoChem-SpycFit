@@ -14,6 +14,7 @@ import math
 from typing import List, Sequence, Tuple, Union
 
 import numpy as np
+from pydantic import BaseModel, ConfigDict, Field
 
 from cochem.core.cochem_elements import get_ciaaw_atomic_mass
 from cochem.qc.models import ProjectedFrequencyResult
@@ -23,6 +24,28 @@ AMU_TO_AU: float = 1822.888486209
 ANGSTROM_TO_BOHR: float = 1.88972612462577
 AU_TO_CM1: float = 219474.63136320
 ZERO_MODE_TOLERANCE_CM1: float = 1.0e-4
+
+
+class ProjectedVibrationalSpectrum(BaseModel):
+    """Data contract representing projected harmonic vibrational spectrum."""
+    model_config = ConfigDict(frozen=True)
+
+    unprojected_frequencies_cm1: List[float]
+    projected_frequencies_cm1: List[float]
+    zero_mode_residuals_cm1: List[float]
+    num_zero_modes: int = 6
+    is_linear: bool = False
+    is_clean: bool = True
+
+
+class SayvetzEckartProjectionResult(BaseModel):
+    """Data contract representing Sayvetz-Eckart projector diagnostics."""
+    model_config = ConfigDict(frozen=True)
+
+    projected_frequencies_cm1: List[float]
+    rot_trans_residual_max_cm1: float
+    is_projection_clean: bool
+    num_projected_zero_modes: int
 
 
 def project_sayvetz_eckart_hessian(
@@ -133,23 +156,25 @@ def project_sayvetz_eckart_hessian(
     eigenvals_raw, _ = np.linalg.eigh(h_mw)
     eigenvals_proj, _ = np.linalg.eigh(h_mw_proj)
 
-    # Frequencies in cm^-1
+    # Frequencies in cm^-1: imaginary frequencies represented with negative sign
     freqs_raw = np.sign(eigenvals_raw) * np.sqrt(np.abs(eigenvals_raw)) * AU_TO_CM1
     freqs_proj = np.sign(eigenvals_proj) * np.sqrt(np.abs(eigenvals_proj)) * AU_TO_CM1
 
-    # Zero the lowest num_zero_modes explicitly if they are within numerical precision
-    zero_mode_residuals = np.abs(freqs_proj[:num_zero_modes])
+    # Identify rigid-body zero modes by smallest absolute magnitude (handles transition states where lambda_TS < 0)
+    abs_freqs_proj = np.abs(freqs_proj)
+    zero_mode_indices = np.argsort(abs_freqs_proj)[:num_zero_modes]
+    zero_mode_residuals = abs_freqs_proj[zero_mode_indices]
     max_residual = float(np.max(zero_mode_residuals)) if len(zero_mode_residuals) > 0 else 0.0
     is_clean = max_residual <= ZERO_MODE_TOLERANCE_CM1
 
-    # Clean display frequencies
+    # Clean display frequencies: zero only the true rigid-body zero modes
     cleaned_freqs_proj = freqs_proj.copy()
-    cleaned_freqs_proj[:num_zero_modes] = 0.0
+    cleaned_freqs_proj[zero_mode_indices] = 0.0
 
     return ProjectedFrequencyResult(
         unprojected_frequencies_cm1=[round(float(f), 4) for f in freqs_raw],
         projected_frequencies_cm1=[round(float(f), 4) for f in cleaned_freqs_proj],
-        rot_trans_residual_max_cm1=round(max_residual, 8),
+        rot_trans_residual_max_cm1=max_residual,
         num_projected_zero_modes=num_zero_modes,
         is_linear_molecule=is_linear,
         is_projection_clean=is_clean,

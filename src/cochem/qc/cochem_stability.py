@@ -10,8 +10,59 @@ Provenance:
 from __future__ import annotations
 
 from typing import Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field
 
 from cochem.qc.models import WavefunctionStabilityReport
+
+
+class StabilityAnalysisResult(BaseModel):
+    """Data contract representing electronic orbital stability analysis."""
+    model_config = ConfigDict(frozen=True)
+
+    is_stable: bool
+    lowest_eigenvalue: float
+    instability_mode: str
+    requires_broken_symmetry: bool
+
+
+class BrokenSymmetryState(BaseModel):
+    """Data contract representing a Broken-Symmetry open-shell singlet and High-Spin state pair."""
+    model_config = ConfigDict(frozen=True)
+
+    e_bs_hartree: float
+    s2_bs: float
+    e_hs_hartree: float
+    s2_hs: float
+    yamaguchi_energy_hartree: float
+
+
+class UnstableWavefunctionError(RuntimeError):
+    """Raised when an electronic wavefunction exhibits unphysical or unresolved stability eigenvalues."""
+    pass
+
+
+def compute_yamaguchi_projection(
+    e_bs_hartree: float,
+    s2_bs: float,
+    e_hs_hartree: float,
+    s2_hs: float,
+    s_expected: float = 0.0,
+) -> float:
+    """
+    [M][D] Calculate the Yamaguchi approximate spin-projected singlet electronic energy.
+    """
+    s2_ls = s_expected * (s_expected + 1.0)
+    denom_hs = s2_hs - s2_ls
+    if abs(denom_hs) < 1e-6:
+        raise ValueError("High-spin <S^2> denominator is too close to low-spin expectation value.")
+
+    c_hs = (s2_bs - s2_ls) / denom_hs
+    denom_proj = 1.0 - c_hs
+    if abs(denom_proj) < 1e-6:
+        raise ValueError("Yamaguchi denominator 1 - c_HS is zero.")
+
+    e_proj = (e_bs_hartree - c_hs * e_hs_hartree) / denom_proj
+    return float(e_proj)
 
 
 def evaluate_wavefunction_stability(
@@ -25,32 +76,6 @@ def evaluate_wavefunction_stability(
 ) -> WavefunctionStabilityReport:
     """
     [M][D] Evaluate post-SCF orbital Hessian stability and compute Yamaguchi spin-projected energies (REQ-QC-087).
-
-    Physical Principles:
-        1. Orbital Stability:
-           - lambda_orb >= 0: Stable electronic ground state.
-           - lambda_orb < 0: Unstable solution. Requires broken-symmetry unrestricted SCF.
-        2. Spin Contamination:
-           - S_exp(S_exp + 1) vs calculated <S^2>.
-           - Contamination % = (|<S^2>_calc - S_exp(S_exp + 1)|) / (S_exp(S_exp + 1) + 1) * 100%.
-        3. Yamaguchi Spin Projection (Broken-Symmetry):
-           - c_HS = (<S^2>_BS - S_LS(S_LS + 1)) / (<S^2>_HS - S_LS(S_LS + 1))
-           - E_proj = (E_BS - c_HS * E_HS) / (1 - c_HS)
-
-    Args:
-        lowest_orbital_hessian_eigenval: Lowest eigenvalue lambda_orb of the electronic orbital Hessian.
-        s2_calc: Post-SCF calculated <S^2> total spin operator expectation value.
-        s_expected: Expected total spin quantum number S (e.g. 0 for singlet, 0.5 for doublet, 1.0 for triplet).
-        e_bs_hartree: Optional Broken-Symmetry electronic energy in Hartree.
-        e_hs_hartree: Optional High-Spin electronic energy in Hartree.
-        s2_hs: Optional High-Spin state <S^2> expectation value.
-        instability_type: Optional explicit instability mode if lambda_orb < 0.
-
-    Returns:
-        WavefunctionStabilityReport containing stability enum, spin contamination, and projected energy.
-
-    Raises:
-        ValueError: If s_expected < 0 or s2_calc < 0.
     """
     if s_expected < 0.0:
         raise ValueError(f"Expected spin quantum number S must be >= 0, got S={s_expected}.")
@@ -78,13 +103,13 @@ def evaluate_wavefunction_stability(
         and e_hs_hartree is not None
         and s2_hs is not None
     ):
-        s2_ls = s2_exp
-        denom_hs = s2_hs - s2_ls
-        if abs(denom_hs) > 1e-6:
-            c_hs = (s2_calc - s2_ls) / denom_hs
-            denom_proj = 1.0 - c_hs
-            if abs(denom_proj) > 1e-6:
-                yamaguchi_energy = (e_bs_hartree - c_hs * e_hs_hartree) / denom_proj
+        yamaguchi_energy = compute_yamaguchi_projection(
+            e_bs_hartree=e_bs_hartree,
+            s2_bs=s2_calc,
+            e_hs_hartree=e_hs_hartree,
+            s2_hs=s2_hs,
+            s_expected=s_expected,
+        )
 
     return WavefunctionStabilityReport(
         initial_stability=status,

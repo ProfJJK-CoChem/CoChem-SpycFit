@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from typing import Optional
+from pydantic import BaseModel, ConfigDict, Field
 
 from cochem.qc.models import StandardStateCorrectionPayload
 
@@ -21,6 +22,29 @@ R_GAS_KJ_MOL_K: float = 8.31446261815324e-3
 HARTREE_TO_KCAL_MOL: float = 627.5094740631
 HARTREE_TO_KJ_MOL: float = 2625.499639479
 KCAL_TO_KJ: float = 4.184
+
+
+class SolvationResult(BaseModel):
+    """Data contract representing partitioned continuum solvation free energies."""
+    model_config = ConfigDict(frozen=True)
+
+    delta_g_solv_kcal_mol: float = Field(description="Total solvation free energy Delta G_solv in kcal/mol")
+    delta_g_electrostatic_kcal_mol: float = Field(description="Electrostatic polarization free energy Delta G_el in kcal/mol")
+    delta_g_cds_kcal_mol: float = Field(description="Cavitation, dispersion, and solvent reorganization term in kcal/mol")
+    solvent_name: str = Field(description="Solvent identifier")
+    dielectric_constant: Optional[float] = Field(default=None, description="Static dielectric constant")
+
+
+class StandardStateCorrection(BaseModel):
+    """Data contract representing standard state compression correction."""
+    model_config = ConfigDict(frozen=True)
+
+    temperature_k: float = Field(default=298.15)
+    pressure_atm: float = Field(default=1.0)
+    molar_volume_liters: float
+    delta_g_shift_kcal_mol: float
+    delta_g_shift_kj_mol: float
+    g_solv_hartree: float
 
 
 def compute_standard_state_correction(
@@ -94,4 +118,28 @@ def compute_standard_state_correction(
         g_solv_1m_hartree=g_solv_hartree,
         solvent_name=solvent_name,
         is_neat_solvent_corrected=is_neat_solvent,
+    )
+
+
+def partition_solvation_free_energy(
+    delta_g_solv_kcal_mol: float,
+    delta_g_electrostatic_kcal_mol: float,
+    delta_g_cds_kcal_mol: Optional[float] = None,
+    solvent_name: str = "water",
+    dielectric_constant: Optional[float] = None,
+) -> SolvationResult:
+    """
+    [M][D] Partition continuum solvation free energy into electrostatic and non-electrostatic (CDS) contributions.
+    """
+    if delta_g_cds_kcal_mol is None:
+        cds = delta_g_solv_kcal_mol - delta_g_electrostatic_kcal_mol
+    else:
+        cds = delta_g_cds_kcal_mol
+
+    return SolvationResult(
+        delta_g_solv_kcal_mol=round(delta_g_solv_kcal_mol, 4),
+        delta_g_electrostatic_kcal_mol=round(delta_g_electrostatic_kcal_mol, 4),
+        delta_g_cds_kcal_mol=round(cds, 4),
+        solvent_name=solvent_name,
+        dielectric_constant=dielectric_constant,
     )

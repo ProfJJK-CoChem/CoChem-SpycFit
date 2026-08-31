@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import hashlib
 import math
-from typing import Optional
+from typing import Any, Optional, Sequence, Union
+
+import numpy as np
+from pydantic import BaseModel, ConfigDict, Field
 
 from cochem.qc.exceptions import (
     LevelOfTheoryMismatchError,
@@ -22,6 +25,20 @@ from cochem.qc.models import LevelOfTheoryEnvelope
 
 
 DEFAULT_STATIONARY_GRADIENT_THRESHOLD: float = 1.0e-4
+
+
+class GradientValidationResult(BaseModel):
+    """Result of stationary point nuclear gradient validation."""
+    model_config = ConfigDict(frozen=True)
+    is_stationary: bool
+    max_gradient_norm: float = Field(ge=0.0)
+    rms_gradient_norm: float = Field(ge=0.0)
+    threshold: float = Field(default=DEFAULT_STATIONARY_GRADIENT_THRESHOLD)
+
+
+class NonStationaryPointError(NonStationaryFrequencyError, RuntimeError):
+    """Raised when nuclear gradients exceed stationary point threshold."""
+    pass
 
 
 def canonicalize_lot_string(
@@ -154,28 +171,58 @@ def compute_lot_hash_from_components(
     return hashlib.sha256(canonical_str.encode("utf-8")).hexdigest()
 
 
-def compute_lot_hash(envelope: LevelOfTheoryEnvelope) -> str:
+def compute_lot_hash(envelope: Union[LevelOfTheoryEnvelope, Any]) -> str:
     """
-    [D] Compute the canonical SHA-256 cryptographic fingerprint from a LevelOfTheoryEnvelope.
+    [D] Compute the canonical SHA-256 cryptographic fingerprint from a LevelOfTheoryEnvelope,
+    LevelOfTheory, or dictionary specification.
 
     Parameters
     ----------
-    envelope : LevelOfTheoryEnvelope
-        The Level-of-Theory metadata envelope.
+    envelope : Union[LevelOfTheoryEnvelope, LevelOfTheory, dict]
+        The Level-of-Theory metadata envelope or registry object.
 
     Returns
     -------
     str
         64-character lowercase hexadecimal SHA-256 digest.
     """
-    return compute_lot_hash_from_components(
-        hamiltonian=envelope.hamiltonian_method,
-        basis=envelope.basis_set,
-        aux_basis=envelope.auxiliary_basis_set,
-        dispersion=envelope.dispersion_correction,
-        grid=envelope.integration_grid,
-        solvent=envelope.solvation_model,
-    )
+    if hasattr(envelope, "hamiltonian_method"):
+        # LevelOfTheoryEnvelope schema
+        return compute_lot_hash_from_components(
+            hamiltonian=envelope.hamiltonian_method,
+            basis=envelope.basis_set,
+            aux_basis=envelope.auxiliary_basis_set,
+            dispersion=envelope.dispersion_correction,
+            grid=envelope.integration_grid,
+            solvent=envelope.solvation_model,
+        )
+    elif hasattr(envelope, "hamiltonian"):
+        # LevelOfTheory schema
+        disp = envelope.dispersion.scheme if hasattr(envelope.dispersion, "scheme") else envelope.dispersion
+        solv = (
+            f"{envelope.solvation.model_name}({envelope.solvation.solvent_name})"
+            if hasattr(envelope.solvation, "model_name")
+            else envelope.solvation
+        )
+        return compute_lot_hash_from_components(
+            hamiltonian=envelope.hamiltonian,
+            basis=envelope.basis_set,
+            aux_basis=envelope.auxiliary_basis_set,
+            dispersion=disp,
+            grid=envelope.grid or "DefGrid2",
+            solvent=solv,
+        )
+    elif isinstance(envelope, dict):
+        return compute_lot_hash_from_components(
+            hamiltonian=envelope.get("hamiltonian") or envelope.get("hamiltonian_method", ""),
+            basis=envelope.get("basis_set") or envelope.get("basis", ""),
+            aux_basis=envelope.get("auxiliary_basis_set") or envelope.get("aux_basis"),
+            dispersion=envelope.get("dispersion_correction") or envelope.get("dispersion"),
+            grid=envelope.get("integration_grid") or envelope.get("grid", "DefGrid2"),
+            solvent=envelope.get("solvation_model") or envelope.get("solvation") or envelope.get("solvent"),
+        )
+    else:
+        raise TypeError(f"Expected LevelOfTheoryEnvelope, LevelOfTheory, or dict, got {type(envelope)}")
 
 
 # Alias for backwards compatibility
@@ -223,13 +270,16 @@ def verify_level_of_theory_invariance(
     return True
 
 
-# Alias for explicit enforcement terminology
+# Aliases for explicit enforcement terminology
 enforce_frequency_lot_invariance = verify_level_of_theory_invariance
+verify_lot_invariance = verify_level_of_theory_invariance
 
 
 def verify_stationary_point(
-    gradient_norm: float,
+    gradient_or_norm: Optional[Union[float, Sequence[float], np.ndarray]] = None,
     threshold: float = DEFAULT_STATIONARY_GRADIENT_THRESHOLD,
+    *,
+    gradient_norm: Optional[float] = None,
 ) -> bool:
     """
     [M][E] Gate 2: Stationary Point Residual Gradient Gate (REQ-QC-085).
@@ -238,10 +288,12 @@ def verify_stationary_point(
 
     Parameters
     ----------
-    gradient_norm : float
-        Maximum Cartesian gradient component residual in atomic units (Hartree/Bohr).
+    gradient_or_norm : Optional[Union[float, Sequence[float], np.ndarray]]
+        Maximum Cartesian gradient component residual or full Cartesian gradient vector g.
     threshold : float, optional
         Stationary point convergence threshold in a.u. Default is 1.0e-4 a.u.
+    gradient_norm : Optional[float], optional
+        Keyword-only alias for scalar gradient norm.
 
     Returns
     -------
@@ -253,6 +305,20 @@ def verify_stationary_point(
     NonStationaryFrequencyError
         If gradient_norm > threshold, gradient_norm < 0, or is NaN / infinite.
     """
+    effective_grad = gradient_or_norm if gradient_or_norm is not None else gradient_norm
+    if effective_grad is None:
+        raise ValueError("Must provide either gradient_or_norm or gradient_norm.")
+
+    if isinstance(effective_grad, (int, float)):
+        g_val = float(effective_grad)
+    else:
+        arr = np.asarray(effective_grad, dtype=np.float64)
+        if arr.size == 0:
+            raise ValueError("Gradient array cannot be empty.")
+        g_val = float(np.max(np.abs(arr)))
+
+    gradient_norm = g_val
+
     if (
         math.isnan(gradient_norm)
         or math.isinf(gradient_norm)

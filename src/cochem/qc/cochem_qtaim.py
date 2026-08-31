@@ -10,12 +10,46 @@ Provenance:
 
 from __future__ import annotations
 
-from typing import Literal, Tuple
-
+from typing import List, Literal, Optional, Tuple
 import numpy as np
+from pydantic import BaseModel, ConfigDict, Field
 
 from cochem.qc.exceptions import QTAIMTopologyError
 from cochem.qc.models import BondCriticalPointDescriptor
+
+
+class CriticalPoint(BaseModel):
+    """Data contract representing a general QTAIM critical point (NCP, BCP, RCP, CCP)."""
+    model_config = ConfigDict(frozen=True)
+
+    cp_type: Literal["(3,-3)", "(3,-1)", "(3,+1)", "(3,+3)"]
+    cp_name: Literal["NCP", "BCP", "RCP", "CCP"]
+    coordinates_angstrom: Tuple[float, float, float]
+    density_au: float
+    laplacian_au: float
+    eigenvalues: Tuple[float, float, float]
+
+
+class BCPDescriptor(BondCriticalPointDescriptor):
+    """Alias for BondCriticalPointDescriptor."""
+    pass
+
+
+class QTAIMTopologyGraph(BaseModel):
+    """Data contract representing the topological molecular graph formed by nuclei and BCP bond paths."""
+    model_config = ConfigDict(frozen=True)
+
+    n_ncp: int = Field(ge=1, description="Number of Nuclear Critical Points")
+    n_bcp: int = Field(ge=0, description="Number of Bond Critical Points")
+    n_rcp: int = Field(default=0, ge=0, description="Number of Ring Critical Points")
+    n_ccp: int = Field(default=0, ge=0, description="Number of Cage Critical Points")
+    is_poincare_hopf_satisfied: bool = True
+    bcps: List[BondCriticalPointDescriptor] = Field(default_factory=list)
+
+
+class PoincareHopfViolationError(QTAIMTopologyError, RuntimeError):
+    """Raised when Poincaré-Hopf invariant n_NCP - n_BCP + n_RCP - n_CCP != 1 is violated."""
+    pass
 
 
 def classify_bond_critical_point(
@@ -30,31 +64,6 @@ def classify_bond_critical_point(
 ) -> BondCriticalPointDescriptor:
     """
     [M][D] Classify a (3,-1) Bond Critical Point using Bader and Cremer-Kraka criteria (REQ-QC-088).
-
-    Topological & Physical Criteria:
-        1. Laplacian: nabla^2 rho = lambda_1 + lambda_2 + lambda_3
-        2. Total Energy Density: H(r_BCP) = G(r_BCP) + V(r_BCP)
-        3. Bond Ellipticity: epsilon = (lambda_1 / lambda_2) - 1 >= 0
-        4. Interaction Classification:
-           - nabla^2 rho < 0, H < 0: COVALENT_SHARED (covalent, electron sharing)
-           - nabla^2 rho > 0, H < 0: TRANSIT_POLAR_COVALENT (polar covalent, coordination)
-           - nabla^2 rho > 0, H > 0: NON_COVALENT_CLOSED_SHELL (van der Waals, ionic, steric)
-
-    Args:
-        bcp_idx: Unique integer index of the BCP.
-        atom_1: 0-based index of first bonded atom.
-        atom_2: 0-based index of second bonded atom.
-        coords: Cartesian coordinates (x, y, z) in Å.
-        rho: Electron density rho(r_BCP) in a.u. (must be > 0).
-        hessian_eigenvals: 3 eigenvalues of the electron density Hessian matrix.
-        g_density: Lagrangian kinetic energy density G(r) in a.u. (>= 0).
-        v_density: Virial potential energy density V(r) in a.u. (<= 0).
-
-    Returns:
-        BondCriticalPointDescriptor containing topological scalar quantities and interaction class.
-
-    Raises:
-        ValueError: If rho <= 0, g_density < 0, or v_density > 0.
     """
     if rho <= 0.0:
         raise ValueError(f"Electron density at BCP must be positive, got rho={rho} a.u.")
@@ -74,7 +83,6 @@ def classify_bond_critical_point(
     h_density = g_density + v_density
 
     # 4. Bond Ellipticity epsilon = (lambda_1 / lambda_2) - 1
-    # For a genuine (3,-1) BCP, l1 and l2 are negative perpendicular curvatures
     if abs(l2) > 1e-9:
         ellipticity = max(0.0, (l1 / l2) - 1.0)
     else:
@@ -109,36 +117,15 @@ def classify_bond_critical_point(
 def validate_poincare_hopf_invariant(
     n_ncp: int,
     n_bcp: int,
-    n_rcp: int,
-    n_ccp: int,
+    n_rcp: int = 0,
+    n_ccp: int = 0,
 ) -> bool:
     """
     [M] Enforce the global Poincaré-Hopf topological invariant on QTAIM critical points (REQ-QC-088).
-
-    Invariant:
-        n_NCP - n_BCP + n_RCP - n_CCP = 1 (for an isolated finite molecule in R^3)
-
-    Where:
-        - n_NCP: Number of Nuclear Critical Points (3,-3)
-        - n_BCP: Number of Bond Critical Points (3,-1)
-        - n_RCP: Number of Ring Critical Points (3,+1)
-        - n_CCP: Number of Cage Critical Points (3,+3)
-
-    Args:
-        n_ncp: Count of Nuclear Critical Points.
-        n_bcp: Count of Bond Critical Points.
-        n_rcp: Count of Ring Critical Points.
-        n_ccp: Count of Cage Critical Points.
-
-    Returns:
-        True if the topological relationship is satisfied.
-
-    Raises:
-        QTAIMTopologyError: If Euler characteristic != 1.
     """
     euler_char = n_ncp - n_bcp + n_rcp - n_ccp
     if euler_char != 1:
-        raise QTAIMTopologyError(
+        raise PoincareHopfViolationError(
             n_ncp=n_ncp,
             n_bcp=n_bcp,
             n_rcp=n_rcp,
