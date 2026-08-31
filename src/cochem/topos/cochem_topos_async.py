@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -19,6 +20,8 @@ import psutil
 from pydantic import BaseModel, Field
 
 from cochem.core.cochem_exceptions import ConcurrencyLockTimeoutError
+
+logger = logging.getLogger("cochem_topos_async")
 
 
 class MonomerPreprocessResult(BaseModel):
@@ -130,8 +133,8 @@ def process_monomer_cached(
                         moments_of_inertia_amu_ang2=tuple(data["moments_of_inertia_amu_ang2"]),
                         cache_hit=True,
                     )
-                except Exception:
-                    pass
+                except (json.JSONDecodeError, KeyError, ValueError, OSError) as read_err:
+                    logger.warning("Corrupted monomer cache file %s, recomputing: %s", cache_file, read_err)
 
             # Compute if not cached
             dipole, rot_consts, moments = compute_func(isomeric_smiles, charge, multiplicity)

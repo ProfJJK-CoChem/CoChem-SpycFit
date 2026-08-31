@@ -21,11 +21,15 @@ from __future__ import annotations
 
 import math
 import os
+from pathlib import Path
 import tempfile
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+import filelock
 import pytest
 import numpy as np
 from ci_tools.anti_spoof_linter import BANNED_MOCK_IMPORTS
 from mendeleev import element as m_element
+from cochem.qc.exceptions import IsotopeNotFoundError
 
 from cochem.core.cochem_exceptions import (
     BenchmarkMotifMismatchError,
@@ -48,6 +52,7 @@ from cochem.core.cochem_elements import (
     get_atomic_mass,
     get_atomic_number,
     get_available_isotopes,
+    get_element_electronegativity,
     get_element_name,
     get_element_symbol,
     get_vdw_radius,
@@ -726,6 +731,73 @@ $normal_modes
     assert len(freqs) == 3
     assert freqs[1] == 150.25
     assert modes.shape == (3, 3)
+
+
+def test_hpc_schedulers_pbs_and_openmpi(tmp_path: Path) -> None:
+    """Verify PBS and OpenMPI scheduler resource discovery."""
+    nodefile = tmp_path / "pbs_nodes"
+    nodefile.write_text("node01\nnode01\nnode02\nnode02\n", encoding="utf-8")
+
+    res_pbs = allocate_hpc_resources(
+        env_override={"PBS_NODEFILE": str(nodefile)},
+        override_free_ram_gb=32.0,
+        override_phys_cores=8,
+    )
+    assert res_pbs.scheduler_type == "pbs"
+    assert res_pbs.allocated_procs == 4
+
+    res_ompi = allocate_hpc_resources(
+        env_override={"OMPI_COMM_WORLD_SIZE": "12"},
+        override_free_ram_gb=64.0,
+        override_phys_cores=16,
+    )
+    assert res_ompi.scheduler_type == "openmpi"
+    assert res_ompi.allocated_procs == 12
+
+
+def test_mendeleev_extended_properties_and_errors() -> None:
+    """Verify isotope errors, invalid symbols, and electronegativity lookups."""
+    with pytest.raises(IsotopeNotFoundError):
+        get_atomic_mass("C", isotope=999)
+
+    with pytest.raises(ValueError):
+        get_atomic_number("INVALID_ELEMENT")
+
+    en_f = get_element_electronegativity("F")
+    assert en_f is not None and en_f > 3.9
+    assert get_element_electronegativity("He") is None
+
+
+def test_ecp_builder_extended_and_errors() -> None:
+    """Verify Actinide and Dunning basis ECP mapping, plus transactinide error."""
+    ecp_dunning = assign_ecp_for_element("I", "cc-pVTZ", "B3LYP")
+    assert ecp_dunning.assigned_ecp == "cc-pVnZ-PP"
+
+    ecp_u = assign_ecp_for_element("U", "def2-SVP", "PBE0")
+    assert ecp_u.assigned_ecp == "ECP60MWB"
+
+    with pytest.raises(ECPConfigurationError):
+        assign_ecp_for_element("Og", "def2-TZVP", "B3LYP")
+
+
+def test_topos_async_timeout_error() -> None:
+    """Verify ConcurrencyLockTimeoutError when lock cannot be acquired within timeout."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache_key = compute_monomer_cache_key("CCO", charge=0, multiplicity=1)
+        lock_file = Path(tmpdir) / f"{cache_key}.json.lock"
+
+        # Pre-lock using filelock in outer context with timeout
+        held_lock = filelock.FileLock(str(lock_file), timeout=10)
+        with held_lock:
+            with pytest.raises(ConcurrencyLockTimeoutError):
+                def slow_compute(smi: str, q: int, m: int):
+                    return 0.0, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+                process_monomer_cached(
+                    "CCO",
+                    compute_func=slow_compute,
+                    cache_dir=tmpdir,
+                    timeout_seconds=0.1,
+                )
 
 
 # ==============================================================================

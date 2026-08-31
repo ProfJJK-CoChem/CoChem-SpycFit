@@ -1,355 +1,675 @@
-Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\20260830_improvements\.in-progress\Perfected_SRS_Chunk_04_prompts.md.
+Perform adversarial static analysis and logical review on implemented code for D:\__CoChem\__agentic\.prompts\.SRS\20260830_improvements\.in-progress\Perfected_SRS_Chunk_05_prompts.md.
 Original prompt:
-An adversarial audit of the generated execution prompts has been initiated via `cochem-audit` ([`224471af-0af3-4ae6-8422-bce8a520c325`](conversation://224471af-0af3-4ae6-8422-bce8a520c325)). Awaiting the audit report...
-# Certified Implementation Prompts: CoChem-BASE SRS Section 4.9 (Chunk 09)
-### Reaction Energetics, Excited States, Solvation, Wavefunction Stability, Wavefunction Topology & Rigorous Spectroscopic Analysis (`REQ-QC-081` to `REQ-QC-090`)
+# CoChem Execution Plan: Granular Prompt Sequence for `COCHEM-SRS-CHUNK-05`
 
-The perfected SRS document has been decomposed into **13 context-safe, granular, sequential execution prompts**. The decomposition has undergone adversarial audit via `cochem-audit` ([`224471af-0af3-4ae6-8422-bce8a520c325`](conversation://224471af-0af3-4ae6-8422-bce8a520c325)) and received **Unanimous Approval**.
+This prompt sequence translates the approved specification **`COCHEM-SRS-CHUNK-05`** (`Section 4.5: Advanced Quantum Chemistry Automation, Torsional Workflows & HPC Concurrency`) into **14 context-safe, granular execution prompts**.
 
-The complete specification artifact is preserved at [`cochem_srs_chunk_09_execution_prompts.md`](file:///C:/Users/ansac/.gemini/antigravity-cli/brain/760182ec-0db1-409f-ac8a-1656ae8cb7c8/cochem_srs_chunk_09_execution_prompts.md).
+### Execution Rules & Constraints Applied:
+1. **Strict 1-File Limit**: Each prompt targets exactly **one** Python script file.
+2. **Sequential Dependency Ordering**: Prompts must be executed in strictly numbered order ($1 \to 14$), ensuring that base exceptions, dynamic element lookups, and hardware models are defined before dependent quantum chemistry, torsional, machine learning, and benchmark engines.
+3. **No Mocks / Zero-Mock Protocol**: All prompts require genuine physical execution and dynamic queries via `mendeleev`, `filelock`, `scipy`, `numpy`, and `pydantic`.
 
 ---
 
-### Architectural Dependency Graph (Sequential DAG)
-
 ```mermaid
 graph TD
-    P1["Prompt 1: QC Domain Exceptions (exceptions.py)"] --> P2["Prompt 2: Frozen Pydantic v2 Models (models.py)"]
-    P2 --> P3["Prompt 3: Dynamic Mendeleev Parity & Valence (cochem_elements.py) [REQ-081]"]
-    P2 --> P4["Prompt 4: Standard State Solvation Correction (cochem_solvation.py) [REQ-084]"]
-    P2 --> P5["Prompt 5: Level-of-Theory Invariance Gate (cochem_method_validator.py) [REQ-085]"]
-    P2 --> P6["Prompt 6: Marcus Reorganization Pipeline (cochem_marcus.py) [REQ-082]"]
-    P2 --> P7["Prompt 7: Bidirectional IRC Tracing (cochem_irc.py) [REQ-083]"]
-    P3 --> P8["Prompt 8: Dynamic Isotope KIE/EIE Engine (cochem_isotopes.py) [REQ-086]"]
-    P2 --> P9["Prompt 9: Wavefunction Stability & BS-DFT (cochem_stability.py) [REQ-087]"]
-    P2 --> P10["Prompt 10: QTAIM Critical Point Engine (cochem_qtaim.py) [REQ-088]"]
-    P2 --> P11["Prompt 11: SOCME & ISC Kinetics Engine (cochem_socme.py) [REQ-089]"]
-    P3 --> P12["Prompt 12: Sayvetz-Eckart Projection Engine (cochem_frequency.py) [REQ-090]"]
-    
-    P3 --> P13["Prompt 13: Zero-Mock Physical Verification Suite (test_cochem_srs_chunk_09.py)"]
-    P4 --> P13
-    P5 --> P13
-    P6 --> P13
-    P7 --> P13
-    P8 --> P13
-    P9 --> P13
-    P10 --> P13
-    P11 --> P13
-    P12 --> P13
+    P01["Prompt 01: Domain Exceptions<br/>(cochem_exceptions.py)"] --> P02["Prompt 02: Dynamic Elements<br/>(cochem_elements.py)"]
+    P01 --> P03["Prompt 03: Hardware Topology<br/>(cochem_hardware.py)"]
+    P02 --> P04["Prompt 04: ORCA & ECP Builder<br/>(cochem_orca_builder.py)"]
+    P03 --> P04
+    P01 --> P05["Prompt 05: QC Output & Hessian Parser<br/>(cochem_qc_parser.py)"]
+    P02 --> P06["Prompt 06: Mass-Weighted Saddle Escaping<br/>(cochem_qc_pipeline.py)"]
+    P05 --> P06
+    P04 --> P06
+    P05 --> P07["Prompt 07: Quasi-RRHO Thermochemistry<br/>(cochem_thermo.py)"]
+    P02 --> P08["Prompt 08: Adaptive Step TORQ Scanner<br/>(cochem_torq_scanner.py)"]
+    P08 --> P09["Prompt 09: xTB Pre-Scan & Hybrid RBF PES<br/>(cochem_torq_xtb.py)"]
+    P06 --> P09
+    P01 --> P10["Prompt 10: NNIP Fallback & Automorphism RMSD<br/>(cochem_ml_filter.py)"]
+    P03 --> P11["Prompt 11: Async Worker Pool & FileLock<br/>(cochem_topos_async.py)"]
+    P10 --> P12["Prompt 12: Topos Assembly Engine<br/>(cochem_topos_crusher.py)"]
+    P11 --> P12
+    P12 --> P13["Prompt 13: S22/S66 Benchmark & Prep Energy<br/>(cochem_benchmarks.py)"]
+    P13 --> P14["Prompt 14: Asymmetric Integration Test Suite<br/>(test_cochem_chunk05_integration.py)"]
 ```
 
 ---
 
-## Phase 1: Foundation Exceptions & Immutable Data Models
+## Prompt 01: Domain Exception Hierarchy
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-01
+TARGET FILE:       src/cochem/core/cochem_exceptions.py
+REQUIREMENTS:      REQ-CORE-041 through REQ-TOPOS-050
+EXECUTION PHASE:   1 of 14 (Base Infrastructure)
+================================================================================
 
-### Prompt 1 of 13: Quantum Chemistry Domain Exception Hierarchy
-* **Target File**: [`src/cochem/qc/exceptions.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/exceptions.py)
-* **Prerequisites**: Standard Python library (`typing`, `pathlib`)
-* **SRS Traceability**: Section 3.1, REQ-QC-081 through REQ-QC-090
+[CONTEXT & OBJECTIVE]
+Establish the centralized domain exception hierarchy for CoChem-BASE Chunk 05. All domain exceptions must inherit from standardized root classes to allow granular catch-and-retry workflows without masking unexpected system errors.
 
-#### Objectives:
-Implement the complete, hierarchical domain exception tree for CoChem quantum chemistry calculations, thermochemical conversions, electronic structure stability, Level-of-Theory gates, topological QTAIM constraints, and isotopic mass resolution.
+[TARGET SCRIPT FILE]
+`src/cochem/core/cochem_exceptions.py` (Create or update strictly this file).
 
-#### Requirements & Invariants:
-1. Define base domain exception `CoChemQCException(Exception)`.
-2. Implement 9 specialized child exceptions inheriting directly from `CoChemQCException`:
-   - `SpinParityViolationError`: Raised when total electron count $N_e$ and spin multiplicity $M = 2S+1$ violate quantum parity $(N_e + M) \pmod 2 \equiv 1$, or when $2S > N_e$.
-   - `UnphysicalValenceError`: Raised when atomic formal oxidation states exceed physical electronegativity or valence limits.
-   - `LevelOfTheoryMismatchError`: Raised when a frequency or property calculation Level-of-Theory deviates from the geometry optimization SHA-256 fingerprint.
-   - `NonStationaryFrequencyError`: Raised when a vibrational frequency calculation is attempted on a structure with Cartesian gradient norm $\|\mathbf{g}\|_\infty > 1.0 \times 10^{-4}\text{ a.u.}$.
-   - `WavefunctionInstabilityError`: Raised when an SCF solution exhibits negative orbital Hessian eigenvalues and fails stability optimization.
-   - `IRCDisconnectionError`: Raised when bidirectional IRC endpoints fail to connect the transition state to intended reactant/product minima within Kabsch RMSD threshold $< 0.25\text{ \AA}$.
-   - `QTAIMTopologyError`: Raised when electron density gradient trajectory tracing fails to satisfy the Poincaré-Hopf relationship ($n_{\text{NCP}} - n_{\text{BCP}} + n_{\text{RCP}} - n_{\text{CCP}} = 1$).
-   - `MarcusConvergenceError`: Raised when any of the 4 requisite Marcus state calculations fail to converge.
-   - `IsotopeNotFoundError`: Raised when a requested isotopic mass number cannot be resolved from the IUPAC CIAAW dataset via `mendeleev`.
-3. Provide structured diagnostic attributes on each exception (e.g., `attempted_multiplicity`, `total_electrons`, `gradient_norm`, `divergent_fields`).
+[FUNCTIONAL REQUIREMENTS]
+1. Define base exception classes:
+   - `CoChemError(Exception)`: Top-level root exception.
+   - `QuantumChemistryError(CoChemError)`: Root for all ab-initio, DFT, and semi-empirical failures.
+   - `HardwareResourceError(CoChemError)`: Root for CPU, GPU, memory, MPI, and concurrency lock errors.
+   - `MachineLearningError(CoChemError)`: Root for MLIP, neural potential, and clustering errors.
 
-#### Verification Criteria:
-- All 9 exception classes inherit from `CoChemQCException`.
-- Exceptions instantiate with informative formatted error messages and expose diagnostic payload attributes.
+2. Implement the following specialized domain exceptions subclassing the base types:
+   - `ECPConfigurationError(QuantumChemistryError)`: Raised on unsupported elements or invalid basis/ECP combinations (REQ-CORE-041).
+   - `SaddlePointEscapeError(QuantumChemistryError)`: Raised when saddle-point re-optimization fails after MAX_PIVOT_CYCLES=3 (REQ-QC-042).
+   - `BenchmarkMotifMismatchError(QuantumChemistryError)`: Raised when 3D principal moments of inertia deviate > 5% from canonical S22/S66 benchmarks (REQ-BM-043).
+   - `StericGridLockError(QuantumChemistryError)`: Raised if adaptive step refinement drops below 0.1° without resolving steric clash/SCF divergence (REQ-TORQ-044).
+   - `UnsupportedMethodThermoError(QuantumChemistryError)`: Raised when empirical frequency scaling factors are missing for a given functional/basis tuple (REQ-THM-045).
+   - `CudaKernelExecutionError(HardwareResourceError)`: Raised on CUDA runtime, driver mismatch, or out-of-VRAM exceptions (REQ-HW-046).
+   - `HardwareAllocationFloorError(HardwareResourceError)`: Raised if scheduler or workstation process calculation yields <= 0 cores (REQ-HW-047).
+   - `ModelCoverageError(MachineLearningError)`: Raised when input elements exceed the coverage of all NNIP fallback ladder tiers (REQ-ML-048).
+   - `StationaryPointExtractionError(QuantumChemistryError)`: Raised if no valid local minima are identified on the xTB baseline PES (REQ-TORQ-049).
+   - `ConcurrencyLockTimeoutError(HardwareResourceError)`: Raised when acquiring cross-platform filelock exceeds timeout (REQ-TOPOS-050).
 
----
-
-### Prompt 2 of 13: Frozen Pydantic v2 Core Data Models & Envelopes
-* **Target File**: [`src/cochem/qc/models.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/models.py)
-* **Prerequisites**: `pydantic>=2.0.0`, `typing`, [`src/cochem/qc/exceptions.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/exceptions.py)
-* **SRS Traceability**: Section 3.2, Models for REQ-QC-081 to REQ-QC-090
-
-#### Objectives:
-Implement immutable, frozen Pydantic v2 data models for spin/charge validation, Marcus reorganization energies, IRC trajectories, standard-state solvation corrections, Level-of-Theory envelopes, isotopic substitution payloads, wavefunction stability reports, QTAIM bond critical points, SOCME/ISC kinetics, and Sayvetz-Eckart projected frequencies.
-
-#### Requirements & Invariants:
-1. Enforce `model_config = ConfigDict(frozen=True)` across all models to ensure thread-safety and immutability.
-2. Define the following schemas matching the SRS specification:
-   - `SpinChargeValidationResult`: `is_valid: bool`, `total_nuclear_charge: int`, `total_net_charge: int`, `total_electrons: int`, `multiplicity: int`, `parity_valid: bool`, `max_unpaired_electrons: int`, `formal_oxidation_states: Dict[int, float]`, `unphysical_valence_warnings: List[str]`.
-   - `MarcusReorganizationResult`: `e_neutral_at_neutral_geom_hartree: float`, `e_charged_at_neutral_geom_hartree: float`, `e_charged_at_charged_geom_hartree: float`, `e_neutral_at_charged_geom_hartree: float`, `lambda_1_ev: float`, `lambda_2_ev: float`, `lambda_inner_ev: float`, `lambda_inner_kcal_mol: float`, `lambda_outer_ev: Optional[float]`, `total_reorganization_energy_ev: float`, `gibbs_free_energy_delta_ev: float`, `marcus_activation_barrier_ev: float`, `electron_transfer_rate_s_inv: Optional[float]`.
-   - `IRCTrajectoryResult`: `ts_energy_hartree: float`, `ts_imaginary_frequency_cm1: float`, `forward_steps: int`, `reverse_steps: int`, `forward_endpoint_energy_hartree: float`, `reverse_endpoint_energy_hartree: float`, `forward_endpoint_rmsd_to_reactant_angstrom: Optional[float]`, `reverse_endpoint_rmsd_to_product_angstrom: Optional[float]`, `connectivity_verified: bool`, `path_coordinates_bohr: List[List[List[float]]]`, `path_energies_hartree: List[float]`, `hdf5_trajectory_path: Optional[str]`.
-   - `StandardStateCorrectionPayload`: `temperature_kelvin: float = 298.15`, `pressure_atm: float = 1.0`, `gas_molar_volume_liters: float`, `gas_standard_concentration_m: float`, `solution_standard_concentration_m: float = 1.0`, `delta_g_1atm_to_1m_kcal_mol: float`, `delta_g_1atm_to_1m_kj_mol: float`, `g_gas_1atm_hartree: float`, `g_solv_1m_hartree: float`, `solvent_name: str`, `is_neat_solvent_corrected: bool = False`.
-   - `LevelOfTheoryEnvelope`: `hamiltonian_method: str`, `basis_set: str`, `auxiliary_basis_set: Optional[str]`, `dispersion_correction: Optional[str]`, `integration_grid: str`, `solvation_model: Optional[str]`, `max_gradient_residual_au: float`.
-   - `IsotopeSubstitutionPayload`: `substituted_atoms: Dict[int, int]`, `mendeleev_masses_amu: Dict[int, float]`, `reference_zpe_kcal_mol: float`, `substituted_zpe_kcal_mol: float`, `reference_frequencies_cm1: List[float]`, `substituted_frequencies_cm1: List[float]`, `kie_bigeleisen_mayer: Optional[float]`, `mmi_factor: Optional[float]`, `exc_factor: Optional[float]`, `zpe_factor: Optional[float]`.
-   - `WavefunctionStabilityReport`: `initial_stability: Literal["STABLE", "UNSTABLE_INTERNAL_RHF_UHF", "UNSTABLE_REAL_COMPLEX", "UNSTABLE_EXTERNAL"]`, `lowest_orbital_hessian_eigenvalue: float`, `is_broken_symmetry_required: bool`, `s2_expected: float`, `s2_calculated: float`, `spin_contamination_percentage: float`, `yamaguchi_corrected_energy_hartree: Optional[float]`.
-   - `BondCriticalPointDescriptor`: `bcp_index: int`, `atom_1_index: int`, `atom_2_index: int`, `coordinates_angstrom: Tuple[float, float, float]`, `electron_density_au: float`, `laplacian_au: float`, `kinetic_energy_density_g_au: float`, `potential_energy_density_v_au: float`, `total_energy_density_h_au: float`, `ellipticity: float`, `interaction_classification: Literal["COVALENT_SHARED", "TRANSIT_POLAR_COVALENT", "NON_COVALENT_CLOSED_SHELL", "HYDROGEN_BOND", "METALLIC"]`.
-   - `SOCMEResult`: `initial_state: str`, `final_state: str`, `delta_e_singlet_triplet_ev: float`, `socme_magnitude_cm1: float`, `socme_components_cm1: Tuple[float, float, float]`, `fcwd_density_states: float`, `k_isc_s_inv: float`, `phosphorescence_lifetime_seconds: Optional[float]`.
-   - `ProjectedFrequencyResult`: `unprojected_frequencies_cm1: List[float]`, `projected_frequencies_cm1: List[float]`, `rot_trans_residual_max_cm1: float`, `num_projected_zero_modes: int`, `is_linear_molecule: bool`, `is_projection_clean: bool`.
-
-#### Verification Criteria:
-- All models pass Pydantic v2 validation and instantiate with `frozen=True`.
+[INVARIANTS & CONSTRAINTS]
+- Zero empty `pass` blocks: provide clear docstrings and formatted error messages.
+- Full type annotations for exception constructors.
+```
 
 ---
 
-## Phase 2: Core Physics, Solvation & Method Gating
+## Prompt 02: Dynamic Mendeleev Element & Metric Engine
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-02
+TARGET FILE:       src/cochem/core/cochem_elements.py
+REQUIREMENTS:      REQ-CORE-041, REQ-QC-042, REQ-TORQ-044
+EXECUTION PHASE:   2 of 14 (Core Element Physics)
+================================================================================
 
-### Prompt 3 of 13: Dynamic Mendeleev Spin/Charge Parity & Valence Validator
-* **Target File**: [`src/cochem/core/cochem_elements.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/core/cochem_elements.py)
-* **Prerequisites**: `mendeleev`, `numpy`, [`src/cochem/qc/models.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/models.py), [`src/cochem/qc/exceptions.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/exceptions.py)
-* **SRS Traceability**: REQ-QC-081
+[CONTEXT & OBJECTIVE]
+Implement the dynamic chemical element resolver. In accordance with the Mendeleev Library Mandate, hardcoded atomic weights, isotopic masses, or van der Waals radii are strictly prohibited. All elemental properties must be resolved dynamically.
 
-#### Objectives:
-Implement the dynamic Mendeleev elemental resolution engine and pre-flight spin/charge parity validator to prevent unphysical quantum chemistry job submissions.
+[TARGET SCRIPT FILE]
+`src/cochem/core/cochem_elements.py` (Create or update strictly this file).
 
-#### Requirements & Invariants:
-1. Dynamic Mendeleev Lookup: Retrieve atomic number $Z_i$, CIAAW standard atomic weight, covalent radii, and Pauling electronegativity $\chi_i$ dynamically using `mendeleev.element(symbol)`. Strictly ban hardcoded lookup tables.
-2. Implement `validate_charge_and_multiplicity(symbols: List[str], charge: int, multiplicity: int, coordinates_angstrom: Optional[List[Tuple[float, float, float]]] = None) -> SpinChargeValidationResult`:
-   - Compute total nuclear charge $Z_{\text{total}} = \sum Z_i$ and electron count $N_e = Z_{\text{total}} - q$.
-   - Assert $N_e \ge 1$; raise `SpinParityViolationError` if $N_e \le 0$.
-   - Assert parity invariant $(N_e + M) \pmod 2 \equiv 1$; raise `SpinParityViolationError` on mismatch with informative parity guidance.
-   - Assert $2S = M - 1 \le N_e$; raise `SpinParityViolationError` if unpaired electrons exceed $N_e$.
-   - Compute electronegativity-weighted formal oxidation state heuristics and populate `unphysical_valence_warnings` if physical bounds are breached.
+[FUNCTIONAL REQUIREMENTS]
+1. Dynamic Property Lookups:
+   - Implement `get_atomic_number(symbol: str) -> int`: Query `mendeleev.element(symbol).atomic_number`.
+   - Implement `get_atomic_mass(symbol: str, isotope: Optional[int] = None) -> float`: Query dynamic mass in amu [M]. If `isotope` is specified, query isotopic mass from `mendeleev.element(symbol).isotopes`.
+   - Implement `get_vdw_radius(symbol: str) -> float`: Query Bondi-Mantina van der Waals radius in Ångströms [M] (`mendeleev.element(symbol).vdw_radius / 100.0` if pm, returning Å).
+   - Implement `get_element_symbol(atomic_number: int) -> str`: Query symbol by Z.
 
-#### Verification Criteria:
-- Verify validation succeeds for valid closed/open-shell configurations ($\text{H}_2\text{O}$ $q=0, M=1$; $\text{CH}_3^\bullet$ $q=0, M=2$; $\text{O}_2$ $q=0, M=3$).
-- Verify `SpinParityViolationError` is raised for invalid parity ($\text{H}_2\text{O}$ $q=0, M=2$).
+2. Caching & Batch Resolution:
+   - Implement an LRU cache (`@functools.lru_cache(maxsize=128)`) over Mendeleev lookups to ensure zero performance overhead during large coordinate sweeps.
+   - Implement `batch_get_masses(symbols: List[str]) -> np.ndarray`: Return a 1D NumPy array of masses formatted for mass-weighted Cartesian coordinate operations (REQ-QC-042).
 
----
+3. Validation & Heavy Atom Detection:
+   - Implement `is_heavy_element(symbol: str, threshold_z: int = 36) -> bool`: Returns True if Z > threshold_z.
 
-### Prompt 4 of 13: Standard State Solvation & Concentration Shift Engine
-* **Target File**: [`src/cochem/qc/cochem_solvation.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_solvation.py)
-* **Prerequisites**: `numpy`, [`src/cochem/qc/models.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/models.py)
-* **SRS Traceability**: REQ-QC-084
-
-#### Objectives:
-Implement rigorous thermodynamic standard-state volume compression and concentration shift conversions from ideal gas (1 atm) to solution (1.0 M or neat liquid).
-
-#### Requirements & Invariants:
-1. Implement `compute_standard_state_correction(g_gas_1atm_hartree: float, temperature_k: float = 298.15, pressure_atm: float = 1.0, solvent_name: str = "water", is_neat_solvent: bool = False, neat_concentration_m: float = 55.34) -> StandardStateCorrectionPayload`.
-2. Exact Thermodynamic Relations (CODATA 2022 constants):
-   - $R = 0.082057366081\text{ L}\cdot\text{atm}/(\text{mol}\cdot\text{K})$, $R_{\text{kcal}} = 1.98720425864083\times 10^{-3}\text{ kcal}/(\text{mol}\cdot\text{K})$.
-   - Molar volume $V_m^\circ = RT/P = 24.4654\text{ L/mol}$ at 298.15 K, 1 atm.
-   - Ideal gas standard concentration $c^\circ_{\text{gas}} = 1/V_m^\circ = 0.040874\text{ M}$.
-   - Standard 1 atm $\to$ 1.0 M shift: $\Delta G^\circ = -RT \ln(c^\circ_{\text{gas}} / 1.0) = +1.8943\text{ kcal/mol}$ (+7.9258 kJ/mol).
-   - Neat solvent shift ($c^\circ_{\text{neat}} = 55.34\text{ M}$ for $\text{H}_2\text{O}$): $\Delta G^\circ = -RT \ln(c^\circ_{\text{gas}} / c^\circ_{\text{neat}}) = +4.282\text{ kcal/mol}$.
-3. Return frozen `StandardStateCorrectionPayload` containing both kcal/mol, kJ/mol, and converted Hartree energies.
-
-#### Verification Criteria:
-- Verify exact analytical return of $+1.8943\text{ kcal/mol}$ ($\pm 0.001$) at $T=298.15\text{ K}, P=1.0\text{ atm}$.
+[INVARIANTS & CONSTRAINTS]
+- BANNED: Static lookup tables or dictionaries of masses/radii.
+- Required import: `from mendeleev import element as m_element`.
+- Full Pydantic/type annotations and doctests.
+```
 
 ---
 
-### Prompt 5 of 13: Level-of-Theory Invariance & Stationary Point Validation Gate
-* **Target File**: [`src/cochem/provenance/cochem_method_validator.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/provenance/cochem_method_validator.py)
-* **Prerequisites**: `hashlib`, `json`, [`src/cochem/qc/models.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/models.py), [`src/cochem/qc/exceptions.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/exceptions.py)
-* **SRS Traceability**: REQ-QC-085
+## Prompt 03: Hardware Discovery, CUDA & HPC Allocation Engine
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-03
+TARGET FILE:       src/cochem/core/cochem_hardware.py
+REQUIREMENTS:      REQ-HW-046, REQ-HW-047
+EXECUTION PHASE:   3 of 14 (Hardware & Scheduler Detection)
+================================================================================
 
-#### Objectives:
-Implement the cryptographic Level-of-Theory (LoT) SHA-256 fingerprint validator and stationary point Cartesian gradient residual gate.
+[CONTEXT & OBJECTIVE]
+Implement the system hardware topology inspection and scheduler resource allocation module. This module safely handles SLURM/PBS/MPI multi-node parameters, local workstation RAM-to-core ratios, and GPU CUDA discovery.
 
-#### Requirements & Invariants:
-1. Implement `validate_frequency_level_of_theory(opt_lot: LevelOfTheoryEnvelope, freq_lot: LevelOfTheoryEnvelope, max_gradient_threshold_au: float = 1.0e-4) -> bool`:
-   - Compute canonical SHA-256 hash over sorted JSON serialization of Hamiltonian method, basis set, auxiliary basis, dispersion, grid, and solvation model.
-   - Assert equality between geometry optimization hash and frequency calculation hash; raise `LevelOfTheoryMismatchError` on any divergence.
-   - Assert maximum Cartesian gradient residual norm $\|\mathbf{g}\|_\infty \le 1.0 \times 10^{-4}\text{ a.u.}$; raise `NonStationaryFrequencyError` if threshold is breached.
+[TARGET SCRIPT FILE]
+`src/cochem/core/cochem_hardware.py` (Create or update strictly this file).
 
-#### Verification Criteria:
-- Verify identical Level-of-Theory envelopes pass with `True`.
-- Verify method/basis discrepancies trigger `LevelOfTheoryMismatchError`.
-- Verify non-stationary gradient $> 1.0 \times 10^{-4}\text{ a.u.}$ triggers `NonStationaryFrequencyError`.
+[FUNCTIONAL REQUIREMENTS]
+1. Data Contracts (Pydantic v2):
+   - `CudaHardwareConfigModel(BaseModel)`:
+     - `cuda_available: bool`
+     - `device_count: int`
+     - `compute_capability: Tuple[int, int]`
+     - `total_vram_mb: int`
+     - `maxcore_cpu_mb: int`
+     - `gpu_flags: List[str]`
+   - `HpcResourceAllocationModel(BaseModel)`:
+     - `scheduler_type: Literal["slurm", "pbs", "openmpi", "workstation"]`
+     - `allocated_procs: int`
+     - `memory_per_core_mb: int`
+     - `is_oversubscribed: bool = False`
 
----
+2. GPU CUDA Discovery (`REQ-HW-046`):
+   - Inspect GPU availability via PyTorch/NVML.
+   - Assert compute capability $\ge \text{sm\_60}$ (Pascal or newer).
+   - If available, set GPU flags (`! RIJCOSX RI-J-GPU` / `%scf Cuda true end`).
+   - Budget host CPU memory with 30% pinned buffer:
+     $$\text{MaxCore}_{\text{CPU}} = \max\left(512, \left\lfloor \frac{\text{Host RAM Free (MB)} \times 0.70}{N_{\text{MPI}}} \right\rfloor\right) \quad \text{[D]}$$
 
-## Phase 3: Reaction Coordinates, Reorganization & Wavefunction Stability
+3. HPC & Workstation Core Allocation (`REQ-HW-047`):
+   - Inspect environment variables:
+     - SLURM: $N_{\text{tasks}} = \text{int}(O_{\text{ENV}}[\text{"SLURM\_NTASKS"}])$, $N_{\text{cpus\_per\_task}} = \text{int}(O_{\text{ENV}}.get(\text{"SLURM\_CPUS\_PER\_TASK"}, 1))$.
+     - PBS: Count lines in file `$PBS_NODEFILE`.
+     - OpenMPI: $N_{\text{procs}} = \text{int}(O_{\text{ENV}}[\text{"OMPI\_COMM\_WORLD\_SIZE"}])$.
+   - Workstation Allocation with Non-Zero Floor Guard:
+     $$N_{\text{procs}} = \begin{cases} \max(1, N_{\text{tasks}} \times N_{\text{cpus\_per\_task}}) & \text{if SLURM} \text{ [D]} \\ \max\left(1, \min\left(N_{\text{phys}}, \left\lfloor \frac{\text{RAM}_{\text{free}}(\text{GB})}{2.5} \right\rfloor\right)\right) & \text{if Workstation} \text{ [D]} \end{cases}$$
+   - Raise `HardwareAllocationFloorError` if calculated cores $\le 0$.
 
-### Prompt 6 of 13: Automated Marcus Electron Transfer Reorganization Pipeline
-* **Target File**: [`src/cochem/qc/cochem_marcus.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_marcus.py)
-* **Prerequisites**: `pathlib`, `filelock`, [`src/cochem/qc/models.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/models.py), [`src/cochem/qc/exceptions.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/exceptions.py)
-* **SRS Traceability**: REQ-QC-082
-
-#### Objectives:
-Implement the automated Nelson 4-point single-point and geometry optimization state machine under cross-platform `filelock.FileLock` to calculate inner-sphere ($\lambda_{\text{inner}}$) and outer-sphere ($\lambda_{\text{outer}}$) reorganization energies, Marcus activation barriers ($\Delta G^\ddagger$), and charge transfer kinetics.
-
-#### Requirements & Invariants:
-1. Implement `run_marcus_reorganization_pipeline(...) -> MarcusReorganizationResult`.
-2. Evaluate 4 electronic states: $E_0(R_0)$, $E_{\pm}(R_0)$, $E_{\pm}(R_{\pm})$, $E_0(R_{\pm})$.
-3. Compute inner-sphere components $\lambda_1 = E_{\pm}(R_0) - E_{\pm}(R_{\pm})$, $\lambda_2 = E_0(R_{\pm}) - E_0(R_0)$, and total $\lambda_{\text{inner}} = \lambda_1 + \lambda_2$.
-4. Calculate driving force $\Delta G^\circ = E_{\pm}(R_{\pm}) - E_0(R_0)$ and Marcus activation barrier $\Delta G^\ddagger = (\Delta G^\circ + \lambda)^2 / (4\lambda)$.
-5. Use CODATA 2022 unit conversion constants ($1\text{ Hartree} = 27.211386245988\text{ eV} = 627.5094740631\text{ kcal/mol}$).
-
-#### Verification Criteria:
-- Verify analytical energy balance $\lambda_1 \ge 0, \lambda_2 \ge 0 \implies \lambda_{\text{inner}} \ge 0$.
-- Verify calculated barrier matches Marcus parabolic formula.
-
----
-
-### Prompt 7 of 13: Bidirectional IRC Tracing & Endpoint RMSD Connectivity Engine
-* **Target File**: [`src/cochem/qc/cochem_irc.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_irc.py)
-* **Prerequisites**: `pathlib`, `numpy`, [`src/cochem/qc/models.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/models.py), [`src/cochem/qc/exceptions.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/exceptions.py), [`src/cochem/io/cochem_hdf5.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/io/cochem_hdf5.py)
-* **SRS Traceability**: REQ-QC-083
-
-#### Objectives:
-Implement automated bidirectional Intrinsic Reaction Coordinate (IRC) integration starting from transition state coordinates along the single imaginary normal mode, stream trajectory points to SWMR HDF5, and verify topological connectivity via Kabsch RMSD alignment.
-
-#### Requirements & Invariants:
-1. Implement `run_bidirectional_irc(...) -> IRCTrajectoryResult`:
-   - Validate that TS exhibits exactly one imaginary frequency ($N_{\text{imag}} = 1$).
-   - Perform initial mass-weighted displacement $\mathbf{R}_{\pm 0} = \mathbf{R}_{\text{TS}} \pm \delta s \cdot \mathbf{M}^{-1/2} \mathbf{v}_{\text{MW}}$ ($\delta s = 0.05\text{ \AA}\cdot\text{amu}^{1/2}$).
-   - Stream trajectory steps (coordinates, gradients, energies) into HDF5 SWMR file.
-   - Perform unconstrained optimization on forward and reverse endpoints.
-   - Calculate Kabsch RMSD between relaxed endpoints and designated reactant/product structures. If $\text{RMSD} > 0.25\text{ \AA}$, raise `IRCDisconnectionError`.
-
-#### Verification Criteria:
-- Verify HDF5 trajectory generation and endpoint RMSD validation.
+[INVARIANTS & CONSTRAINTS]
+- Cross-platform safe: fallback to `psutil` if scheduler variables are absent.
+- BANNED: Assuming SLURM_NTASKS is always 1 or omitting `--cpus-per-task`.
+```
 
 ---
 
-### Prompt 8 of 13: Dynamic Mendeleev Isotopic Substitution & Bigeleisen-Mayer KIE Engine
-* **Target File**: [`src/cochem/qc/cochem_isotopes.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_isotopes.py)
-* **Prerequisites**: `mendeleev`, `numpy`, [`src/cochem/qc/models.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/models.py), [`src/cochem/qc/exceptions.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/exceptions.py)
-* **SRS Traceability**: REQ-QC-086
+## Prompt 04: ORCA Input Generator & Relativistic ECP Handler
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-04
+TARGET FILE:       src/cochem/core/cochem_orca_builder.py
+REQUIREMENTS:      REQ-CORE-041, REQ-HW-046, REQ-HW-047
+EXECUTION PHASE:   4 of 14 (ORCA Input Construction)
+================================================================================
 
-#### Objectives:
-Implement dynamic isotopic mass resolution from `mendeleev`, zero-CPU electronic re-diagonalization of Cartesian Hessians under isotopic permutations, and Bigeleisen-Mayer Kinetic/Equilibrium Isotope Effect (KIE/EIE) calculations.
+[CONTEXT & OBJECTIVE]
+Implement the automated ORCA route line, ECP basis synthesizer, and hardware execution block builder. It must dynamically detect heavy atoms, assign relativistic pseudo-potentials, bypass composite functionals, and configure `%pal` and `%maxcore`.
 
-#### Requirements & Invariants:
-1. Implement `compute_isotopic_substitution_kie(symbols: List[str], cartesian_hessian_hartree_bohr2: np.ndarray, substituted_atoms: Dict[int, int], temperature_k: float = 298.15) -> IsotopeSubstitutionPayload`.
-2. Dynamically lookup isotopic masses via `mendeleev.element(s).isotopes`; raise `IsotopeNotFoundError` if an isotope is absent.
-3. Form mass-weighted Hessian $\mathbf{H}_{\text{MW}}^{(\text{iso})} = \mathbf{M}_{\text{iso}}^{-1/2} \mathbf{H}_{\text{Cart}} \mathbf{M}_{\text{iso}}^{-1/2}$ ($1\text{ amu} = 1822.888486209\text{ a.u.}$).
-4. Diagonalize mass-weighted Hessian, extract vibrational frequencies, and evaluate Zero-Point Energy: $\text{ZPE} = \frac{1}{2} \sum \hbar \omega_i$.
-5. Evaluate Bigeleisen-Mayer factor $\text{KIE} = \text{MMI} \times \text{EXC} \times \text{ZPE}$.
+[TARGET SCRIPT FILE]
+`src/cochem/core/cochem_orca_builder.py` (Create or update strictly this file).
 
-#### Verification Criteria:
-- Verify H/D substitution yields physical primary/secondary KIE $> 1.0$.
+[FUNCTIONAL REQUIREMENTS]
+1. Data Contracts (Pydantic v2):
+   - `ECPAssignment(BaseModel)`:
+     - `element_symbol: str`
+     - `atomic_number: int`
+     - `assigned_ecp: str`
+     - `basis_gto: str`
+     - `is_composite_bypassed: bool = False`
 
----
+2. Composite Method Bypass Logic (`REQ-CORE-041`):
+   - Check if route method matches composite functionals: $\mathcal{M}_{\text{comp}} \in \{\text{r2SCAN-3c}, \text{B97-3c}, \text{HF-3c}, \text{PBEh-3c}\}$.
+   - If composite, bypass all `%basis` modifications and return route line unmodified [M].
 
-### Prompt 9 of 13: Post-SCF Wavefunction Stability & Broken-Symmetry DFT Engine
-* **Target File**: [`src/cochem/qc/cochem_stability.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_stability.py)
-* **Prerequisites**: [`src/cochem/qc/models.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/models.py), [`src/cochem/qc/exceptions.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/exceptions.py)
-* **SRS Traceability**: REQ-QC-087
+3. Relativistic ECP Assignment Matrix:
+   - For standard DFT / HF routes:
+     - $37 \le Z \le 56$ (Rb-Ba) and $72 \le Z \le 86$ (Hf-Rn): Map Karlsruhe bases (`def2-SVP`, `def2-TZVP`, `def2-QZVP`) to `def2-ECP` (`ECP28MDF` / `ECP60MDF`) [M]. Dunning bases map to `cc-pVnZ-PP`.
+     - $57 \le Z \le 71$ (Lanthanides): Map to `ECP28MWB` or `def2-ECP` [M].
+     - $89 \le Z \le 103$ (Actinides): Map to `ECP60MWB` [M].
+   - Generate ORCA `%basis` block:
+     ```orca
+     %basis
+       NewGTO I "def2-TZVP" end
+       NewECP I "def2-ECP" end
+     end
+     ```
 
-#### Objectives:
-Implement electronic orbital stability evaluation (orbital Hessian lowest eigenvalue $\lambda_{\text{orb}}$), detect internal/external instabilities, and compute Yamaguchi approximate spin-projected energies for broken-symmetry states.
+4. Hardware Block Synthesis (`REQ-HW-046`, `REQ-HW-047`):
+   - Integrate `HpcResourceAllocationModel` to inject `%pal nprocs <N> end`.
+   - Inject `%maxcore <MaxCore_CPU>` based on memory budgeting.
+   - Inject GPU keywords (`! RIJCOSX RI-J-GPU`) when CUDA is enabled.
 
-#### Requirements & Invariants:
-1. Implement `evaluate_wavefunction_stability(lowest_orbital_hessian_eigenval: float, s2_calc: float, s_expected: float, e_bs_hartree: Optional[float] = None, e_hs_hartree: Optional[float] = None, s2_hs: Optional[float] = None) -> WavefunctionStabilityReport`.
-2. Invariant: $\lambda_{\text{orb}} \ge 0 \implies \text{STABLE}$; $\lambda_{\text{orb}} < 0 \implies \text{UNSTABLE_INTERNAL_RHF_UHF}$ requiring broken-symmetry re-optimization.
-3. Compute spin contamination percentage: $\frac{|\langle S^2 \rangle_{\text{calc}} - S_{\text{exp}}(S_{\text{exp}}+1)|}{S_{\text{exp}}(S_{\text{exp}}+1) + 1} \times 100\%$.
-4. Calculate Yamaguchi spin-projected energy:
-   $$E_{\text{proj}} = \frac{E_{\text{BS}} - c_{\text{HS}} E_{\text{HS}}}{1 - c_{\text{HS}}}, \quad c_{\text{HS}} = \frac{\langle S^2 \rangle_{\text{BS}} - S_{\text{LS}}(S_{\text{LS}}+1)}{\langle S^2 \rangle_{\text{HS}} - S_{\text{LS}}(S_{\text{LS}}+1)}$$
-
-#### Verification Criteria:
-- Verify identification of stable vs. unstable orbital solutions.
-- Verify Yamaguchi energy projection on test open-shell diradical states.
-
----
-
-## Phase 4: Topology, Spectroscopy & Frequency Projection
-
-### Prompt 10 of 13: QTAIM Electron Density & Bond Critical Point Topological Engine
-* **Target File**: [`src/cochem/qc/cochem_qtaim.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_qtaim.py)
-* **Prerequisites**: `numpy`, [`src/cochem/qc/models.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/models.py), [`src/cochem/qc/exceptions.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/exceptions.py)
-* **SRS Traceability**: REQ-QC-088
-
-#### Objectives:
-Implement topological classification of $(3,-1)$ Bond Critical Points of the electron density $\rho(\mathbf{r})$, enforce the Poincaré-Hopf topological invariant, and classify chemical bond interactions using Bader and Cremer-Kraka criteria.
-
-#### Requirements & Invariants:
-1. Implement `classify_bond_critical_point(bcp_idx: int, atom_1: int, atom_2: int, coords: Tuple[float, float, float], rho: float, hessian_eigenvals: Tuple[float, float, float], g_density: float, v_density: float) -> BondCriticalPointDescriptor`:
-   - Evaluate Hessian eigenvalues $\lambda_1 \le \lambda_2 \le \lambda_3$ and Laplacian $\nabla^2 \rho = \lambda_1 + \lambda_2 + \lambda_3$.
-   - Calculate total energy density $H(\mathbf{r}_{\text{BCP}}) = G(\mathbf{r}_{\text{BCP}}) + V(\mathbf{r}_{\text{BCP}})$.
-   - Evaluate ellipticity $\varepsilon = (\lambda_1 / \lambda_2) - 1.0$.
-   - Classify interaction:
-     - $\nabla^2 \rho < 0, H < 0 \implies \text{COVALENT_SHARED}$
-     - $\nabla^2 \rho > 0, H < 0 \implies \text{TRANSIT_POLAR_COVALENT}$
-     - $\nabla^2 \rho > 0, H > 0 \implies \text{NON_COVALENT_CLOSED_SHELL}$
-2. Implement `validate_poincare_hopf_invariant(n_ncp: int, n_bcp: int, n_rcp: int, n_ccp: int) -> bool`:
-   - Assert $n_{\text{NCP}} - n_{\text{BCP}} + n_{\text{RCP}} - n_{\text{CCP}} = 1$; raise `QTAIMTopologyError` if violated.
-
-#### Verification Criteria:
-- Verify covalent vs. non-covalent BCP classification against Cremer-Kraka criteria.
-- Verify Poincaré-Hopf invariant enforcement.
+[INVARIANTS & CONSTRAINTS]
+- Dynamic queries: element symbols and Z resolved via `cochem_elements.py`.
+- Raise `ECPConfigurationError` on unsupported heavy elements or basis mismatches.
+```
 
 ---
 
-### Prompt 11 of 13: Spin-Orbit Coupling Matrix Elements (SOCME) & ISC Kinetics Engine
-* **Target File**: [`src/cochem/qc/cochem_socme.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_socme.py)
-* **Prerequisites**: `numpy`, [`src/cochem/qc/models.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/models.py)
-* **SRS Traceability**: REQ-QC-089
+## Prompt 05: Quantum Chemistry Output & Hessian Parser
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-05
+TARGET FILE:       src/cochem/qc/cochem_qc_parser.py
+REQUIREMENTS:      REQ-QC-042, REQ-THM-045
+EXECUTION PHASE:   5 of 14 (Property & Hessian Extraction)
+================================================================================
 
-#### Objectives:
-Implement the Spin-Orbit Mean-Field (SOMF) operator matrix element evaluator, compute Intersystem Crossing (ISC) rate constants via Fermi's Golden Rule with Marcus Franck-Condon Weighted Density (FCWD), and calculate radiative phosphorescence lifetimes.
+[CONTEXT & OBJECTIVE]
+Implement the robust output and Hessian parser for ORCA and xTB calculation files (`.out`, `.hess`, `.property.txt`). The parser extracts total energies, Cartesian coordinates, vibrational frequencies, and normal mode eigenvectors.
 
-#### Requirements & Invariants:
-1. Implement `compute_socme_and_isc_rate(initial_state: str, final_state: str, delta_e_st_ev: float, socme_components_cm1: Tuple[float, float, float], reorganization_energy_ev: float = 0.2, temperature_k: float = 298.15) -> SOCMEResult`.
-2. Compute total SOCME norm $\|\langle S | \hat{H}_{\text{SO}} | T \rangle\| = \sqrt{L_x^2 + L_y^2 + L_z^2}$.
-3. Evaluate Marcus Franck-Condon Weighted Density (FCWD):
-   $$\text{FCWD}(\Delta E_{ST}) = \frac{1}{\sqrt{4\pi \lambda k_B T}} \exp\left( -\frac{(\Delta E_{ST} + \lambda)^2}{4\lambda k_B T} \right)$$
-4. Compute ISC rate constant via Fermi's Golden Rule:
-   $$k_{\text{ISC}} = \frac{2\pi}{\hbar} |V_{\text{SO}}|^2 \cdot \text{FCWD}(\Delta E_{ST})$$
-5. Use CODATA 2022 physical constants ($\hbar = 6.582119569\times 10^{-16}\text{ eV}\cdot\text{s}$, $k_B = 8.617333262\times 10^{-5}\text{ eV/K}$, $1\text{ cm}^{-1} = 1.239841984\times 10^{-4}\text{ eV}$).
+[TARGET SCRIPT FILE]
+`src/cochem/qc/cochem_qc_parser.py` (Create or update strictly this file).
 
-#### Verification Criteria:
-- Verify rate constant calculation and non-negative physical invariants.
+[FUNCTIONAL REQUIREMENTS]
+1. Hessian & Frequency Extraction (`REQ-QC-042`):
+   - Parse vibrational frequencies $\tilde{\nu}_i$ (in $\text{cm}^{-1}$) from ORCA `.hess` or output files.
+   - Extract normal coordinate eigenvectors $\mathbf{Q}_i \in \mathbb{R}^{3N}$ for all vibrational modes.
+   - Compute expected vibrational degrees of freedom:
+     - $N_{\text{vib}} = 0$ for single atoms ($N = 1$).
+     - $N_{\text{vib}} = 3N - 5$ for linear molecules [D].
+     - $N_{\text{vib}} = 3N - 6$ for non-linear molecules [D].
+   - Filter external translational/rotational modes ($\nu_{\text{ext}} \approx 0.0 \pm 10.0\text{ cm}^{-1}$).
 
----
+2. Stationary Point Classification:
+   - Identify lowest internal harmonic mode $\nu_1$:
+     $$\text{State}(\mathbf{R}) = \begin{cases} \text{Ground State Minimum} & \text{if } \nu_1 \ge -15.0\text{ cm}^{-1}\text{ [M]} \\ \text{Saddle Point / Transition State} & \text{if } \nu_1 < -15.0\text{ cm}^{-1}\text{ [M]} \end{cases}$$
 
-### Prompt 12 of 13: Sayvetz-Eckart Rotational/Translational Projection Engine
-* **Target File**: [`src/cochem/qc/cochem_frequency.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_frequency.py)
-* **Prerequisites**: `mendeleev`, `numpy`, [`src/cochem/qc/models.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/models.py)
-* **SRS Traceability**: REQ-QC-090
+3. Electronic Energy & Dipole Parsing:
+   - Extract SCF converged energy, Counterpoise components, dipole moment vectors, and rotational constants.
 
-#### Objectives:
-Implement the Sayvetz-Eckart coordinate projector for mass-weighted Cartesian Hessians using dynamic `mendeleev` masses, construct orthonormal translational/rotational basis vectors via QR decomposition, apply idempotent projection $\mathbf{P} = \mathbf{I} - \mathbf{Q}\mathbf{Q}^T$, and verify numerical suppression of non-vibrational modes.
-
-#### Requirements & Invariants:
-1. Implement `project_sayvetz_eckart_hessian(symbols: List[str], coordinates_angstrom: List[Tuple[float, float, float]], cartesian_hessian_hartree_bohr2: np.ndarray, is_linear: bool = False) -> ProjectedFrequencyResult`.
-2. Dynamic Mass Retrieval: Retrieve CIAAW atomic weights dynamically via `mendeleev.element(s)`.
-3. Center coordinates at center-of-mass: $\mathbf{r}_{\text{COM}} = \sum m_i \mathbf{r}_i / \sum m_i$.
-4. Construct 6 rigid-body basis vectors $\mathbf{D}_{x,y,z}$ and $\mathbf{R}_{x,y,z}$ in mass-weighted space.
-5. Compute orthonormal basis $\mathbf{Q} \in \mathbb{R}^{3N \times 6}$ (or $3N \times 5$ for linear) via QR decomposition.
-6. Assemble idempotent projector $\mathbf{P} = \mathbf{I}_{3N} - \mathbf{Q}\mathbf{Q}^T$ and projected Hessian $\widetilde{\mathbf{H}}_{\text{MW}} = \mathbf{P} \mathbf{H}_{\text{MW}} \mathbf{P}$.
-7. Diagonalize and verify that the lowest 6 (or 5) eigenvalues satisfy $|\omega_k| \le 1.0 \times 10^{-4}\text{ cm}^{-1}$.
-
-#### Verification Criteria:
-- Verify non-linear molecule ($\text{H}_2\text{O}$) purges exactly 6 zero-modes with residual $\le 1.0\times 10^{-4}\text{ cm}^{-1}$.
-- Verify linear molecule ($\text{CO}_2$) purges exactly 5 zero-modes.
+[INVARIANTS & CONSTRAINTS]
+- Zero-mock parsing: test against authentic ORCA / xTB output text blocks.
+- Robust regex matching handling both scientific notation (`-1.23456789D+02`) and standard floats.
+```
 
 ---
 
-## Phase 5: Verification & Zero-Mock Anti-Spoofing Audit
+## Prompt 06: Mass-Weighted Saddle-Point Escaping & Execution Pipeline
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-06
+TARGET FILE:       src/cochem/qc/cochem_qc_pipeline.py
+REQUIREMENTS:      REQ-QC-042, REQ-HW-046, REQ-TORQ-049
+EXECUTION PHASE:   6 of 14 (Automated Saddle Escaping)
+================================================================================
 
-### Prompt 13 of 13: Zero-Mock Physical Verification Test Suite
-* **Target File**: [`tests/qc/test_cochem_srs_chunk_09.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/tests/qc/test_cochem_srs_chunk_09.py)
-* **Prerequisites**: `pytest`, `numpy`, `mendeleev`, [`src/cochem/qc/exceptions.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/exceptions.py), [`src/cochem/qc/models.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/models.py), [`src/cochem/core/cochem_elements.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/core/cochem_elements.py), [`src/cochem/qc/cochem_solvation.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_solvation.py), [`src/cochem/provenance/cochem_method_validator.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/provenance/cochem_method_validator.py), [`src/cochem/qc/cochem_marcus.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_marcus.py), [`src/cochem/qc/cochem_irc.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_irc.py), [`src/cochem/qc/cochem_isotopes.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_isotopes.py), [`src/cochem/qc/cochem_stability.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_stability.py), [`src/cochem/qc/cochem_qtaim.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_qtaim.py), [`src/cochem/qc/cochem_socme.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_socme.py), [`src/cochem/qc/cochem_frequency.py`](file:///C:/Users/ansac/.gemini/antigravity-cli/cochem/src/cochem/qc/cochem_frequency.py)
-* **SRS Traceability**: CoChem Anti-Spoofing Protocol v3 & Chunk 09 Requirements (REQ-081 to REQ-090)
+[CONTEXT & OBJECTIVE]
+Implement the automated mass-weighted saddle-point escape and execution pipeline. When an optimization converges to a saddle point ($\nu_1 < -15.0\text{ cm}^{-1}$), the pipeline perturbs the geometry along the mass-weighted imaginary mode and re-optimizes.
 
-#### Objectives:
-Implement the zero-mock physical pytest suite verifying all invariants, domain exceptions, models, and computational engines across REQ-QC-081 through REQ-QC-090.
+[TARGET SCRIPT FILE]
+`src/cochem/qc/cochem_qc_pipeline.py` (Create or update strictly this file).
 
-#### Requirements & Invariants:
-1. Zero-Mock Mandate: Zero usage of `unittest.mock`, `pytest.monkeypatch`, synthetic fake arrays, or dummy placeholder stubs. All tests must execute against real physical formulas, authentic `mendeleev` tables, and real mathematical operations.
-2. Comprehensive Test Cases:
-   - `test_req_081_spin_charge_parity_valid_and_invalid`: Asserts valid closed/open shell configurations pass and invalid parities raise `SpinParityViolationError`.
-   - `test_req_082_marcus_reorganization_energy_balance`: Asserts 4-point Nelson reorganization $\lambda_{\text{inner}} \ge 0$ and barrier calculation.
-   - `test_req_083_irc_endpoint_connectivity_and_rmsd`: Asserts imaginary frequency validation and RMSD gating.
-   - `test_req_084_solvation_1atm_to_1m_standard_state_shift`: Asserts $+1.8943\text{ kcal/mol}$ concentration compression at 298.15 K.
-   - `test_req_085_lot_sha256_invariance_and_stationary_gradient`: Asserts SHA-256 fingerprint equality and gradient norm threshold.
-   - `test_req_086_mendeleev_dynamic_isotope_lookup_and_kie`: Asserts dynamic CIAAW masses and Bigeleisen-Mayer KIE evaluation.
-   - `test_req_087_wavefunction_orbital_hessian_and_yamaguchi_projection`: Asserts orbital stability classification and Yamaguchi spin projection.
-   - `test_req_088_qtaim_bcp_cremer_kraka_and_poincare_hopf`: Asserts Bader/Cremer-Kraka classification and Poincaré-Hopf topological invariant.
-   - `test_req_089_socme_and_fermi_golden_rule_isc_rate`: Asserts SOMF norm and Fermi's Golden Rule ISC rate.
-   - `test_req_090_sayvetz_eckart_rot_trans_projection_zero_modes`: Asserts exact 6 (and 5) rotational/translational zero-mode purge with residual $\le 1.0\times 10^{-4}\text{ cm}^{-1}$.
+[FUNCTIONAL REQUIREMENTS]
+1. Data Contracts (Pydantic v2):
+   - `VibrationalStateModel(BaseModel)`:
+     - `is_linear: bool`
+     - `num_atoms: int`
+     - `expected_vibrational_dof: int`
+     - `frequencies_cm1: List[float]`
+     - `lowest_internal_frequency: float`
+     - `is_minimum: bool`
+     - `pivot_iteration: int`
 
-#### Verification Criteria:
-- Run `pytest -v tests/qc/test_cochem_srs_chunk_09.py` and confirm 100% pass rate under pure physical execution.
+2. Mass-Weighted Normal Mode Perturbation Algorithm (`REQ-QC-042`):
+   - For saddle points ($\nu_1 < -15.0\text{ cm}^{-1}$), retrieve imaginary eigenvector $\mathbf{Q}_1 \in \mathbb{R}^{3N}$.
+   - Query atomic masses $m_i$ dynamically via `cochem_elements.py`.
+   - Calculate mass-weighted Cartesian displacement:
+     $$\Delta R_{i\alpha} = \frac{Q_{1, i\alpha}}{\sqrt{m_i}}, \quad \text{for atom } i \text{ and axis } \alpha \in \{x, y, z\} \quad \text{[D]}$$
+   - Construct normalized unit displacement $\hat{\mathbf{U}} = \Delta \mathbf{R} / \|\Delta \mathbf{R}\|_2$.
+   - Generate bifurcated trial geometries:
+     $$\mathbf{R}^{(\pm)} = \mathbf{R}_0 \pm \delta \cdot \hat{\mathbf{U}}, \quad \text{with } \delta = 0.08\text{ \AA} \quad \text{[M]}$$
+   - Evaluate single-point energies $E(\mathbf{R}^{(+)})$ and $E(\mathbf{R}^{(-)})$; dispatch re-optimization along the lower-energy path.
+   - Enforce bounded pivot loop (`MAX_PIVOT_CYCLES = 3`). Raise `SaddlePointEscapeError` if unresolved after 3 cycles.
+
+3. CUDA Fault Recovery Loop (`REQ-HW-046`):
+   - Catch `CudaKernelExecutionError` upon GPU failure / OOM, strip GPU flags, fallback to standard CPU `RIJCOSX`, and resume execution.
+
+[INVARIANTS & CONSTRAINTS]
+- Dynamic mass integration: NEVER assume uniform 1.0 mass or hardcoded carbon/hydrogen weights.
+```
+
+---
+
+## Prompt 07: Quasi-RRHO Thermochemistry & Frequency Scaling Engine
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-07
+TARGET FILE:       src/cochem/thermo/cochem_thermo.py
+REQUIREMENTS:      REQ-THM-045
+EXECUTION PHASE:   7 of 14 (Thermochemistry & Vibrational Entropy)
+================================================================================
+
+[CONTEXT & OBJECTIVE]
+Implement empirical frequency scaling factors and Grimme's Quasi-RRHO (QRRHO) free energy engine to prevent low-frequency harmonic vibrational entropy divergence ($S_{\text{harm}} \to \infty$ as $\tilde{\nu} \to 0$).
+
+[TARGET SCRIPT FILE]
+`src/cochem/thermo/cochem_thermo.py` (Create or update strictly this file).
+
+[FUNCTIONAL REQUIREMENTS]
+1. Data Contracts (Pydantic v2):
+   - `ThermochemistryResultModel(BaseModel)`:
+     - `temperature_k: float`
+     - `pressure_atm: float`
+     - `scaling_factors: Dict[str, float]`
+     - `zpe_unscaled_hartree: float`
+     - `zpe_scaled_hartree: float`
+     - `entropy_qrrho_cal_mol_k: float`
+     - `gibbs_free_energy_hartree: float`
+     - `citation: str`
+
+2. Scaling Factor Repository:
+   - Provide empirical scaling factor lookups for standard DFT functionals (`B3LYP`, `PBE0`, `r2SCAN-3c`, `wb97x-d3`) and basis sets from NIST CCCBDB / Truhlar databases ($\lambda_{\text{ZPE}}, \lambda_{\text{fund}}, \lambda_{\text{enthalpy}}, \lambda_{\text{entropy}}$) [M]. Raise `UnsupportedMethodThermoError` if method is unrecognized.
+
+3. Grimme Quasi-RRHO Interpolation Algorithm:
+   - Scaled frequency: $\tilde{\nu}'_i = \lambda_{\text{entropy}} \cdot \tilde{\nu}_i$.
+   - Damping function with rotor cut-off $\nu_0 = 100.0\text{ cm}^{-1}$ [M]:
+     $$w(\tilde{\nu}_i) = \frac{1}{1 + (\nu_0 / \tilde{\nu}_i)^4} \quad \text{[M]}$$
+   - Dimensionless parameter: $u_i = \frac{h c \tilde{\nu}'_i}{k_B T}$.
+   - Harmonic entropy:
+     $$S_{\text{harm}}(\tilde{\nu}'_i) = R \left[ \frac{u_i}{e^{u_i} - 1} - \ln(1 - e^{-u_i}) \right] \quad \text{[D]}$$
+   - Free-rotor entropy ($\mu_i = \frac{h}{8 \pi^2 c \tilde{\nu}'_i}$):
+     $$S_{\text{rot}}(\tilde{\nu}'_i) = R \left[ \frac{1}{2} + \ln\left(\sqrt{\frac{8 \pi^3 \mu_i k_B T}{h^2}}\right) \right] \quad \text{[D]}$$
+   - Total Quasi-RRHO entropy:
+     $$S_{\text{vib}}^{\text{QRRHO}}(T) = \sum_{i=1}^{N_{\text{vib}}} \left[ w(\tilde{\nu}_i) S_{\text{harm}}(\tilde{\nu}'_i) + (1 - w(\tilde{\nu}_i)) S_{\text{rot}}(\tilde{\nu}'_i) \right] \quad \text{[D]}$$
+   - Scaled ZPE: $E_{\text{ZPE}}^{\text{scaled}} = \frac{1}{2} h c \sum_{i=1}^{N_{\text{vib}}} \lambda_{\text{ZPE}} \tilde{\nu}_i$ [D].
+
+[INVARIANTS & CONSTRAINTS]
+- Physical constants defined in CODATA-consistent SI/atomic units ($h, c, k_B, R$).
+```
+
+---
+
+## Prompt 08: Dynamic Adaptive Step-Size TORQ Scanner
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-08
+TARGET FILE:       src/cochem/torq/cochem_torq_scanner.py
+REQUIREMENTS:      REQ-TORQ-044, REQ-TORQ-049
+EXECUTION PHASE:   8 of 14 (Torsional Step Scheduling)
+================================================================================
+
+[CONTEXT & OBJECTIVE]
+Implement the adaptive step-size TORQ scanner. The algorithm dynamically adjusts angular step sizes using topological graph distance filtering ($d_{\text{graph}} \ge 4$) to ignore bonded pairs, providing smooth $C^1$-continuous step transitions.
+
+[TARGET SCRIPT FILE]
+`src/cochem/torq/cochem_torq_scanner.py` (Create or update strictly this file).
+
+[FUNCTIONAL REQUIREMENTS]
+1. Data Contracts (Pydantic v2):
+   - `StericOverlapReport(BaseModel)`:
+     - `dihedral_angle_deg: float`
+     - `min_steric_ratio: float`
+     - `clashing_atom_pair: Tuple[int, int]`
+     - `allocated_step_deg: float`
+     - `regime: Literal["unconstrained", "repulsion_onset", "severe_clash"]`
+
+2. Non-Bonded Steric Overlap Index ($\rho_{\text{steric}}$):
+   - Filter pairwise interatomic distances to strictly non-bonded pairs across the rotating dihedral:
+     $$\rho_{\text{steric}}(\theta) = \min_{\substack{i \in \text{Frag A},\, j \in \text{Frag B} \\ d_{\text{graph}}(i, j) \ge 4}} \frac{r_{ij}(\theta)}{R_{\text{vdW},i} + R_{\text{vdW},j}} \quad \text{[D]}$$
+   - Dynamic Bondi-Mantina $R_{\text{vdW}}$ retrieved via `cochem_elements.py` [M].
+
+3. Continuous $C^1$ Step Scheduling Algorithm:
+   - *Unconstrained Regime ($\rho_{\text{steric}} \ge 0.85$):* Allocate coarse step $\Delta \theta = 15.0^\circ - 30.0^\circ$ [M].
+   - *Repulsion Onset ($0.65 \le \rho_{\text{steric}} < 0.85$):* Quadratic transition:
+     $$\Delta \theta(\rho) = \Delta \theta_{\text{fine}} + (\Delta \theta_{\text{coarse}} - \Delta \theta_{\text{fine}}) \cdot \left(\frac{\rho - 0.65}{0.20}\right)^2, \quad \Delta \theta_{\text{fine}} = 2.5^\circ \quad \text{[D]}$$
+   - *Severe Clash ($\rho_{\text{steric}} < 0.65$):* Allocate micro-steps ($\Delta \theta = 1.0^\circ$) and engage local relaxation [M].
+   - Raise `StericGridLockError` if step refinement drops below 0.1° without relief.
+
+4. Spline Construction:
+   - Interpolate non-uniform grid $\{\theta_k, E(\theta_k)\}$ using cubic Hermite splines (`scipy.interpolate.CubicHermiteSpline` or Pchip).
+
+[INVARIANTS & CONSTRAINTS]
+- Eliminate 1-2 and 1-3 bonded pair clash contamination via NetworkX / RDKit topological graph distance $d_{\text{graph}}(i, j) \ge 4$.
+```
+
+---
+
+## Prompt 09: Semi-Empirical xTB Pre-Scanner & Gaussian RBF Hybrid PES
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-09
+TARGET FILE:       src/cochem/torq/cochem_torq_xtb.py
+REQUIREMENTS:      REQ-TORQ-049
+EXECUTION PHASE:   9 of 14 (Multi-Fidelity PES Interpolation)
+================================================================================
+
+[CONTEXT & OBJECTIVE]
+Implement the semi-empirical multi-fidelity xTB scanner and Gaussian RBF residual learning interpolator. This module generates dense xTB baselines, extracts thermally accessible local minima, and anchors exact DFT single points.
+
+[TARGET SCRIPT FILE]
+`src/cochem/torq/cochem_torq_xtb.py` (Create or update strictly this file).
+
+[FUNCTIONAL REQUIREMENTS]
+1. Data Contracts (Pydantic v2):
+   - `HybridPesScanResult(BaseModel)`:
+     - `dihedral_indices: List[Tuple[int, int, int, int]]`
+     - `xtb_grid_points: int`
+     - `extracted_minima_count: int`
+     - `dft_single_points: List[Dict[str, float]]`
+     - `rbf_gamma: float`
+     - `max_energy_barrier_kcal_mol: float`
+
+2. 3-Stage Multi-Fidelity Pipeline:
+   - *Stage 1 (Dense xTB Grid):* Sample dihedrals on fine grid ($1.0^\circ - 5.0^\circ$) with constrained GFN2-xTB / GFN-FF optimizations using xcontrol restraints [M]. Construct baseline surface $V_{\text{xTB}}(\boldsymbol{\phi})$.
+   - *Stage 2 (Minima Extraction):* Extract local minima where $\nabla_{\boldsymbol{\phi}} V_{\text{xTB}} = 0$ and $\nabla^2_{\boldsymbol{\phi}} V_{\text{xTB}} > 0$. Filter minima within thermal window $\Delta V_{\text{xTB}}(\boldsymbol{\phi}_m) \le 4.0\text{ kcal/mol}$ [M]. Dispatch single-point DFT runs exclusively at $\mathbf{R}(\boldsymbol{\phi}_m)$ yielding $E_{\text{DFT}}(\boldsymbol{\phi}_m)$.
+   - *Stage 3 (Gaussian RBF Residual Learning):* Compute residuals $\delta_m = E_{\text{DFT}}(\boldsymbol{\phi}_m) - V_{\text{xTB}}(\boldsymbol{\phi}_m)$. Synthesize continuous hybrid surface:
+     $$V_{\text{hybrid}}(\boldsymbol{\phi}) = V_{\text{xTB}}(\boldsymbol{\phi}) + \sum_{m=1}^{K} w_m \exp\left(-\gamma \|\boldsymbol{\phi} - \boldsymbol{\phi}_m\|^2\right) \quad \text{[D]}$$
+     Solve weights $w_m$ to match exact DFT anchors: $V_{\text{hybrid}}(\boldsymbol{\phi}_m) = E_{\text{DFT}}(\boldsymbol{\phi}_m)$.
+
+[INVARIANTS & CONSTRAINTS]
+- Raise `StationaryPointExtractionError` if no local minima are identified.
+- Real xTB binary execution using subprocess or authentic ab-initio fixtures.
+```
+
+---
+
+## Prompt 10: NNIP Conformer Screening, Fallback Ladder & Automorphism RMSD
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-10
+TARGET FILE:       src/cochem/ml/cochem_ml_filter.py
+REQUIREMENTS:      REQ-ML-048
+EXECUTION PHASE:   10 of 14 (Machine Learning Potentials)
+================================================================================
+
+[CONTEXT & OBJECTIVE]
+Implement the Machine Learning Interatomic Potential (NNIP) conformer pre-screening filter with an elemental fallback ladder and Hungarian graph-automorphism heavy-atom RMSD clustering.
+
+[TARGET SCRIPT FILE]
+`src/cochem/ml/cochem_ml_filter.py` (Create or update strictly this file).
+
+[FUNCTIONAL REQUIREMENTS]
+1. Data Contracts (Pydantic v2):
+   - `ConformerPruningReport(BaseModel)`:
+     - `initial_conformer_count: int`
+     - `selected_nnip_backend: Literal["torchani_ani2x", "mace_off23", "gfn2_xtb", "mmff94s"]`
+     - `energy_filtered_count: int`
+     - `rmsd_clustered_count: int`
+     - `final_retained_count: int`
+     - `energy_threshold_kcal_mol: float = 6.0`
+     - `rmsd_threshold_angstrom: float = 0.25`
+
+2. 4-Tier Fallback Ladder (`REQ-ML-048`):
+   - Tier 1: TorchANI (ANI-2x) if all elements $\subseteq \{\text{H, C, N, O, S, F, Cl}\}$ [M].
+   - Tier 2: MACE-OFF23 / MACE-MP0 for extended organic, halogen, and coordination space [M].
+   - Tier 3: GFN2-xTB / GFN-FF universal semi-empirical fallback [M].
+   - Tier 4: MMFF94s / UFF classical force field fallback.
+   - Raise `ModelCoverageError` if all tiers fail.
+
+3. Optimization & Pruning Pipeline:
+   - Optimize conformers until $F_{\text{max}} < 0.01\text{ eV/\AA}$ [M].
+   - Prune conformers with relative energy $\Delta E_k > 6.0\text{ kcal/mol}$ ($25.1\text{ kJ/mol}$) [M].
+
+4. Hungarian Graph-Automorphism Heavy-Atom RMSD:
+   - Determine molecular graph automorphisms to account for rotor symmetry and atom permutation isomorphisms.
+   - Apply Hungarian maximum-weight matching algorithm (`scipy.optimize.linear_sum_assignment`).
+   - If $\text{RMSD}_{\text{Hungarian}}(C_i, C_j) < 0.25\text{ \AA}$ [M], collapse the higher-energy conformer into the lower-energy representative.
+
+[INVARIANTS & CONSTRAINTS]
+- Must achieve $>80\%$ reduction in downstream DFT calculations on flexible conformer ensembles.
+```
+
+---
+
+## Prompt 11: Async Monomer Worker Pool & Cross-Platform File Locking
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-11
+TARGET FILE:       src/cochem/topos/cochem_topos_async.py
+REQUIREMENTS:      REQ-TOPOS-050
+EXECUTION PHASE:   11 of 14 (Asynchronous Concurrency)
+================================================================================
+
+[CONTEXT & OBJECTIVE]
+Implement the fully asynchronous monomer pre-processing worker pool with strict thread budgeting and cross-platform file locking (`filelock.FileLock`), eliminating subprocess thread explosions.
+
+[TARGET SCRIPT FILE]
+`src/cochem/topos/cochem_topos_async.py` (Create or update strictly this file).
+
+[FUNCTIONAL REQUIREMENTS]
+1. Data Contracts (Pydantic v2):
+   - `MonomerPreprocessResult(BaseModel)`:
+     - `composite_cache_key: str`
+     - `isomeric_smiles: str`
+     - `charge: int`
+     - `multiplicity: int`
+     - `dipole_moment_debye: float`
+     - `rotational_constants_ghz: Tuple[float, float, float]`
+     - `moments_of_inertia_amu_ang2: Tuple[float, float, float]`
+     - `cache_hit: bool`
+
+2. Thread-Budgeted Worker Allocation Algorithm:
+   - Host physical cores: $N_{\text{cores}} = \text{psutil.cpu\_count(logical=False)}$ [M].
+   - Partition workers and threads strictly enforcing $N_{\text{workers}} \times N_{\text{threads\_per\_worker}} \le N_{\text{cores}}$:
+     $$N_{\text{workers}} = \min(N_{\text{monomers}}, N_{\text{cores}}), \quad N_{\text{threads\_per\_worker}} = \max\left(1, \left\lfloor \frac{N_{\text{cores}}}{N_{\text{workers}}} \right\rfloor\right) \quad \text{[D]}$$
+   - Inject per-worker environment variables: `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `OPENBLAS_NUM_THREADS`.
+
+3. Composite Cache Key & Cross-Platform Synchronization:
+   - Generate SHA-256 cache key:
+     $$\text{Key} = \text{SHA256}(\text{isomeric\_smiles} \,\|\, \text{charge} \,\|\, \text{spin} \,\|\, \text{method\_hash}) \quad \text{[D]}$$
+   - Save to `.cache/monomers/<Key>.json`.
+   - Protect file access using `filelock.FileLock(f"{cache_path}.lock", timeout=120)`. Raise `ConcurrencyLockTimeoutError` on timeout.
+
+4. Barrier Synchronization:
+   - Dispatch workers via `concurrent.futures.ProcessPoolExecutor` and synchronize using `as_completed()`.
+
+[INVARIANTS & CONSTRAINTS]
+- Cross-platform safe: POSIX `fcntl` or `os.kill` are strictly forbidden. Use `filelock`.
+```
+
+---
+
+## Prompt 12: Topos Assembly Engine & Conformer Integration
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-12
+TARGET FILE:       src/cochem/topos/cochem_topos_crusher.py
+REQUIREMENTS:      REQ-BM-043, REQ-ML-048, REQ-TOPOS-050
+EXECUTION PHASE:   12 of 14 (Conformer & Assembly Integration)
+================================================================================
+
+[CONTEXT & OBJECTIVE]
+Implement the TOPOS conformer assembly and dimer positioning engine. This module ingests pre-screened conformers from `cochem_ml_filter.py` and monomer multipoles from `cochem_topos_async.py` to assemble non-covalent complexes.
+
+[TARGET SCRIPT FILE]
+`src/cochem/topos/cochem_topos_crusher.py` (Create or update strictly this file).
+
+[FUNCTIONAL REQUIREMENTS]
+1. Monomer & Conformer Ingestion:
+   - Ingest `MonomerPreprocessResult` from `cochem_topos_async.py`.
+   - Ingest pruned conformer ensembles $\mathcal{E}_{\text{pruned}}$ from `cochem_ml_filter.py`.
+
+2. Dimer Spatial Assembly & Tensor Mapping:
+   - Compute principal moments of inertia $(I_a, I_b, I_c)$ and principal axes.
+   - Orient monomers along center-of-mass collision vectors using electrostatic dipole-dipole alignment heuristics.
+   - Assemble dimer Cartesian geometries $\mathbf{R}_{AB}$ for downstream Counterpoise and S22/S66 benchmark calculations.
+
+3. Serialization:
+   - Emit validated complex coordinate dictionaries with explicit monomer atom index mappings (`monomer_a_indices`, `monomer_b_indices`).
+
+[INVARIANTS & CONSTRAINTS]
+- Adhere strictly to Pydantic v2 data models.
+- Zero mock geometry generators: use genuine RDKit / xTB 3D conformers.
+```
+
+---
+
+## Prompt 13: S22/S66 Benchmark Verification & Monomer Preparation Energy
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-13
+TARGET FILE:       src/cochem/benchmarks/cochem_benchmarks.py
+REQUIREMENTS:      REQ-BM-043
+EXECUTION PHASE:   13 of 14 (Benchmark Validation & Prep Energy)
+================================================================================
+
+[CONTEXT & OBJECTIVE]
+Implement the S22 and S66 non-covalent interaction benchmark validation engine. It compares calculated Counterpoise binding energies—including monomer deformation preparation energy—against canonical CCSD(T)/CBS references.
+
+[TARGET SCRIPT FILE]
+`src/cochem/benchmarks/cochem_benchmarks.py` (Create or update strictly this file).
+
+[FUNCTIONAL REQUIREMENTS]
+1. Data Contracts (Pydantic v2):
+   - `BenchmarkComparisonResult(BaseModel)`:
+     - `benchmark_id: str`
+     - `formula_monomer_a: str`
+     - `formula_monomer_b: str`
+     - `delta_e_int_cp_kcal_mol: float`
+     - `delta_e_prep_kcal_mol: float`
+     - `delta_e_bind_cp_kcal_mol: float`
+     - `reference_energy_kcal_mol: float`
+     - `absolute_relative_error_pct: float`
+     - `inertia_tensor_matched: bool`
+
+2. 3D Spatial Tensor & Subgraph Isomorphism:
+   - Load benchmark structures from `s22_s66_data.json`.
+   - Perform subgraph isomorphism matching for monomer connectivity.
+   - Compare normalized principal moments of inertia $(I_a, I_b, I_c)$ between target complex and reference within 5% tolerance window [D]. Raise `BenchmarkMotifMismatchError` on mismatch.
+
+3. Binding Energy & Deformation Prep Energy Calculation:
+   - Standard Counterpoise interaction energy:
+     $$\Delta E_{\text{int}}^{\text{CP}} = E_{AB}^{AB}(AB) - E_A^{AB}(A) - E_B^{AB}(B) \quad \text{[D]}$$
+   - Monomer deformation preparation energy:
+     $$\Delta E_{\text{prep}} = (E_A^A(A) - E_{A,\text{opt}}^A(A)) + (E_B^B(B) - E_{B,\text{opt}}^B(B)) \quad \text{[D]}$$
+   - Total Counterpoise binding energy:
+     $$\Delta E_{\text{bind}}^{\text{CP}} = \Delta E_{\text{int}}^{\text{CP}} + \Delta E_{\text{prep}} \quad \text{[D]}$$
+   - Relative benchmark error percentage:
+     $$\epsilon = \frac{|\Delta E_{\text{bind}}^{\text{CP}} - \Delta E_{\text{ref}}|}{|\Delta E_{\text{ref}}|} \times 100\% \quad \text{[D]}$$
+
+[INVARIANTS & CONSTRAINTS]
+- Energy conversions in standard atomic units ($1\text{ Hartree} = 627.509474\text{ kcal/mol}$).
+```
+
+---
+
+## Prompt 14: Comprehensive Asymmetric Integration Test Suite
+```text
+================================================================================
+PROMPT ID:         COCHEM-PROMPT-05-14
+TARGET FILE:       tests/test_cochem_chunk05_integration.py
+REQUIREMENTS:      REQ-CORE-041 through REQ-TOPOS-050
+EXECUTION PHASE:   14 of 14 (End-to-End Test Suite)
+================================================================================
+
+[CONTEXT & OBJECTIVE]
+Construct the comprehensive, zero-mock pytest test suite for all modules in COCHEM-SRS-CHUNK-05. The suite verifies data contracts, domain exception paths, physical formulas, and cross-platform safety.
+
+[TARGET SCRIPT FILE]
+`tests/test_cochem_chunk05_integration.py` (Create or update strictly this file).
+
+[FUNCTIONAL REQUIREMENTS]
+1. Test Suite Coverage:
+   - `test_ecp_builder_composite_bypass()`: Verify `r2SCAN-3c` and `B97-3c` bypass `%basis` injection while Iodine/Lanthanide complexes generate correct `def2-ECP` / `ECP28MWB` blocks (REQ-CORE-041).
+   - `test_mendeleev_dynamic_lookups()`: Assert atomic masses and radii match dynamic `mendeleev` queries (REQ-CORE-041, REQ-QC-042).
+   - `test_mass_weighted_saddle_escape()`: Verify Cartesian mass-weighting $\Delta R_{i\alpha} = Q_{1, i\alpha}/\sqrt{m_i}$ on an imaginary mode with bifurcated $\pm 0.08\text{ \AA}$ displacement (REQ-QC-042).
+   - `test_s22_benchmark_prep_energy()`: Verify S22 dimer interaction calculation including deformation preparation energy $\Delta E_{\text{prep}}$ and 5% inertia tensor check (REQ-BM-043).
+   - `test_torq_adaptive_step_scheduling()`: Verify non-bonded graph distance filtering ($d_{\text{graph}} \ge 4$) ignores 1-2 and 1-3 pairs, and test $C^1$ quadratic step transition (REQ-TORQ-044).
+   - `test_quasi_rrho_entropy_damping()`: Verify Grimme QRRHO entropy smoothly approaches free-rotor limits without diverging as $\tilde{\nu} \to 0$ (REQ-THM-045).
+   - `test_hardware_hpc_allocation_floors()`: Test SLURM cpus-per-task logic and workstation memory floor guards, ensuring procs > 0 (REQ-HW-046, REQ-HW-047).
+   - `test_nnip_fallback_and_hungarian_rmsd()`: Test 4-tier fallback ladder and Hungarian graph-automorphism RMSD on symmetrical conformers (REQ-ML-048).
+   - `test_xtb_hybrid_rbf_pes()`: Verify Gaussian RBF residual learning interpolation anchors exactly to DFT points (REQ-TORQ-049).
+   - `test_topos_async_filelock_and_threads()`: Test thread budgeting ($N_{\text{workers}} \times N_{\text{threads}} \le N_{\text{cores}}$) and cross-platform `filelock` (REQ-TOPOS-050).
+
+[INVARIANTS & CONSTRAINTS]
+- Zero-mock: NO `np.zeros`, dummy pass stubs, or trivial `NotImplementedError` tests.
+- All tests must pass cleanly under `pytest -v tests/test_cochem_chunk05_integration.py`.
+```
+
+---
+
+### Verification Summary Table
+
+| Prompt ID | Target File | Core Requirements Addressed | Dependencies |
+| :--- | :--- | :--- | :--- |
+| **`COCHEM-PROMPT-05-01`** | [cochem_exceptions.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/core/cochem_exceptions.py) | REQ-CORE-041 .. REQ-TOPOS-050 | None |
+| **`COCHEM-PROMPT-05-02`** | [cochem_elements.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/core/cochem_elements.py) | REQ-CORE-041, REQ-QC-042, REQ-TORQ-044 | Mendeleev |
+| **`COCHEM-PROMPT-05-03`** | [cochem_hardware.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/core/cochem_hardware.py) | REQ-HW-046, REQ-HW-047 | `cochem_exceptions.py` |
+| **`COCHEM-PROMPT-05-04`** | [cochem_orca_builder.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/core/cochem_orca_builder.py) | REQ-CORE-041, REQ-HW-046, REQ-HW-047 | `cochem_elements.py`, `cochem_hardware.py` |
+| **`COCHEM-PROMPT-05-05`** | [cochem_qc_parser.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/qc/cochem_qc_parser.py) | REQ-QC-042, REQ-THM-045 | `cochem_exceptions.py` |
+| **`COCHEM-PROMPT-05-06`** | [cochem_qc_pipeline.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/qc/cochem_qc_pipeline.py) | REQ-QC-042, REQ-HW-046, REQ-TORQ-049 | `cochem_qc_parser.py`, `cochem_orca_builder.py` |
+| **`COCHEM-PROMPT-05-07`** | [cochem_thermo.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/thermo/cochem_thermo.py) | REQ-THM-045 | `cochem_qc_parser.py` |
+| **`COCHEM-PROMPT-05-08`** | [cochem_torq_scanner.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/torq/cochem_torq_scanner.py) | REQ-TORQ-044, REQ-TORQ-049 | `cochem_elements.py` |
+| **`COCHEM-PROMPT-05-09`** | [cochem_torq_xtb.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/torq/cochem_torq_xtb.py) | REQ-TORQ-049 | `cochem_torq_scanner.py`, `cochem_qc_pipeline.py` |
+| **`COCHEM-PROMPT-05-10`** | [cochem_ml_filter.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/ml/cochem_ml_filter.py) | REQ-ML-048 | `cochem_exceptions.py` |
+| **`COCHEM-PROMPT-05-11`** | [cochem_topos_async.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/topos/cochem_topos_async.py) | REQ-TOPOS-050 | `cochem_hardware.py` |
+| **`COCHEM-PROMPT-05-12`** | [cochem_topos_crusher.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/topos/cochem_topos_crusher.py) | REQ-BM-043, REQ-ML-048, REQ-TOPOS-050 | `cochem_ml_filter.py`, `cochem_topos_async.py` |
+| **`COCHEM-PROMPT-05-13`** | [cochem_benchmarks.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/src/cochem/benchmarks/cochem_benchmarks.py) | REQ-BM-043 | `cochem_topos_crusher.py` |
+| **`COCHEM-PROMPT-05-14`** | [test_cochem_chunk05_integration.py](file:///C:/Users/ansac/.gemini/antigravity-cli/scratch/tests/test_cochem_chunk05_integration.py) | REQ-CORE-041 .. REQ-TOPOS-050 | All modules above |
 
 Modified files content:
 
@@ -377,11 +697,15 @@ from __future__ import annotations
 
 import math
 import os
+from pathlib import Path
 import tempfile
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+import filelock
 import pytest
 import numpy as np
 from ci_tools.anti_spoof_linter import BANNED_MOCK_IMPORTS
 from mendeleev import element as m_element
+from cochem.qc.exceptions import IsotopeNotFoundError
 
 from cochem.core.cochem_exceptions import (
     BenchmarkMotifMismatchError,
@@ -404,6 +728,7 @@ from cochem.core.cochem_elements import (
     get_atomic_mass,
     get_atomic_number,
     get_available_isotopes,
+    get_element_electronegativity,
     get_element_name,
     get_element_symbol,
     get_vdw_radius,
@@ -1082,6 +1407,73 @@ $normal_modes
     assert len(freqs) == 3
     assert freqs[1] == 150.25
     assert modes.shape == (3, 3)
+
+
+def test_hpc_schedulers_pbs_and_openmpi(tmp_path: Path) -> None:
+    """Verify PBS and OpenMPI scheduler resource discovery."""
+    nodefile = tmp_path / "pbs_nodes"
+    nodefile.write_text("node01\nnode01\nnode02\nnode02\n", encoding="utf-8")
+
+    res_pbs = allocate_hpc_resources(
+        env_override={"PBS_NODEFILE": str(nodefile)},
+        override_free_ram_gb=32.0,
+        override_phys_cores=8,
+    )
+    assert res_pbs.scheduler_type == "pbs"
+    assert res_pbs.allocated_procs == 4
+
+    res_ompi = allocate_hpc_resources(
+        env_override={"OMPI_COMM_WORLD_SIZE": "12"},
+        override_free_ram_gb=64.0,
+        override_phys_cores=16,
+    )
+    assert res_ompi.scheduler_type == "openmpi"
+    assert res_ompi.allocated_procs == 12
+
+
+def test_mendeleev_extended_properties_and_errors() -> None:
+    """Verify isotope errors, invalid symbols, and electronegativity lookups."""
+    with pytest.raises(IsotopeNotFoundError):
+        get_atomic_mass("C", isotope=999)
+
+    with pytest.raises(ValueError):
+        get_atomic_number("INVALID_ELEMENT")
+
+    en_f = get_element_electronegativity("F")
+    assert en_f is not None and en_f > 3.9
+    assert get_element_electronegativity("He") is None
+
+
+def test_ecp_builder_extended_and_errors() -> None:
+    """Verify Actinide and Dunning basis ECP mapping, plus transactinide error."""
+    ecp_dunning = assign_ecp_for_element("I", "cc-pVTZ", "B3LYP")
+    assert ecp_dunning.assigned_ecp == "cc-pVnZ-PP"
+
+    ecp_u = assign_ecp_for_element("U", "def2-SVP", "PBE0")
+    assert ecp_u.assigned_ecp == "ECP60MWB"
+
+    with pytest.raises(ECPConfigurationError):
+        assign_ecp_for_element("Og", "def2-TZVP", "B3LYP")
+
+
+def test_topos_async_timeout_error() -> None:
+    """Verify ConcurrencyLockTimeoutError when lock cannot be acquired within timeout."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache_key = compute_monomer_cache_key("CCO", charge=0, multiplicity=1)
+        lock_file = Path(tmpdir) / f"{cache_key}.json.lock"
+
+        # Pre-lock using filelock in outer context with timeout
+        held_lock = filelock.FileLock(str(lock_file), timeout=10)
+        with held_lock:
+            with pytest.raises(ConcurrencyLockTimeoutError):
+                def slow_compute(smi: str, q: int, m: int):
+                    return 0.0, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)
+                process_monomer_cached(
+                    "CCO",
+                    compute_func=slow_compute,
+                    cache_dir=tmpdir,
+                    timeout_seconds=0.1,
+                )
 
 
 # ==============================================================================
