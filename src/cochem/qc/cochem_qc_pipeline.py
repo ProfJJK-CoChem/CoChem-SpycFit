@@ -1,21 +1,31 @@
 """
-CoChem Mass-Weighted Saddle-Point Escaping & Execution Pipeline.
+CoChem Dynamic Storage Tier Pinning & QC Pipeline Execution Orchestrator.
 
 Provenance:
-- Method Matrix [M]: Bifurcated displacement delta = 0.08 Å along imaginary normal modes,
-  MAX_PIVOT_CYCLES = 3, dynamic Mendeleev mass-weighting (REQ-QC-042).
-- Derived Relations [D]: Delta R_{i, alpha} = Q_{1, i, alpha} / sqrt(m_i) Cartesian projection.
+- Method Matrix [M]: 2e-ERI storage tier decision matrix (InCore vs NVMe Disk vs Direct-SCF) (REQ-QC-054),
+  automated symmetry stagnation recovery (REQ-QC-057), and mass-weighted saddle-point escape (REQ-QC-042).
 """
 
 from __future__ import annotations
 
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+import math
+from typing import Callable, Dict, List, Literal, Optional, Sequence, Tuple
 import numpy as np
 from pydantic import BaseModel, Field
 
 from cochem.core.cochem_elements import batch_get_masses
 from cochem.core.cochem_exceptions import CudaKernelExecutionError, SaddlePointEscapeError
-from cochem.qc.cochem_qc_parser import ParsedQcOutput
+from cochem.core.models import SCFSymmetryStagnationError
+
+
+class StorageTierDecision(BaseModel):
+    """Data contract representing 2e-ERI integral storage tier selection."""
+
+    tier_name: Literal["IN_CORE", "NVME_DISK", "DIRECT_SCF"]
+    m_4center_mb: float
+    m_3center_mb: float
+    orca_flags: List[str]
+    description: str
 
 
 class VibrationalStateModel(BaseModel):
@@ -30,6 +40,119 @@ class VibrationalStateModel(BaseModel):
     pivot_iteration: int = Field(default=0, ge=0)
 
 
+def determine_2e_storage_tier(
+    n_basis: int,
+    n_aux: int,
+    usable_memory_mb: float,
+    is_ri: bool = False,
+    scratch_throughput_mb_s: float = 2500.0,
+    scratch_free_mb: float = 50000.0,
+    n_cores: int = 1,
+) -> StorageTierDecision:
+    """
+    [REQ-QC-054] Determine optimal 2e-ERI caching and integral storage tier.
+
+    Tensor Estimates:
+        M_4center_MB = (N_basis^4 * 8) / (8 * 1024^2) = N_basis^4 / 1024^2
+        M_3center_MB = (N_basis^2 * N_aux * 8) / (1024^2)
+
+    Decision Rules:
+        - Branch 1 (InCore): M_4center_MB <= 0.40 * M_usable -> %scf InCore true end
+        - Branch 2 (NVMe Disk): Non-RI and M_4center > 0.40 * M_usable and D_free >= 3 * M_4center and R_seq >= 2500 MB/s and N_cores <= 8
+          -> %scf Direct false Disk true end
+        - Branch 3 (Direct-SCF): RI or R_seq < 2500 MB/s or N_cores >= 16 -> %scf Direct true end
+
+    Args:
+        n_basis: Number of contracted primary basis functions.
+        n_aux: Number of auxiliary fitting basis functions.
+        usable_memory_mb: Effective system memory available in MB.
+        is_ri: Whether density fitting / RI approximation is enabled.
+        scratch_throughput_mb_s: Measured sequential I/O speed in MB/s.
+        scratch_free_mb: Available free scratch space in MB.
+        n_cores: Allocated CPU core count.
+
+    Returns:
+        StorageTierDecision instance.
+    """
+    m_4center_mb = float(n_basis ** 4) / float(1024 ** 2)
+    m_3center_mb = float(n_basis ** 2 * n_aux * 8) / float(1024 ** 2)
+
+    # Branch 1: InCore
+    if m_4center_mb <= 0.40 * usable_memory_mb:
+        return StorageTierDecision(
+            tier_name="IN_CORE",
+            m_4center_mb=round(m_4center_mb, 2),
+            m_3center_mb=round(m_3center_mb, 2),
+            orca_flags=["%scf InCore true end"],
+            description="Four-center 2e-ERIs fit entirely within RAM cache (< 40% usable memory).",
+        )
+
+    # Branch 2: Fast NVMe Disk (Non-RI only)
+    if (
+        not is_ri
+        and (m_4center_mb > 0.40 * usable_memory_mb)
+        and (scratch_free_mb >= 3.0 * m_4center_mb)
+        and (scratch_throughput_mb_s >= 2500.0)
+        and (n_cores <= 8)
+    ):
+        return StorageTierDecision(
+            tier_name="NVME_DISK",
+            m_4center_mb=round(m_4center_mb, 2),
+            m_3center_mb=round(m_3center_mb, 2),
+            orca_flags=["%scf Direct false Disk true end"],
+            description="Caching four-center integrals to ultra-fast NVMe scratch (> 2500 MB/s).",
+        )
+
+    # Branch 3: Direct-SCF
+    return StorageTierDecision(
+        tier_name="DIRECT_SCF",
+        m_4center_mb=round(m_4center_mb, 2),
+        m_3center_mb=round(m_3center_mb, 2),
+        orca_flags=["%scf Direct true end"],
+        description="Evaluating 2e-ERIs on the fly (Direct-SCF / RIJCOSX).",
+    )
+
+
+def execute_qc_with_symmetry_recovery(
+    symbols: Sequence[str],
+    coordinates_angstrom: Sequence[Tuple[float, float, float]],
+    qc_runner: Callable[[List[Tuple[float, float, float]], bool], float],
+    perturbation_angstrom: float = 1.0e-3,
+) -> float:
+    """
+    [REQ-QC-057] Execute quantum chemistry calculation with automated symmetry stagnation fallback.
+
+    If SCFSymmetryStagnationError occurs:
+        1. Perturb geometry by delta = 1e-3 Å along lowest non-symmetric mode.
+        2. Set use_sym=False.
+        3. Re-execute calculation.
+
+    Args:
+        symbols: Chemical element symbols.
+        coordinates_angstrom: Cartesian coordinates in Å.
+        qc_runner: Callable taking (coordinates, use_sym) -> energy in Hartree.
+        perturbation_angstrom: Coordinate perturbation magnitude in Å (default 1e-3 Å).
+
+    Returns:
+        Calculated electronic energy in Hartree.
+    """
+    coords = [tuple(row) for row in coordinates_angstrom]
+
+    try:
+        return qc_runner(coords, True)
+    except SCFSymmetryStagnationError:
+        # Automatic recovery: perturb coordinates slightly and disable symmetry
+        perturbed = []
+        for idx, (x, y, z) in enumerate(coords):
+            # Asymmetric perturbation vector
+            dx = perturbation_angstrom * math.sin(idx + 1)
+            dy = perturbation_angstrom * math.cos(idx + 1)
+            dz = perturbation_angstrom * (1.0 if idx % 2 == 0 else -1.0)
+            perturbed.append((x + dx, y + dy, z + dz))
+
+        return qc_runner(perturbed, False)
+
+
 def compute_mass_weighted_displacement(
     symbols: Sequence[str],
     normal_mode_q1: np.ndarray,
@@ -37,31 +160,14 @@ def compute_mass_weighted_displacement(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     [REQ-QC-042] Compute mass-weighted Cartesian unit displacement vector and +/- delta trial displacements.
-
-    Formula:
-        Delta R_{i, alpha} = Q_{1, i, alpha} / sqrt(m_i)
-        U_hat = Delta R / ||Delta R||_2
-        Delta R_plus = +delta * U_hat
-        Delta R_minus = -delta * U_hat
-
-    Args:
-        symbols: Sequence of chemical element symbols.
-        normal_mode_q1: 1D array of 3N components or (N, 3) matrix representing Q_1 eigenvector.
-        step_delta_angstrom: Displacement magnitude delta in Ångströms (default: 0.08 Å [M]).
-
-    Returns:
-        Tuple of (delta_R_plus, delta_R_minus) as (N_atoms, 3) arrays in Ångströms.
     """
-    masses = batch_get_masses(list(symbols))  # (N_atoms,) in amu
+    masses = batch_get_masses(list(symbols))
     num_atoms = len(symbols)
 
     q1_reshaped = np.asarray(normal_mode_q1, dtype=np.float64).reshape((num_atoms, 3))
-
-    # Apply mass weighting: Delta R_{i, alpha} = Q_{1, i, alpha} / sqrt(m_i)
-    sqrt_masses = np.sqrt(masses)[:, np.newaxis]  # (N, 1)
+    sqrt_masses = np.sqrt(masses)[:, np.newaxis]
     delta_r = q1_reshaped / sqrt_masses
 
-    # Compute Euclidean norm over all 3N components
     norm_delta_r = np.linalg.norm(delta_r)
     if norm_delta_r < 1e-12:
         u_hat = np.zeros_like(delta_r)
@@ -86,22 +192,6 @@ def escape_saddle_point_pipeline(
 ) -> Tuple[List[Tuple[float, float, float]], VibrationalStateModel]:
     """
     [REQ-QC-042] Execute automated mass-weighted saddle-point escape loop.
-
-    Args:
-        symbols: Sequence of chemical element symbols.
-        initial_coordinates: Starting Cartesian geometry in Å.
-        initial_frequencies: Vibrational harmonic modes in cm^-1.
-        initial_normal_mode_q1: Imaginary mode eigenvector Q1.
-        energy_eval_func: Callable evaluating single-point energy E(R).
-        opt_func: Callable executing re-optimization, returning (coords, freqs, Q1).
-        max_pivot_cycles: Maximum allowable pivot cycles (default: 3).
-        delta_angstrom: Normal mode displacement magnitude (default: 0.08 Å).
-
-    Returns:
-        Tuple of (optimized_coordinates, VibrationalStateModel).
-
-    Raises:
-        SaddlePointEscapeError: If optimization fails to escape saddle point after max_pivot_cycles.
     """
     current_coords = np.array(initial_coordinates, dtype=np.float64)
     current_freqs = list(initial_frequencies)
@@ -114,7 +204,6 @@ def escape_saddle_point_pipeline(
     while lowest_freq < -15.0 and iteration < max_pivot_cycles:
         iteration += 1
 
-        # Compute mass-weighted +/- bifurcations
         delta_plus, delta_minus = compute_mass_weighted_displacement(
             symbols=symbols,
             normal_mode_q1=current_q1,
@@ -124,14 +213,11 @@ def escape_saddle_point_pipeline(
         r_plus = current_coords + delta_plus
         r_minus = current_coords + delta_minus
 
-        # Evaluate energy along both trial branches
         e_plus = energy_eval_func([tuple(row) for row in r_plus])
         e_minus = energy_eval_func([tuple(row) for row in r_minus])
 
-        # Select branch of lowest single point energy
         chosen_trial = r_plus if e_plus <= e_minus else r_minus
 
-        # Dispatch re-optimization
         opt_coords_seq, new_freqs_seq, new_q1 = opt_func([tuple(row) for row in chosen_trial])
         current_coords = np.array(opt_coords_seq, dtype=np.float64)
         current_freqs = list(new_freqs_seq)

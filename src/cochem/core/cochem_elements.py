@@ -7,6 +7,7 @@ Provenance:
   upper bounds (M - 1 <= N_e), and pre-flight charge/multiplicity gating (REQ-QC-081).
 - Derived Relations [D]: IUPAC CIAAW standard atomic weights and isotopic masses dynamically retrieved via mendeleev.
 - Empirical [E]: Pre-flight oxidation state heuristics and valence boundaries.
+- Chunk 06 Mandates: Frozen-core electron configurations (REQ-CORE-056) and Cordero/Pyykkö covalent radii (REQ-QC-059).
 """
 
 from __future__ import annotations
@@ -50,8 +51,14 @@ def _get_element(symbol_or_z: Union[str, int]) -> Element:
             raise ValueError(f"Could not resolve element for atomic number {symbol_or_z}: {err}") from err
 
     raw = str(symbol_or_z).strip()
-    if not raw or raw.isdigit():
+    if not raw:
         raise ValueError(f"Invalid chemical element symbol '{symbol_or_z}'.")
+
+    if raw.isdigit():
+        z_val = int(raw)
+        if z_val < 1 or z_val > 118:
+            raise ValueError(f"Invalid atomic number Z={z_val}. Must be between 1 and 118.")
+        return _mendeleev_element(z_val)
 
     # Normalize symbol capitalization (e.g. 'c' -> 'C', 'he' -> 'He', 'CL' -> 'Cl')
     if len(raw) == 1:
@@ -91,12 +98,12 @@ def get_element_atomic_number(symbol: str) -> int:
 
 
 @functools.lru_cache(maxsize=128)
-def get_atomic_mass(symbol: str, isotope: Optional[int] = None) -> float:
+def get_atomic_mass(symbol_or_z: Union[str, int], isotope: Optional[int] = None) -> float:
     """
-    [M][D] Dynamically retrieve the atomic mass or isotopic mass in amu from Mendeleev.
+    [M][D] Dynamically retrieve the atomic mass or isotopic mass in amu from Mendeleev (REQ-CORE-056).
 
     Args:
-        symbol: Chemical element symbol (e.g. 'H', 'C', 'Cl').
+        symbol_or_z: Chemical element symbol (e.g. 'H', 'C', 'Cl') or atomic number Z.
         isotope: Optional integer isotope mass number A (e.g. 13 for C-13).
 
     Returns:
@@ -105,7 +112,7 @@ def get_atomic_mass(symbol: str, isotope: Optional[int] = None) -> float:
     Raises:
         IsotopeNotFoundError: If specified isotope mass number is absent in Mendeleev database.
     """
-    elem = _get_element(symbol)
+    elem = _get_element(symbol_or_z)
     if isotope is not None:
         isotopes = elem.isotopes or []
         for iso in isotopes:
@@ -120,7 +127,7 @@ def get_atomic_mass(symbol: str, isotope: Optional[int] = None) -> float:
 
     mass_val = elem.mass if elem.mass is not None else elem.atomic_weight
     if mass_val is None:
-        raise ValueError(f"Standard atomic mass not available for element '{symbol}'.")
+        raise ValueError(f"Standard atomic mass not available for element '{symbol_or_z}'.")
     return float(mass_val)
 
 
@@ -132,6 +139,64 @@ def get_ciaaw_atomic_mass(symbol: str) -> float:
 def get_ciaaw_isotope_mass(symbol: str, mass_number: int) -> float:
     """Alias for get_atomic_mass(symbol, isotope=mass_number) for backwards compatibility."""
     return get_atomic_mass(symbol, isotope=mass_number)
+
+
+@functools.lru_cache(maxsize=128)
+def get_frozen_core_count(atomic_number: int) -> int:
+    """
+    [REQ-CORE-056] Dynamic noble gas frozen-core electron configuration mapping.
+
+    Shell boundaries:
+    - Z <= 2 (H, He): 0 core electrons.
+    - Z 3..10 (Li..Ne): 2 core electrons ([He] 1s2).
+    - Z 11..18 (Na..Ar): 10 core electrons ([Ne] 1s2 2s2 2p6).
+    - Z 19..36 (K..Kr): 18 core electrons ([Ar] [Ne] 3s2 3p6).
+    - Z 37..54 (Rb..Xe): 36 core electrons ([Kr] [Ar] 3d10 4s2 4p6).
+    - Z >= 55 (Cs+): 68 core electrons ([Xe] + 4f14).
+
+    Args:
+        atomic_number: Nuclear charge Z (1 <= Z <= 118).
+
+    Returns:
+        Number of frozen core electrons.
+    """
+    if atomic_number < 1 or atomic_number > 118:
+        raise ValueError(f"Invalid atomic number Z={atomic_number}. Must be between 1 and 118.")
+
+    if atomic_number <= 2:
+        return 0
+    elif 3 <= atomic_number <= 10:
+        return 2
+    elif 11 <= atomic_number <= 18:
+        return 10
+    elif 19 <= atomic_number <= 36:
+        return 18
+    elif 37 <= atomic_number <= 54:
+        return 36
+    else:  # Z >= 55
+        return 68
+
+
+@functools.lru_cache(maxsize=128)
+def get_covalent_radius(symbol_or_z: Union[str, int]) -> float:
+    """
+    [REQ-QC-059] Retrieve Cordero/Pyykkö covalent radius in Ångströms (converted from pm / 100.0).
+
+    Args:
+        symbol_or_z: Chemical element symbol or atomic number.
+
+    Returns:
+        Covalent radius in Ångströms.
+    """
+    elem = _get_element(symbol_or_z)
+    radius_pm = getattr(elem, "covalent_radius_cordero", None)
+    if radius_pm is None:
+        radius_pm = getattr(elem, "covalent_radius_pyykko", None)
+    if radius_pm is None:
+        radius_pm = getattr(elem, "covalent_radius", None)
+    if radius_pm is None:
+        radius_pm = 75.0
+    return float(radius_pm) / 100.0
 
 
 @functools.lru_cache(maxsize=128)
@@ -349,13 +414,13 @@ def validate_charge_and_multiplicity(
         n_atoms = len(symbols)
         avg_charge = charge / n_atoms
         electronegativities = [get_element_electronegativity(s) for s in symbols]
-        
+
         # Calculate electronegativity-weighted oxidation states
         valid_ens = [en if en is not None else 2.2 for en in electronegativities]
         mean_en = sum(valid_ens) / n_atoms
         en_diffs = [mean_en - en for en in valid_ens]
         diff_sum = sum(abs(d) for d in en_diffs)
-        
+
         if diff_sum > 1e-6:
             for idx, d in enumerate(en_diffs):
                 formal_ox[idx] = round(avg_charge + (d / diff_sum) * (abs(charge) if charge != 0 else 1.0), 3)

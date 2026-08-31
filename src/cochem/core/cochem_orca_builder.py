@@ -5,6 +5,8 @@ Provenance:
 - Method Matrix [M]: Karlsruhe def2-ECP / Stuttgart-Dresden relativistic pseudo-potentials (REQ-CORE-041),
   composite functional bypass (r2SCAN-3c, B97-3c, HF-3c, PBEh-3c).
 - Derived Relations [D]: HPC hardware blocks (%pal, %maxcore) and GPU keywords.
+- Chunk 06 Mandates: Dynamic maxcore injection, RI/RIJCOSX auto-activation, FrozenCore allocation,
+  point group symmetry flags, and DLPNO-CCSD(T) parameters (REQ-CORE-051..057, 059, 060).
 """
 
 from __future__ import annotations
@@ -15,6 +17,12 @@ from pydantic import BaseModel, Field
 from cochem.core.cochem_elements import get_atomic_number, is_heavy_element
 from cochem.core.cochem_exceptions import ECPConfigurationError
 from cochem.core.cochem_hardware import CudaHardwareConfigModel, HpcResourceAllocationModel
+from cochem.core.models import MemoryAllocationConfig
+from cochem.qc.cochem_method_registry import (
+    FunctionalType,
+    classify_functional,
+    resolve_auxiliary_basis,
+)
 
 COMPOSITE_METHODS = {
     "r2scan-3c",
@@ -50,19 +58,6 @@ class OrcaInputResult(BaseModel):
 def assign_ecp_for_element(symbol: str, basis: str, method: str) -> ECPAssignment:
     """
     [REQ-CORE-041] Determine relativistic ECP and valence basis for an element.
-
-    Bypasses ECP assignment for composite methods (r2SCAN-3c, B97-3c, HF-3c, PBEh-3c).
-
-    Args:
-        symbol: Chemical element symbol.
-        basis: Base target basis set (e.g. 'def2-TZVP', 'cc-pVTZ').
-        method: Electronic structure method / functional (e.g. 'B3LYP', 'r2SCAN-3c').
-
-    Returns:
-        ECPAssignment instance.
-
-    Raises:
-        ECPConfigurationError: If element is unsupported heavy element or basis is invalid.
     """
     z = get_atomic_number(symbol)
     method_lower = method.strip().lower()
@@ -125,12 +120,6 @@ def assign_ecp_for_element(symbol: str, basis: str, method: str) -> ECPAssignmen
 def build_orca_basis_block(ecp_assignments: Sequence[ECPAssignment]) -> Optional[str]:
     """
     [REQ-CORE-041] Construct the ORCA %basis ... end block for heavy elements requiring ECPs.
-
-    Args:
-        ecp_assignments: Sequence of ECPAssignment objects.
-
-    Returns:
-        Formatted %basis block string, or None if no ECPs are required.
     """
     active_assignments = [
         a for a in ecp_assignments
@@ -169,20 +158,6 @@ def generate_orca_input(
 ) -> OrcaInputResult:
     """
     [REQ-CORE-041, REQ-HW-046, REQ-HW-047] Assemble a complete, production-ready ORCA input file.
-
-    Args:
-        symbols: Sequence of atom chemical symbols.
-        coordinates_angstrom: Cartesian coordinates per atom in Å.
-        method: Quantum chemical functional or method.
-        basis: Base GTO basis set.
-        job_type: Job execution keywords (e.g. 'Opt Freq', 'SP').
-        charge: Net total molecular charge.
-        multiplicity: Spin multiplicity (2S + 1).
-        hpc_alloc: Optional detected HPC allocation resources.
-        cuda_config: Optional CUDA GPU hardware configuration.
-
-    Returns:
-        OrcaInputResult containing synthesized blocks and full deck text.
     """
     method_lower = method.strip().lower()
     is_composite = method_lower in COMPOSITE_METHODS
@@ -250,3 +225,89 @@ def generate_orca_input(
         maxcore_line=maxcore_line,
         full_input_text=full_input_text,
     )
+
+
+def generate_orca_chunk06_deck(
+    symbols: Sequence[str],
+    coordinates_angstrom: Sequence[Tuple[float, float, float]],
+    method: str = "B3LYP",
+    basis: str = "def2-TZVP",
+    job_type: str = "Opt",
+    charge: int = 0,
+    multiplicity: int = 1,
+    mem_config: Optional[MemoryAllocationConfig] = None,
+    point_group: str = "C1",
+    promote_dlpno: bool = False,
+    is_opt: bool = True,
+) -> str:
+    """
+    [REQ-CORE-051..057, 059] High-performance ORCA deck synthesizer with Method Matrix v4 invariants.
+
+    Invariants:
+    1. Memory & Parallel: %maxcore <MB> and %pal nprocs <cores> end.
+    2. RI / RIJCOSX: Pure/Meta-GGA -> ! RI def2/J; Hybrid -> ! RIJCOSX def2/J, %scf GridX 5 end, ! NoFinalGridX for Opt.
+    3. Post-HF / DLPNO: ! FrozenCore; DLPNO promotion -> ! DLPNO-CCSD(T) TightPNO, %mdci.
+    4. Symmetry: PointGroup != C1 -> ! UseSym and %sym Tolerance 1e-4 end.
+    """
+    family = classify_functional(method)
+    ri_info = resolve_auxiliary_basis(primary_basis=basis, functional=method, is_freq=(not is_opt))
+
+    route_tokens = ["!"]
+
+    # 1. Method and Basis
+    if promote_dlpno and family == FunctionalType.POST_HF:
+        route_tokens.extend(["DLPNO-CCSD(T)", "TightPNO", basis])
+    else:
+        route_tokens.extend([method, basis])
+
+    # 2. RI / RIJCOSX flags
+    if family in (FunctionalType.PURE_GGA, FunctionalType.META_GGA):
+        route_tokens.extend(["RI", ri_info.aux_coulomb_basis])
+    elif family == FunctionalType.HYBRID:
+        route_tokens.extend(["RIJCOSX", ri_info.aux_coulomb_basis])
+        if is_opt:
+            route_tokens.append("NoFinalGridX")
+    elif family == FunctionalType.DOUBLE_HYBRID:
+        route_tokens.extend(["RIJCOSX", ri_info.aux_coulomb_basis])
+        if ri_info.aux_correlation_basis:
+            route_tokens.append(ri_info.aux_correlation_basis)
+        if is_opt:
+            route_tokens.append("NoFinalGridX")
+    elif family == FunctionalType.POST_HF:
+        if "cv" not in basis.lower():
+            route_tokens.append("FrozenCore")
+        else:
+            route_tokens.append("NoFrozenCore")
+
+    # 3. Symmetry flag
+    if point_group and point_group != "C1":
+        route_tokens.append("UseSym")
+
+    if job_type:
+        route_tokens.append(job_type)
+
+    deck_lines = [" ".join(route_tokens)]
+
+    # 4. %maxcore and %pal blocks
+    if mem_config is not None:
+        usable_mb = float(mem_config.effective_limit_mb) * (1.0 - mem_config.headroom_fraction)
+        cores = max(1, mem_config.requested_cores)
+        maxcore_mb = max(mem_config.min_core_mb, int(usable_mb // cores))
+        deck_lines.append(f"%maxcore {maxcore_mb}")
+        deck_lines.append(f"%pal nprocs {cores} end")
+
+    # 5. %sym block
+    if point_group and point_group != "C1":
+        deck_lines.append("%sym Tolerance 1e-4 end")
+
+    # 6. %mdci DLPNO parameter block
+    if promote_dlpno and family == FunctionalType.POST_HF:
+        deck_lines.append("%mdci TCutPairs 1e-4 TCutPNO 3.33e-7 TCutMKN 1e-3 end")
+
+    # 7. Coordinates block
+    deck_lines.append(f"* xyz {charge} {multiplicity}")
+    for sym, (x, y, z) in zip(symbols, coordinates_angstrom):
+        deck_lines.append(f"  {sym:<3} {x:14.8f} {y:14.8f} {z:14.8f}")
+    deck_lines.append("*")
+
+    return "\n".join(deck_lines) + "\n"

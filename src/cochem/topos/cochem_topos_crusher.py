@@ -3,16 +3,25 @@ CoChem Topos Dimer Assembly & Spatial Conformer Integration Engine.
 
 Provenance:
 - Method Matrix [M]: Dimer assembly, principal axis orientation, dynamic Mendeleev masses (REQ-BM-043, REQ-TOPOS-050).
-- Derived Relations [D]: Inertia tensor diagonalization, electrostatic collision vector displacement.
+- Topos Crusher: 12D KD-Tree geometric sieving (REQ-TOPOS-055) and Boltzmann Shannon entropy telemetry (REQ-TOPOS-058).
 """
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence, Tuple
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 from pydantic import BaseModel, Field
 
 from cochem.core.cochem_elements import batch_get_masses
+from cochem.topos.cochem_topos_siever import (
+    TwoStageKDTreeSiever,
+    extract_12d_feature_vector,
+)
+from cochem.topos.cochem_topos_telemetry import (
+    ConformerBasinTelemetry,
+    EarlyStoppingStatus,
+)
 
 
 class DimerComplexModel(BaseModel):
@@ -24,6 +33,25 @@ class DimerComplexModel(BaseModel):
     monomer_b_indices: List[int]
     intermolecular_distance_angstrom: float
     principal_moments_of_inertia_amu_ang2: Tuple[float, float, float]
+
+
+class ToposConformerEntry(BaseModel):
+    """Data contract representing a unique, accepted conformer."""
+
+    conformer_id: str
+    energy_hartree: float
+    coordinates_angstrom: List[Tuple[float, float, float]]
+    iteration_discovered: int
+
+
+class ToposSearchResult(BaseModel):
+    """Data contract summarizing the results of a Topos Crusher conformer search."""
+
+    total_samples_evaluated: int  # anti-spoof: total evaluation count
+    unique_conformers: List[ToposConformerEntry]
+    global_min_energy_hartree: float
+    early_stopped: bool
+    convergence_message: str
 
 
 def compute_principal_moments_of_inertia(
@@ -66,7 +94,6 @@ def compute_principal_moments_of_inertia(
         [ixz, iyz, izz],
     ], dtype=np.float64)
 
-    # Diagonalize: eigenvalues and eigenvectors
     eigenvalues, eigenvectors = np.linalg.eigh(tensor)
     sort_idx = np.argsort(eigenvalues)
     sorted_evals = eigenvalues[sort_idx]
@@ -139,3 +166,104 @@ def assemble_dimer_complex(
         intermolecular_distance_angstrom=r,
         principal_moments_of_inertia_amu_ang2=moments,
     )
+
+
+class ToposCrusherEngine:
+    """
+    [REQ-TOPOS-055, REQ-TOPOS-058] Production conformer generation engine with 12D KD-Tree sieving and Shannon telemetry.
+    """
+
+    def __init__(
+        self,
+        symbols: Sequence[str],
+        base_coordinates: Sequence[Tuple[float, float, float]],
+        num_rotatable_bonds: int = 1,
+        thermal_window_kcal_mol: float = 3.0,
+        eps_sieve: float = 1.5e-3,
+        rmsd_prune_angstrom: float = 0.05,
+    ) -> None:
+        self.symbols = list(symbols)
+        self.base_coordinates = list(base_coordinates)
+        self.siever = TwoStageKDTreeSiever(eps_sieve=eps_sieve, rmsd_prune_angstrom=rmsd_prune_angstrom)
+        self.telemetry = ConformerBasinTelemetry(
+            num_rotatable_bonds=num_rotatable_bonds,
+            thermal_window_kcal_mol=thermal_window_kcal_mol,
+        )
+
+    def run_conformer_search(
+        self,
+        sampler_func: Callable[[int], Tuple[List[Tuple[float, float, float]], float]],
+        max_iterations: int = 200,
+        batch_size: int = 25,
+        convergence_output_path: Optional[Path] = None,
+    ) -> ToposSearchResult:
+        """
+        [REQ-TOPOS-055, REQ-TOPOS-058] Run iterative conformer search loop with sieving and early-stopping.
+
+        Args:
+            sampler_func: Callable accepting iteration index -> returning (trial_coords, trial_energy).
+            max_iterations: Maximum sampling iterations to perform.
+            batch_size: Evaluation batch size for telemetry tracking.
+            convergence_output_path: Optional path to serialize topos_convergence.json.
+
+        Returns:
+            ToposSearchResult instance.
+        """
+        unique_conformers: List[ToposConformerEntry] = []
+        early_stopped = False
+        last_message = "Search completed maximum iterations."
+
+        for it in range(max_iterations):
+            trial_coords, trial_energy = sampler_func(it)
+            conf_id = f"conf_{it:04d}"
+
+            # Extract 12D feature vector
+            feat = extract_12d_feature_vector(
+                symbols=self.symbols,
+                coordinates_angstrom=trial_coords,
+                conformer_id=conf_id,
+                energy_hartree=trial_energy,
+            )
+
+            # Two-stage KD-tree sieving
+            is_unique = self.siever.sieve_conformer(
+                symbols=self.symbols,
+                coordinates=trial_coords,
+                feature_vector=feat,
+            )
+
+            if is_unique:
+                unique_conformers.append(ToposConformerEntry(
+                    conformer_id=conf_id,
+                    energy_hartree=trial_energy,
+                    coordinates_angstrom=trial_coords,
+                    iteration_discovered=it,
+                ))
+
+            # Telemetry record
+            status: EarlyStoppingStatus = self.telemetry.record_conformer_sample(
+                sample_index=it,
+                conformer_id=conf_id,
+                energy_hartree=trial_energy,
+                is_new_unique=is_unique,
+            )
+
+            if status.is_converged:
+                early_stopped = True
+                last_message = status.message
+                break
+
+        if convergence_output_path is not None:
+            self.telemetry.dump_convergence_json(convergence_output_path)
+
+        # Sort unique conformers by electronic energy ascending
+        unique_conformers.sort(key=lambda c: c.energy_hartree)
+        min_e = unique_conformers[0].energy_hartree if unique_conformers else 0.0
+
+        return ToposSearchResult(
+            total_samples_evaluated=len(self.telemetry.energy_history),
+            unique_conformers=unique_conformers,
+            global_min_energy_hartree=min_e,
+            early_stopped=early_stopped,
+            convergence_message=last_message,
+        )
