@@ -24,6 +24,7 @@ import os
 import tempfile
 import pytest
 import numpy as np
+from ci_tools.anti_spoof_linter import BANNED_MOCK_IMPORTS
 from mendeleev import element as m_element
 
 from cochem.core.cochem_exceptions import (
@@ -757,7 +758,7 @@ def test_chunk05_anti_spoof_ast_compliance() -> None:  # zero-stub anti-spoof
         repo_root / "tests" / "test_cochem_chunk05_integration.py",
     ]
 
-    banned_modules = {"unittest.mock", "pytest_mock", "mock"}
+    banned_modules = BANNED_MOCK_IMPORTS
 
     for p in chunk05_files:
         assert p.is_file(), f"Target file does not exist: {p}"
