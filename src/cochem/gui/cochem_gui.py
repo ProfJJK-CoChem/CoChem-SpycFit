@@ -136,3 +136,71 @@ class CoChemMasterQCController:
     def get_state(self) -> GUIStateModel:
         """Retrieve current UI state."""
         return self._state
+
+    # =========================================================================
+    # Chunk 10: Publication, Supporting Information, and FAIR Archival Actions
+    # (REQ-QC-091 through REQ-QC-100)
+    # =========================================================================
+
+    def open_table_editor(self) -> ACSTableEditorWidget:
+        """Instantiate and return the reactive ACS Table Editor widget."""
+        return ACSTableEditorWidget()
+
+    def open_orbital_viewer(self, cube_file_path: Optional[str] = None) -> OrbitalViewerWidget:
+        """Instantiate and return the Orbital Viewer widget."""
+        return OrbitalViewerWidget(cube_file_path=cube_file_path)
+
+    def open_html_si_preview(self, html_path: Optional[str] = None) -> HTMLSIPreviewWidget:
+        """Instantiate and return the 3D WebGL HTML SI Preview widget."""
+        return HTMLSIPreviewWidget(html_path=html_path)
+
+    def open_zenodo_dialog(self, project_dir: Optional[str] = None, api_token: str = "") -> ZenodoPublishDialog:
+        """Instantiate and return the Zenodo FAIR publishing dialog."""
+        return ZenodoPublishDialog(project_dir=project_dir, api_token=api_token)
+
+    def generate_publication_package(
+        self,
+        output_dir: str,
+        authors: List[ORCIDAuthorProfile],
+        title: str = "Quantum Chemical Investigation",
+        methods_config: Optional[ComputationalMethodsConfig] = None,
+        stationary_points: Optional[List[StationaryPointSIEntry]] = None,
+    ) -> Dict[str, Any]:
+        """Dispatch asynchronous / local assembly of the complete publication bundle."""
+        return assemble_full_publication_package(
+            project_dir=".",
+            output_dir=output_dir,
+            author_profiles=authors,
+            title=title,
+            methods_config=methods_config,
+            stationary_points=stationary_points,
+        )
+
+    def export_excel_spreadsheet(
+        self,
+        records: List[MolecularRecordSpreadsheetRow],
+        output_excel_path: str,
+        output_csv_path: str,
+    ) -> SpreadsheetExportManifest:
+        """Export calculation dataset to multi-sheet Excel and CSV."""
+        return export_molecular_dataset_to_excel(
+            records=records,
+            output_excel_path=output_excel_path,
+            output_csv_path=output_csv_path,
+        )
+
+
+from cochem.gui.widgets.table_editor import ACSTableEditorWidget
+from cochem.gui.widgets.orbital_viewer import OrbitalViewerWidget
+from cochem.gui.widgets.html_si_preview import HTMLSIPreviewWidget
+from cochem.gui.widgets.zenodo_dialog import ZenodoPublishDialog
+from cochem.provenance.cochem_orcid_resolver import ORCIDAuthorProfile
+from cochem.reporting.cochem_methods_writer import ComputationalMethodsConfig
+from cochem.reporting.cochem_si_builder import StationaryPointSIEntry
+from cochem.reporting.cochem_report_generator import assemble_full_publication_package
+from cochem.export.cochem_spreadsheet_exporter import (
+    MolecularRecordSpreadsheetRow,
+    SpreadsheetExportManifest,
+    export_molecular_dataset_to_excel,
+)
+

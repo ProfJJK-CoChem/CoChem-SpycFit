@@ -271,3 +271,123 @@ class ConcurrencyLockTimeoutError(HardwareResourceError):
             "lock_file_path": lock_file_path,
             "timeout_seconds": timeout_seconds,
         })
+
+
+# =========================================================================
+# Chunk 10: Publication, Supporting Information, FAIR Archival & Audit
+# (REQ-QC-091 through REQ-QC-100)
+# =========================================================================
+
+
+class CoChemPublicationException(CoChemError):
+    """Base domain exception for all publication, reporting, FAIR archival, and SI failures."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(message, details=details)
+
+
+class LaTeXCompilationError(CoChemPublicationException):
+    """Raised when pdflatex / xelatex / tectonic fails to compile LaTeX SI documents."""
+
+    def __init__(self, engine: str, log_snippet: str, message: Optional[str] = None) -> None:
+        self.engine = engine
+        self.log_snippet = log_snippet
+        msg = message or f"LaTeX compilation engine '{engine}' failed during execution. Log snippet:\n{log_snippet}"
+        super().__init__(msg, details={"engine": engine, "log_snippet": log_snippet})
+
+
+class BibTeXResolutionError(CoChemPublicationException):
+    """Raised when a QM method, functional, basis set, or dispersion model cannot be mapped to a BibTeX citation."""
+
+    def __init__(self, method: str, message: Optional[str] = None) -> None:
+        self.method = method
+        msg = message or f"Methodological BibTeX resolution failed: unmapped quantum chemistry descriptor '{method}'."
+        super().__init__(msg, details={"method": method})
+
+
+class OrbitalRenderEngineError(CoChemPublicationException):
+    """Raised when headless PyMOL/VMD fails to render molecular orbital volumetric cube meshes or ray-tracing fails."""
+
+    def __init__(self, engine: str, exit_code: int, stderr: str, message: Optional[str] = None) -> None:
+        self.engine = engine
+        self.exit_code = exit_code
+        self.stderr = stderr
+        msg = message or (
+            f"Frontier orbital rendering engine '{engine}' failed with exit code {exit_code}. Error:\n{stderr}"
+        )
+        super().__init__(msg, details={"engine": engine, "exit_code": exit_code, "stderr": stderr})
+
+
+class ZenodoAPIError(CoChemPublicationException):
+    """Raised when interaction with the Zenodo REST API fails, returning HTTP 4xx/5xx errors or network timeouts."""
+
+    def __init__(self, status_code: int, response_body: str, message: Optional[str] = None) -> None:
+        self.status_code = status_code
+        self.response_body = response_body
+        msg = message or f"Zenodo REST API request failed with HTTP {status_code}: {response_body}"
+        super().__init__(msg, details={"status_code": status_code, "response_body": response_body})
+
+
+class ORCIDValidationError(CoChemPublicationException):
+    """Raised when an ORCID fails ISO 7064 Mod 11,2 checksum validation or API resolution fails."""
+
+    def __init__(self, orcid_id: str, reason: str, message: Optional[str] = None) -> None:
+        self.orcid_id = orcid_id
+        self.reason = reason
+        msg = message or f"ORCID validation failure for '{orcid_id}': {reason}"
+        super().__init__(msg, details={"orcid_id": orcid_id, "reason": reason})
+
+
+class SpreadsheetExportError(CoChemPublicationException):
+    """Raised when tabular data extraction fails or Excel OpenXML serialization fails."""
+
+    def __init__(self, format_type: str, reason: str, message: Optional[str] = None) -> None:
+        self.format_type = format_type
+        self.reason = reason
+        msg = message or f"Spreadsheet export failure ({format_type}): {reason}"
+        super().__init__(msg, details={"format_type": format_type, "reason": reason})
+
+
+class TransparencyAuditError(CoChemPublicationException):
+    """Raised when critical unapproved methodological deviations prevent automated publication."""
+
+    def __init__(self, compliance_score: float, violations: List[str], message: Optional[str] = None) -> None:
+        self.compliance_score = compliance_score
+        self.violations = violations
+        msg = message or (
+            f"Reviewer transparency audit failed with compliance score {compliance_score:.1f}% "
+            f"(critical deviations: {', '.join(violations)})."
+        )
+        super().__init__(msg, details={"compliance_score": compliance_score, "violations": violations})
+
+
+class IncompletePipelineMetadataError(CoChemPublicationException):
+    """Raised when calculation DAG parameters (functional, basis, grid, solvation) are missing from job metadata."""
+
+    def __init__(self, missing_fields: List[str], message: Optional[str] = None) -> None:
+        self.missing_fields = missing_fields
+        msg = message or f"Incomplete pipeline metadata: missing required fields {missing_fields}."
+        super().__init__(msg, details={"missing_fields": missing_fields})
+
+
+class ReferenceSpeciesNotFoundError(CoChemPublicationException):
+    """Raised when the designated reference ground state is missing from the thermodynamic dataset."""
+
+    def __init__(self, reference_label: str, available_species: List[str], message: Optional[str] = None) -> None:
+        self.reference_label = reference_label
+        self.available_species = available_species
+        msg = message or (
+            f"Reference ground state '{reference_label}' not found in thermochemical dataset. "
+            f"Available species: {available_species}."
+        )
+        super().__init__(msg, details={"reference_label": reference_label, "available_species": available_species})
+
+
+class HTMLBundleExportError(CoChemPublicationException):
+    """Raised when standalone 3Dmol.js WebGL serialization or HTML packaging fails."""
+
+    def __init__(self, reason: str, message: Optional[str] = None) -> None:
+        self.reason = reason
+        msg = message or f"Interactive 3D HTML Supporting Information export failed: {reason}"
+        super().__init__(msg, details={"reason": reason})
+

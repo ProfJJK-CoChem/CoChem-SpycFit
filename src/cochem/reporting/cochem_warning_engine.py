@@ -9,7 +9,7 @@ Provenance:
 
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -180,3 +180,124 @@ def generate_warning_summary(warnings: List[DiagnosticWarning]) -> WarningSummar
         info_count=info,
         warnings=warnings,
     )
+
+
+# =========================================================================
+# Chunk 10: Reviewer Transparency Warning Diagnostics Formatter (REQ-QC-100)
+# =========================================================================
+
+def format_terminal_warning_summary(report: Any) -> str:
+    """
+    Format colored ANSI/Unicode summary banner for terminal display.
+
+    Args:
+        report: TransparencyAuditReport instance from cochem_transparency_auditor.
+
+    Returns:
+        str: ANSI formatted terminal string.
+    """
+    verdict = getattr(report, "audit_verdict", "UNKNOWN")
+    score = getattr(report, "compliance_score_percent", 0.0)
+    deviations = getattr(report, "deviations", [])
+
+    if verdict == "FULLY_COMPLIANT":
+        color = "\033[92m"  # Green
+        badge = "[✓ FULLY COMPLIANT]"
+    elif verdict == "COMPLIANT_WITH_JUSTIFIED_DEVIATIONS":
+        color = "\033[93m"  # Yellow/Amber
+        badge = "[⚠ COMPLIANT WITH JUSTIFIED DEVIATIONS]"
+    else:
+        color = "\033[91m"  # Red
+        badge = "[✗ NON-COMPLIANT WARNING]"
+
+    reset = "\033[0m"
+
+    lines = [
+        f"{color}╔════════════════════════════════════════════════════════════════════════════════════╗",
+        f"║  COCHEM METHODOLOGICAL TRANSPARENCY AUDIT SUMMARY                                   ║",
+        f"║  Verdict: {badge:<40} Compliance Score: {score:5.1f}% ║",
+        f"╚════════════════════════════════════════════════════════════════════════════════════╝{reset}",
+    ]
+
+    if not deviations:
+        lines.append(f"{color}  ✔ All {getattr(report, 'total_jobs_audited', 0)} calculations adhere strictly to Method Matrix v4.2 standards.{reset}")
+    else:
+        lines.append(f"\033[1m  Recorded Deviations ({len(deviations)}):{reset}")
+        for idx, dev in enumerate(deviations, 1):
+            sev_color = "\033[91m" if dev.severity == "METHODOLOGICAL_WARNING" else "\033[93m"
+            lines.append(
+                f"  {idx}. [{dev.rule_id}] {sev_color}{dev.severity}{reset} on '{dev.affected_job}': "
+                f"Expected '{dev.expected_parameter}', Got '{dev.actual_parameter}'."
+            )
+            lines.append(f"     Rationale: {dev.scientific_justification}")
+
+    return "\n".join(lines)
+
+
+def generate_latex_warning_callout_box(deviations: List[Any]) -> str:
+    """
+    Generate LaTeX tcolorbox markup suitable for Supporting Information.
+
+    Args:
+        deviations: List of DeviationRecord objects.
+
+    Returns:
+        str: LaTeX code snippet with tcolorbox.
+    """
+    if not deviations:
+        return (
+            r"\begin{tcolorbox}[colback=ForestGreen!5!white,colframe=ForestGreen!75!black,title=\textbf{Methodological Compliance Declaration}]"
+            "\n"
+            r"All quantum chemical calculations reported herein conform strictly to the standard operating procedures defined in Method Matrix v4.2 with zero unapproved deviations."
+            "\n"
+            r"\end{tcolorbox}"
+        )
+
+    has_warning = any(getattr(d, "severity", "") == "METHODOLOGICAL_WARNING" for d in deviations)
+    colframe = "Crimson" if has_warning else "Amber!80!black"
+    colback = "Crimson!5!white" if has_warning else "Amber!5!white"
+    box_title = "Methodological Warning Notice" if has_warning else "Methodological Deviation Justifications"
+
+    lines = [
+        f"\\begin{{tcolorbox}}[colback={colback},colframe={colframe},title=\\textbf{{{box_title}}}]",
+        r"\textbf{The following calculation deviations were audited and justified:}",
+        r"\begin{itemize}",
+    ]
+    for d in deviations:
+        lines.append(
+            f"  \\item \\textbf{{{d.rule_id}}} (\\textit{{{d.severity}}}): {d.affected_job} -- Expected \\texttt{{{d.expected_parameter}}}, used \\texttt{{{d.actual_parameter}}}. {d.scientific_justification}"
+        )
+    lines.extend([
+        r"\end{itemize}",
+        r"\end{tcolorbox}",
+    ])
+    return "\n".join(lines)
+
+
+def generate_html_warning_badge(verdict: str, score: float) -> str:
+    """
+    Render clean SVG/HTML status badge for UI and web dashboard display.
+
+    Args:
+        verdict: Audit verdict string.
+        score: Compliance percentage.
+
+    Returns:
+        str: HTML/SVG badge snippet.
+    """
+    if verdict == "FULLY_COMPLIANT":
+        badge_color = "#28a745"
+        label = "COMPLIANT"
+    elif verdict == "COMPLIANT_WITH_JUSTIFIED_DEVIATIONS":
+        badge_color = "#ffc107"
+        label = "JUSTIFIED DEVIATIONS"
+    else:
+        badge_color = "#dc3545"
+        label = "NON-COMPLIANT"
+
+    return (
+        f"<span class='badge' style='background-color: {badge_color}; color: white; padding: 6px 12px; font-size: 13px; font-weight: bold; border-radius: 4px;'>"
+        f"{label} ({score:.1f}%)"
+        f"</span>"
+    )
+

@@ -9,7 +9,7 @@ Provenance:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from cochem.qc.models import (
@@ -206,3 +206,127 @@ def generate_academic_report(
         markdown_content=full_md,
         latex_content=full_tex,
     )
+
+
+# =========================================================================
+# Chunk 10: Master Publication & Supporting Information Assembler
+# (REQ-QC-091, REQ-QC-092, REQ-QC-094, REQ-QC-096, REQ-QC-100)
+# =========================================================================
+
+from pathlib import Path
+from cochem.provenance.cochem_orcid_resolver import ORCIDAuthorProfile
+from cochem.reporting.cochem_bibtex_compiler import compile_bibtex_references
+from cochem.reporting.cochem_methods_writer import ComputationalMethodsConfig, synthesize_methods_paragraph
+from cochem.reporting.cochem_table_formatter import ThermochemicalSpeciesEntry, build_acs_energy_table
+from cochem.reporting.cochem_transparency_auditor import audit_project_deviations
+from cochem.reporting.cochem_si_builder import StationaryPointSIEntry, generate_latex_si_source, compile_latex_si
+
+
+def assemble_full_publication_package(
+    project_dir: Union[str, Path],
+    output_dir: Union[str, Path],
+    author_profiles: List[ORCIDAuthorProfile],
+    title: str = "Quantum Chemical Investigation and Reaction Mechanism",
+    methods_config: Optional[ComputationalMethodsConfig] = None,
+    stationary_points: Optional[List[StationaryPointSIEntry]] = None,
+    job_manifests: Optional[List[Dict[str, Any]]] = None,
+    reference_species_label: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Master coordinator assembling the full publication package and Supporting Information bundle.
+
+    Workflow:
+    1. Synthesize Methods narrative via cochem_methods_writer.
+    2. Compile citation database via cochem_bibtex_compiler.
+    3. Build relative thermochemistry tables via cochem_table_formatter.
+    4. Audit calculation parameters against Method Matrix v4.2 via cochem_transparency_auditor.
+    5. Generate Supporting Information LaTeX source and compile PDF via cochem_si_builder.
+    6. Collate all paths and manifests into a single publication package dictionary.
+
+    Args:
+        project_dir: Source directory of quantum chemistry calculations.
+        output_dir: Output publication artifacts destination directory.
+        author_profiles: List of validated author profiles.
+        title: Title of publication / SI.
+        methods_config: Configuration for methods narrative synthesis.
+        stationary_points: List of stationary points with Cartesian geometries and frequencies.
+        job_manifests: Job execution manifests for transparency auditing.
+        reference_species_label: Species name to set as 0.0 kcal/mol reference.
+
+    Returns:
+        Dict[str, Any]: Complete publication package manifest.
+    """
+    out_p = Path(output_dir)
+    out_p.mkdir(parents=True, exist_ok=True)
+
+    # 1. Methods narrative
+    cfg = methods_config or ComputationalMethodsConfig()
+    methods_res = synthesize_methods_paragraph(cfg)
+
+    # 2. BibTeX references
+    methods_tokens = [cfg.software_name, cfg.functional, cfg.basis_set]
+    if cfg.dispersion_correction:
+        methods_tokens.append(cfg.dispersion_correction)
+    if cfg.solvation_model:
+        methods_tokens.append(cfg.solvation_model)
+    if cfg.quasi_harmonic_damping:
+        methods_tokens.append("quasi-harmonic")
+
+    bib_manifest = compile_bibtex_references(methods_tokens, out_p)
+
+    # 3. Thermochemistry tables
+    st_points = stationary_points or []
+    acs_tables_tex = ""
+    acs_tables_md = ""
+    table_manifest = None
+
+    if st_points:
+        thermo_entries = [
+            ThermochemicalSpeciesEntry(
+                species_name=sp.label,
+                is_transition_state=(sp.number_of_imaginary_frequencies > 0),
+                imaginary_frequency_cm1=sp.frequencies_cm1[0] if sp.frequencies_cm1 and sp.frequencies_cm1[0] < 0 else None,
+                e_elec_hartree=sp.electronic_energy_hartree,
+                zpve_hartree=sp.zero_point_energy_hartree,
+                h_298_hartree=sp.enthalpy_hartree,
+                g_298_hartree=sp.gibbs_free_energy_hartree,
+            )
+            for sp in st_points
+        ]
+        ref_label = reference_species_label or st_points[0].label
+        table_manifest = build_acs_energy_table(thermo_entries, reference_label=ref_label)
+        acs_tables_tex = table_manifest.latex_table_code
+        acs_tables_md = table_manifest.markdown_table_code
+
+    # 4. Transparency Audit
+    manifests = job_manifests or [{"job_id": sp.label, "functional": cfg.functional, "basis": cfg.basis_set} for sp in st_points]
+    audit_report = audit_project_deviations(manifests, out_p)
+
+    # 5. Supporting Information LaTeX & PDF
+    si_tex_source = generate_latex_si_source(
+        title=title,
+        authors=author_profiles,
+        entries=st_points,
+        methods_paragraph=methods_res.latex_text,
+        acs_tables_latex=acs_tables_tex,
+        transparency_report_latex=f"Compliance score: {audit_report.compliance_score_percent:.1f}\\% (Verdict: \\texttt{{{audit_report.audit_verdict.replace('_', r'\_')}}}).",
+    )
+
+    si_tex_path = out_p / "Supporting_Information.tex"
+    si_tex_path.write_text(si_tex_source, encoding="utf-8")
+
+    si_pdf_path = compile_latex_si(si_tex_path)
+
+    return {
+        "title": title,
+        "output_directory": str(out_p.resolve()),
+        "methods_markdown": methods_res.markdown_text,
+        "methods_latex": methods_res.latex_text,
+        "bibtex_file": bib_manifest.bibtex_file_path,
+        "bibtex_keys": bib_manifest.keys,
+        "thermochemistry_table": table_manifest.model_dump() if table_manifest else None,
+        "transparency_audit": audit_report.model_dump(),
+        "si_tex_file": str(si_tex_path.resolve()),
+        "si_pdf_file": str(si_pdf_path.resolve()) if si_pdf_path else None,
+    }
+
