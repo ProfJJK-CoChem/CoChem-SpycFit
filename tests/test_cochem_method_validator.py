@@ -7,19 +7,17 @@ Provenance:
 - Empirical [E]: Cartesian gradient residual stationary point threshold (||g||_inf <= 1.0e-4 a.u.).
 
 Strict Zero-Mock Mandate Compliance:
-- All quantum chemistry envelopes utilize realistic physical DFT/ab-initio parameters.
-- Zero unittest.mock, zero MagicMock, zero dummy arrays, zero synthetic stubs.
+- All quantum chemistry envelopes utilize authentic physical DFT/ab-initio parameters.
+- Pure physical computation, zero synthetic stubs, zero simulated objects.
 """
 
 from __future__ import annotations
 
 import hashlib
-import math
-from typing import List, Optional
 import pytest
 
 from cochem.provenance.cochem_method_validator import (
-    DEFAULT_STATIONARY_GRADIENT_THRESHOLD,
+    canonicalize_lot_envelope,
     canonicalize_lot_string,
     compute_lot_hash,
     compute_lot_hash_from_components,
@@ -94,6 +92,20 @@ class TestCanonicalStringNormalization:
 
         with pytest.raises(ValueError, match="Integration grid cannot be empty"):
             canonicalize_lot_string(hamiltonian="B3LYP", basis="def2-SVP", grid="   ")
+
+    def test_canonicalize_lot_envelope(self) -> None:
+        """Verify canonicalize_lot_envelope generates correct string from LevelOfTheoryEnvelope."""
+        envelope = LevelOfTheoryEnvelope(
+            hamiltonian_method="wB97X-D4",
+            basis_set="def2-TZVP",
+            auxiliary_basis_set="def2/J",
+            dispersion_correction="D4",
+            integration_grid="DefGrid3",
+            solvation_model="CPCM(water)",
+            max_gradient_residual_au=1.0e-5,
+        )
+        canonical = canonicalize_lot_envelope(envelope)
+        assert canonical == "WB97X-D4|def2-tzvp|def2/j|D4|defgrid3|cpcm(water)"
 
 
 # =============================================================================
