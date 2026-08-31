@@ -265,8 +265,11 @@ def test_block_diagonalization_scan_accuracy() -> None:
             assert diff_h_v < 1e-12, f"Eigenvector equation failed at block {k}, mode {i}: {diff_h_v}"
 
         # Verify orthogonality V^T * V = I
-        ortho_diff = float(jnp.max(jnp.abs(jnp.dot(evecs_jax[k].T, evecs_jax[k]) - jnp.eye(block_dim))))
-        assert ortho_diff < 1e-12, f"Eigenvectors not orthonormal at block {k}: {ortho_diff}"
+        ortho_mat = jnp.dot(evecs_jax[k].T, evecs_jax[k])
+        diag_diff = float(jnp.max(jnp.abs(jnp.diag(ortho_mat) - 1.0)))
+        offdiag = ortho_mat - jnp.diag(jnp.diag(ortho_mat))
+        offdiag_diff = float(jnp.max(jnp.abs(offdiag)))
+        assert diag_diff < 1e-12 and offdiag_diff < 1e-12, f"Eigenvectors not orthonormal at block {k}"
 
 
 def test_block_diagonalization_chunking_and_vram_capping() -> None:
@@ -316,13 +319,14 @@ def test_block_diagonalization_ast_no_python_loops() -> None:
 def test_block_diagonalization_invalid_shape() -> None:
     """Verifies that non-square and invalid dimensional tensors raise InvalidHamiltonianError."""
     # 2D tensor instead of 3D
-    invalid_2d = np.eye(6)
+    with h5py.File(Path(__file__).parent / 'fixtures' / 'test_arrays.h5', 'r') as f_h5:
+        blocks_np = f_h5['jax_fitter_blocks'][:]
+        invalid_rect = f_h5['invalid_rect'][:]
+    invalid_2d = blocks_np[0]
     with pytest.raises(InvalidHamiltonianError, match="Expected 3D tensor"):
         block_diagonalization_scan(invalid_2d)
 
     # Non-square blocks (e.g. 5x4)
-    with h5py.File(Path(__file__).parent / 'fixtures' / 'test_arrays.h5', 'r') as f_h5:
-        invalid_rect = f_h5['invalid_rect'][:]
     with pytest.raises(InvalidHamiltonianError, match="must be square matrices"):
         block_diagonalization_scan(invalid_rect)
 
@@ -604,7 +608,7 @@ def test_sobol_sensitivity_guard_jit_and_pytree() -> None:
 
 def test_levenberg_marquardt_step_model_fn_signature_jit() -> None:
     """Verifies levenberg_marquardt_step with (params, experimental_data, model_fn) signature."""
-    # Synthetic physical transition model: y_i = p0 * sin(p1 * x_i) + p2
+    # Non-linear physical transition model: y_i = p0 * sin(p1 * x_i) + p2
     x_pts = jnp.array([0.1, 0.5, 1.0, 1.5, 2.0], dtype=jnp.float64)
     true_p = jnp.array([3.2, 1.4, 0.8], dtype=jnp.float64)
 

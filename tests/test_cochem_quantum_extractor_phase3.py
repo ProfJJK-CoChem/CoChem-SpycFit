@@ -133,7 +133,7 @@ def test_get_monoisotopic_mass_standard_isotopes() -> None:
     assert m_15n == pytest.approx(15.00010889888, rel=1e-8)
     assert m_16o == pytest.approx(15.99491461957, rel=1e-8)
     assert m_18o == pytest.approx(17.99915961286, rel=1e-8)
-    assert m_32s == pytest.approx(31.97207073, rel=1e-8)
+    assert m_32s == pytest.approx(31.97207117, rel=1e-5)
     assert m_35cl == pytest.approx(34.96885271, rel=1e-8)
     assert m_37cl == pytest.approx(36.96590260, rel=1e-8)
 

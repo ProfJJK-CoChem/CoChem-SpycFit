@@ -132,6 +132,23 @@ def test_ast_compliance_no_synthetic_constructs() -> None:
                 assert term not in module_name, f"Forbidden import: {module_name}"
 
 
+def _ensure_git_repository(repo_dir: Path) -> None:
+    """Ensure repo_dir has an active git context (critical for ephemeral quarantine environments)."""
+    git_dir = repo_dir / ".git"
+    if not git_dir.exists():
+        subprocess.run(["git", "init", str(repo_dir)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo_dir), "config", "user.name", "CoChem-Verifier"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo_dir), "config", "user.email", "verifier@cochem.local"],
+            check=True,
+            capture_output=True,
+        )
+
+
 @pytest.mark.parametrize(
     "relative_target_path, should_be_ignored",
     [
@@ -194,6 +211,7 @@ def test_git_check_ignore_direct(
     relative_target_path: str, should_be_ignored: bool
 ) -> None:
     """Physically evaluate repository gitignore rules using git check-ignore."""
+    _ensure_git_repository(REPO_ROOT)
     result = subprocess.run(
         ["git", "check-ignore", "--no-index", "-q", relative_target_path],
         cwd=str(REPO_ROOT),

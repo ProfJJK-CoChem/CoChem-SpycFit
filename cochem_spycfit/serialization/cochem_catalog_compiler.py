@@ -20,7 +20,6 @@ Directives Enforced:
 
 from __future__ import annotations
 
-import concurrent.futures
 import datetime
 import hashlib
 import json
@@ -1855,9 +1854,7 @@ def compile_master_manifest(
             "sha256": sha,
         }
 
-    workers = max_workers if max_workers is not None else min(32, (os.cpu_count() or 1) + 4)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-        shard_results = list(executor.map(_inspect_parquet_shard, parquet_files))
+    shard_results = [_inspect_parquet_shard(f) for f in parquet_files]
 
     total_transitions = sum(r["num_rows"] for r in shard_results)
     global_f_min = min(r["f_min"] for r in shard_results) if shard_results else 0.0

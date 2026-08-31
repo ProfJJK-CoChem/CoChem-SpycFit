@@ -16,11 +16,11 @@ Strict Zero-Mock & Method Matrix Compliance:
 from __future__ import annotations
 
 import ast
-import concurrent.futures
 import inspect
 import json
 import os
 import shutil
+import threading
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Tuple
 
@@ -259,11 +259,23 @@ class TestPyArrowChunkSerialization:
                 created.append(p_file)
             return created
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = [executor.submit(worker_task, t_id) for t_id in range(num_threads)]
-            all_files: List[Path] = []
-            for f in concurrent.futures.as_completed(futures):
-                all_files.extend(f.result())
+        threads = []
+        results: Dict[int, List[Path]] = {}
+
+        def thread_wrapper(t_id: int) -> None:
+            results[t_id] = worker_task(t_id)
+
+        for t_id in range(num_threads):
+            t = threading.Thread(target=thread_wrapper, args=(t_id,))
+            threads.append(t)
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        all_files: List[Path] = []
+        for t_id in range(num_threads):
+            all_files.extend(results[t_id])
 
         assert len(all_files) == num_threads * chunks_per_thread
         for p in all_files:

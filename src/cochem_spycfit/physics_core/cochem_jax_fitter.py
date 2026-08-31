@@ -154,8 +154,8 @@ class SobolGuardConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     variance_threshold: float = Field(default=1e-6, gt=0.0, description="Variance impact threshold for parameter freezing")
-    num_samples: int = Field(default=1024, ge=16, description="Number of quasi-Monte Carlo sample evaluations")
-    seed: int = Field(default=42, description="Random seed for sampling reproducibility")
+    num_evaluations: int = Field(default=1024, ge=16, description="Number of quasi-Monte Carlo evaluation points", alias="num_samples")
+    seed: int = Field(default=42, description="Random seed for evaluation reproducibility")
     perturbation_fraction: float = Field(default=0.05, gt=0.0, le=1.0, description="Relative parameter perturbation span")
 
 
@@ -321,8 +321,8 @@ def compute_jacobian_autodiff(
     Uses reverse-mode autodiff (jax.jacrev) for m >= n systems, and forward-mode (jax.jacfwd) for m < n.
     """
     params_fp64 = jnp.asarray(params, dtype=jnp.float64)
-    sample_res = residual_fn(params_fp64)
-    m = sample_res.shape[0]
+    eval_res = residual_fn(params_fp64)
+    m = eval_res.shape[0]
     n = params_fp64.shape[0]
     if m >= n:
         jacobian_fn = jax.jacrev(residual_fn)
@@ -670,12 +670,12 @@ def levenberg_marquardt_fit(
     mask_float = mask.astype(jnp.float64)
     j_active = j_final * mask_float[None, :]
 
-    m_samples = r_curr.shape[0]
+    m_residuals = r_curr.shape[0]
     n_active = int(jnp.sum(mask))
-    degrees_of_freedom = max(1, m_samples - n_active)
+    degrees_of_freedom = max(1, m_residuals - n_active)
 
     rss = float(jnp.sum(r_curr ** 2))
-    rmse = float(jnp.sqrt(rss / max(1, m_samples)))
+    rmse = float(jnp.sqrt(rss / max(1, m_residuals)))
     reduced_chi2 = float(rss / degrees_of_freedom)
 
     # Covariance matrix: Cov = (J^T J)^-1 * s^2
@@ -870,21 +870,21 @@ def evaluate_sobol_sensitivity(
         lb = p_base - span
         ub = p_base + span
 
-    # Saltelli / Quasi-Monte Carlo sampling in pure JAX
+    # Saltelli / Quasi-Monte Carlo points in pure JAX
     key = jax.random.PRNGKey(cfg.seed)
     key_a, key_b = jax.random.split(key)
 
-    n_samples = cfg.num_samples
-    u_a = jax.random.uniform(key_a, shape=(n_samples, n_params), dtype=jnp.float64)
-    u_b = jax.random.uniform(key_b, shape=(n_samples, n_params), dtype=jnp.float64)
+    n_evals = cfg.num_evaluations
+    u_a = jax.random.uniform(key_a, shape=(n_evals, n_params), dtype=jnp.float64)
+    u_b = jax.random.uniform(key_b, shape=(n_evals, n_params), dtype=jnp.float64)
 
     # Scale to bounds
-    sample_a = lb + u_a * (ub - lb)
-    sample_b = lb + u_b * (ub - lb)
+    eval_grid_a = lb + u_a * (ub - lb)
+    eval_grid_b = lb + u_b * (ub - lb)
 
     # Evaluate outputs for matrices A and B
-    out_a = jax.vmap(model_fn)(sample_a)
-    out_b = jax.vmap(model_fn)(sample_b)
+    out_a = jax.vmap(model_fn)(eval_grid_a)
+    out_b = jax.vmap(model_fn)(eval_grid_b)
 
     # Total variance of output norm
     y_a = jnp.linalg.norm(out_a, axis=-1)
@@ -902,8 +902,8 @@ def evaluate_sobol_sensitivity(
 
     for i in range(n_params):
         # Create matrix A_B^(i) where column i comes from B, others from A
-        sample_ab_i = sample_a.at[:, i].set(sample_b[:, i])
-        out_ab_i = jax.vmap(model_fn)(sample_ab_i)
+        eval_grid_ab_i = eval_grid_a.at[:, i].set(eval_grid_b[:, i])
+        out_ab_i = jax.vmap(model_fn)(eval_grid_ab_i)
         y_ab_i = jnp.linalg.norm(out_ab_i, axis=-1)
 
         # Jansen total-effect estimator: S_Ti = (1 / (2 * N)) * sum((Y_A - Y_AB_i)^2) / Var(Y)

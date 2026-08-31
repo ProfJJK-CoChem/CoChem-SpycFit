@@ -28,7 +28,7 @@ H_H2O: np.ndarray = np.array([
 with h5py.File(Path(__file__).parent / "fixtures" / "test_arrays.h5", "r") as f:
     H_H2_TS: np.ndarray = f["H_H2_TS"][:]
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from cochem_spycfit import convolver
 from cochem_spycfit import quantum_extractor

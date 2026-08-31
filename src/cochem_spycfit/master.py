@@ -184,8 +184,11 @@ def reweight_isotopologue_hessian(cartesian_hessian : np.ndarray,
                                   symbols: list, 
                                   mass_overrides: Optional[dict] = None, 
                                   new_symbols: Optional[list] = None) -> dict:
-    mass_map = dict(MASS_DICT)
-    mass_map.update({
+    mass_map = {
+        'H': float(MASS_DICT['H']),
+        'O': float(MASS_DICT['O']),
+        'C': float(MASS_DICT['C']),
+        'N': float(MASS_DICT['N']),
         'D': 2.01410178, 'H2': 2.01410178,
         '2H': 2.01410178, '1H': 1.007825, '2D': 2.01410178, '3D': 3.016049,
         '12C': 12.000000, '13C': 13.003355, '14C': 14.003242,
@@ -193,8 +196,8 @@ def reweight_isotopologue_hessian(cartesian_hessian : np.ndarray,
         '16O': 15.994915, '17O': 16.999131, '18O': 17.999160,
         '35Cl': 34.968853, '37Cl': 36.965903,
         '79Br': 78.918337, '81Br': 80.916290
-    })
-    
+    }
+
     def resolve_symbol_mass(sym: str) -> float:
         s = str(sym).strip()
         if s in mass_map:
@@ -202,7 +205,10 @@ def reweight_isotopologue_hessian(cartesian_hessian : np.ndarray,
         match = re.match(r'^(\d+)([A-Za-z]+)$', s)
         if match:
             return float(match.group(1))
-        return float(mass_map.get(s, 12.0))
+        try:
+            return float(MASS_DICT[s])
+        except Exception:
+            return float(mass_map.get(s, 12.0))
 
     n_atoms = len(symbols)
     masses = np.array([resolve_symbol_mass(sym) for sym in symbols], dtype=float)

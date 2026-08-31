@@ -33,6 +33,9 @@ def verify_hashring():
     with open(HASHRING_FILE, "r") as f:
         hashring = json.load(f)
         
+    if "hashes" in hashring:
+        hashring = hashring["hashes"]
+        
     for filepath, expected_hash in hashring.items():
         p = Path(filepath)
         if not p.exists():

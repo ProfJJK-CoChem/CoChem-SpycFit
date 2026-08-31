@@ -53,33 +53,70 @@ def cleanup_subprocesses():
                 logging.debug("Process already exited.")
 atexit.register(cleanup_subprocesses)
 
-# Resolves SPYCFIT-10: Comprehensive IUPAC Atomic Isotope Mass Table (amu) for Z=1..118
-MASS_DICT = {
-    'H': 1.007825, 'He': 4.002602, 'Li': 7.016004, 'Be': 9.012183, 'B': 11.009305,
-    'C': 12.000000, 'N': 14.003074, 'O': 15.994915, 'F': 18.998403, 'Ne': 19.992440,
-    'Na': 22.989769, 'Mg': 23.985042, 'Al': 26.981538, 'Si': 27.976927, 'P': 30.973762,
-    'S': 31.972071, 'Cl': 34.968853, 'Ar': 39.962383, 'K': 38.963706, 'Ca': 39.962591,
-    'Sc': 44.955908, 'Ti': 47.947946, 'V': 50.943960, 'Cr': 51.940507, 'Mn': 54.938044,
-    'Fe': 55.934937, 'Co': 58.933195, 'Ni': 57.935343, 'Cu': 62.929597, 'Zn': 63.929142,
-    'Ga': 68.925574, 'Ge': 73.921178, 'As': 74.921594, 'Se': 79.916521, 'Br': 78.918337,
-    'Kr': 83.911507, 'Rb': 84.911789, 'Sr': 87.905612, 'Y': 88.905848, 'Zr': 89.904704,
-    'Nb': 92.906378, 'Mo': 97.905408, 'Tc': 97.907216, 'Ru': 101.904350, 'Rh': 102.905504,
-    'Pd': 105.903486, 'Ag': 106.905097, 'Cd': 113.903358, 'In': 114.903878, 'Sn': 119.902194,
-    'Sb': 120.903815, 'Te': 129.906224, 'I': 126.904473, 'Xe': 131.904153, 'Cs': 132.905452,
-    'Ba': 137.905247, 'La': 138.906353, 'Ce': 139.905438, 'Pr': 140.907653, 'Nd': 141.907723,
-    'Pm': 144.912749, 'Sm': 151.919732, 'Eu': 152.921230, 'Gd': 157.924104, 'Tb': 158.925347,
-    'Dy': 163.929175, 'Ho': 164.930322, 'Er': 165.930293, 'Tm': 168.934212, 'Yb': 173.938862,
-    'Lu': 174.940772, 'Hf': 179.946550, 'Ta': 180.947996, 'W': 183.950931, 'Re': 186.955753,
-    'Os': 191.961480, 'Ir': 192.962926, 'Pt': 194.964791, 'Au': 196.966569, 'Hg': 201.970643,
-    'Tl': 204.974427, 'Pb': 207.976652, 'Bi': 208.980398, 'Po': 208.982430, 'At': 209.987148,
-    'Rn': 222.017578, 'Fr': 223.019736, 'Ra': 226.025410, 'Ac': 227.027751, 'Th': 232.038055,
-    'Pa': 231.035884, 'U': 238.050788, 'Np': 237.048173, 'Pu': 244.064204, 'Am': 243.061381,
-    'Cm': 247.070354, 'Bk': 247.070307, 'Cf': 251.079587, 'Es': 252.082980, 'Fm': 257.095105,
-    'Md': 258.098431, 'No': 259.101030, 'Lr': 262.109630, 'Rf': 267.121790, 'Db': 268.125670,
-    'Sg': 271.133470, 'Bh': 270.133360, 'Hs': 277.151900, 'Mt': 276.151600, 'Ds': 281.164510,
-    'Rg': 280.165100, 'Cn': 285.174110, 'Nh': 284.178080, 'Fl': 289.187280, 'Mc': 288.191010,
-    'Lv': 293.196000, 'Ts': 294.210460, 'Og': 294.213920
-}
+from mendeleev import element
+
+# Mendeleev Dynamic Mass Resolver (Mendeleev Library Mandate)
+class DynamicMassDict(dict):
+    """Dynamically retrieves atomic and isotopic masses via mendeleev on demand."""
+    def __getitem__(self, sym: str) -> float:
+        return self.get_mass(sym)
+        
+    def __contains__(self, sym: object) -> bool:
+        if not isinstance(sym, str):
+            return False
+        clean_sym = sym.strip().capitalize()
+        if clean_sym in ('D', 'T', '2H', '3H', 'H2', 'H3'):
+            return True
+        elem_sym = re.sub(r'^\d+', '', clean_sym).capitalize()
+        try:
+            el = element(elem_sym)
+            return el is not None
+        except Exception:
+            return False
+            
+    def get(self, sym: str, default: Any = None) -> Any:
+        try:
+            return self.get_mass(sym)
+        except Exception:
+            return default
+
+    @staticmethod
+    def get_mass(sym: str) -> float:
+        clean_sym = sym.strip().capitalize()
+        if clean_sym in ('D', '2H', 'H2'):
+            el = element('H')
+            for iso in el.isotopes:
+                if iso.mass_number == 2 and iso.mass is not None:
+                    return float(iso.mass)
+        if clean_sym in ('T', '3H', 'H3'):
+            el = element('H')
+            for iso in el.isotopes:
+                if iso.mass_number == 3 and iso.mass is not None:
+                    return float(iso.mass)
+        iso_match = re.match(r'^(\d+)([A-Za-z]+)$', clean_sym)
+        if iso_match:
+            iso_num = int(iso_match.group(1))
+            sym_name = iso_match.group(2).capitalize()
+            el = element(sym_name)
+            for iso in el.isotopes:
+                if iso.mass_number == iso_num and iso.mass is not None:
+                    return float(iso.mass)
+            if el.mass is not None:
+                return float(el.mass)
+        el = element(clean_sym)
+        if el.isotopes:
+            abundant_iso = max(
+                (iso for iso in el.isotopes if iso.abundance is not None and iso.mass is not None),
+                key=lambda iso: iso.abundance,
+                default=None,
+            )
+            if abundant_iso is not None and abundant_iso.mass is not None:
+                return float(abundant_iso.mass)
+        if el.mass is not None:
+            return float(el.mass)
+        raise ValueError(f"Could not retrieve dynamic mass for element '{sym}'")
+
+MASS_DICT = DynamicMassDict()
 
 # Pydantic Models for Rigorous Typing
 class RotationalConstants(BaseModel):

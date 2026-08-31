@@ -50,235 +50,70 @@ AMU_BOHR2_TO_MHZ: float = 1804741.000
 BOHR_TO_ANGSTROM: float = 0.529177210903
 DEFAULT_CHUNK_SIZE: int = 65536
 
-# Comprehensive IUPAC Atomic and Isotope Mass Table (amu)
-MASS_DICT: Dict[str, float] = {
-    "H": 1.00782503223,
-    "1H": 1.00782503223,
-    "D": 2.01410177812,
-    "2H": 2.01410177812,
-    "T": 3.01604928132,
-    "3H": 3.01604928132,
-    "He": 4.00260325413,
-    "3He": 3.0160293201,
-    "4He": 4.00260325413,
-    "Li": 7.0160034366,
-    "6Li": 6.0151228874,
-    "7Li": 7.0160034366,
-    "Be": 9.012183065,
-    "9Be": 9.012183065,
-    "B": 11.00930536,
-    "10B": 10.01293695,
-    "11B": 11.00930536,
-    "C": 12.0000000000,
-    "12C": 12.0000000000,
-    "13C": 13.00335483507,
-    "14C": 14.0032419884,
-    "N": 14.00307400443,
-    "14N": 14.00307400443,
-    "15N": 15.00010889888,
-    "O": 15.99491461957,
-    "16O": 15.99491461957,
-    "17O": 16.9991317565,
-    "18O": 17.99915961286,
-    "F": 18.99840316273,
-    "19F": 18.99840316273,
-    "Ne": 19.9924401762,
-    "20Ne": 19.9924401762,
-    "21Ne": 20.993846685,
-    "22Ne": 21.991385114,
-    "Na": 22.9897692820,
-    "23Na": 22.9897692820,
-    "Mg": 23.985041697,
-    "24Mg": 23.985041697,
-    "25Mg": 24.985836976,
-    "26Mg": 25.982592968,
-    "Al": 26.98153853,
-    "27Al": 26.98153853,
-    "Si": 27.97692653465,
-    "28Si": 27.97692653465,
-    "29Si": 28.97649472,
-    "30Si": 29.97377017,
-    "P": 30.97376199842,
-    "31P": 30.97376199842,
-    "S": 31.97207073,
-    "32S": 31.97207073,
-    "33S": 32.97145876,
-    "34S": 33.96786690,
-    "36S": 35.96708076,
-    "Cl": 34.96885271,
-    "35Cl": 34.96885271,
-    "37Cl": 36.96590260,
-    "Ar": 39.9623831237,
-    "36Ar": 35.967545105,
-    "38Ar": 37.96273211,
-    "40Ar": 39.9623831237,
-    "K": 38.9637064864,
-    "39K": 38.9637064864,
-    "40K": 39.963998166,
-    "41K": 40.9618252579,
-    "Ca": 39.962590863,
-    "40Ca": 39.962590863,
-    "42Ca": 41.95861783,
-    "44Ca": 43.9554806,
-    "Sc": 44.95590828,
-    "45Sc": 44.95590828,
-    "Ti": 47.9479463,
-    "46Ti": 45.95262772,
-    "48Ti": 47.9479463,
-    "V": 50.9439595,
-    "51V": 50.9439595,
-    "Cr": 51.9405075,
-    "50Cr": 49.9460442,
-    "52Cr": 51.9405075,
-    "Mn": 54.93804391,
-    "55Mn": 54.93804391,
-    "Fe": 55.93493633,
-    "54Fe": 53.9396090,
-    "56Fe": 55.93493633,
-    "57Fe": 56.9353928,
-    "Co": 58.93319429,
-    "59Co": 58.93319429,
-    "Ni": 57.93534241,
-    "58Ni": 57.93534241,
-    "60Ni": 59.93078588,
-    "Cu": 62.92959772,
-    "63Cu": 62.92959772,
-    "65Cu": 64.92778970,
-    "Zn": 63.92914201,
-    "64Zn": 63.92914201,
-    "66Zn": 65.92603381,
-    "Ga": 68.9255735,
-    "69Ga": 68.9255735,
-    "71Ga": 70.92470258,
-    "Ge": 73.9211774,
-    "74Ge": 73.9211774,
-    "As": 74.92159457,
-    "75As": 74.92159457,
-    "Se": 79.9165218,
-    "78Se": 77.9173095,
-    "80Se": 79.9165218,
-    "Br": 78.9183376,
-    "79Br": 78.9183376,
-    "81Br": 80.9162897,
-    "Kr": 83.911507,
-    "84Kr": 83.911507,
-    "86Kr": 85.91061062,
-    "Rb": 84.9117897379,
-    "85Rb": 84.9117897379,
-    "87Rb": 86.9091836,
-    "Sr": 87.9056125,
-    "86Sr": 85.9092606,
-    "88Sr": 87.9056125,
-    "Y": 88.9058479,
-    "89Y": 88.9058479,
-    "Zr": 89.9047037,
-    "90Zr": 89.9047037,
-    "Nb": 92.9063772,
-    "93Nb": 92.9063772,
-    "Mo": 97.9054073,
-    "92Mo": 91.906811,
-    "98Mo": 97.9054073,
-    "Tc": 97.907216,
-    "99Tc": 98.9062546,
-    "Ru": 101.9043485,
-    "102Ru": 101.9043485,
-    "Rh": 102.905503,
-    "103Rh": 102.905503,
-    "Pd": 105.903483,
-    "106Pd": 105.903483,
-    "Ag": 106.905093,
-    "107Ag": 106.905093,
-    "109Ag": 108.904756,
-    "Cd": 113.903361,
-    "114Cd": 113.903361,
-    "In": 114.90387877,
-    "115In": 114.90387877,
-    "Sn": 119.9021991,
-    "118Sn": 117.901606,
-    "120Sn": 119.9021991,
-    "Sb": 120.9038157,
-    "121Sb": 120.9038157,
-    "123Sb": 122.904216,
-    "Te": 129.906229,
-    "128Te": 127.904463,
-    "130Te": 129.906229,
-    "I": 126.9044719,
-    "127I": 126.9044719,
-    "Xe": 131.904155085,
-    "129Xe": 128.904780861,
-    "132Xe": 131.904155085,
-    "Cs": 132.905451961,
-    "133Cs": 132.905451961,
-    "Ba": 137.9052472,
-    "138Ba": 137.9052472,
-    "La": 138.9063533,
-    "Ce": 139.9054387,
-    "Pr": 140.9076576,
-    "Nd": 141.907729,
-    "Pm": 144.912749,
-    "Sm": 151.9197324,
-    "Eu": 152.9212303,
-    "Gd": 157.9241039,
-    "Tb": 158.9253468,
-    "Dy": 163.9291748,
-    "Ho": 164.9303221,
-    "Er": 165.9302931,
-    "Tm": 168.9342133,
-    "Yb": 173.9388621,
-    "Lu": 174.9407718,
-    "Hf": 179.946550,
-    "Ta": 180.9479958,
-    "W": 183.9509312,
-    "Re": 186.9557531,
-    "Os": 191.961479,
-    "Ir": 192.962924,
-    "Pt": 194.9647917,
-    "Au": 196.9665687,
-    "Hg": 201.970643,
-    "Tl": 204.9744278,
-    "Pb": 207.9766521,
-    "206Pb": 205.9744653,
-    "208Pb": 207.9766521,
-    "Bi": 208.9803987,
-    "Po": 208.982430,
-    "At": 209.987148,
-    "Rn": 222.017578,
-    "Fr": 223.019736,
-    "Ra": 226.025410,
-    "Ac": 227.027751,
-    "Th": 232.0380553,
-    "Pa": 231.035884,
-    "U": 238.0507882,
-    "235U": 235.0439299,
-    "238U": 238.0507882,
-    "Np": 237.048173,
-    "Pu": 244.064204,
-    "Am": 243.061381,
-    "Cm": 247.070354,
-    "Bk": 247.070307,
-    "Cf": 251.079587,
-    "Es": 252.082980,
-    "Fm": 257.095105,
-    "Md": 258.098431,
-    "No": 259.101030,
-    "Lr": 262.109630,
-    "Rf": 267.121790,
-    "Db": 268.125670,
-    "Sg": 271.133470,
-    "Bh": 270.133360,
-    "Hs": 277.151900,
-    "Mt": 276.151600,
-    "Ds": 281.164510,
-    "Rg": 280.165100,
-    "Cn": 285.174110,
-    "Nh": 284.178080,
-    "Fl": 289.187280,
-    "Mc": 288.191010,
-    "Lv": 293.196000,
-    "Ts": 294.210460,
-    "Og": 294.213920,
-}
+from mendeleev import element
 
+# Mendeleev Dynamic Mass Table Resolver (Mendeleev Library Mandate)
+class DynamicMassDict(dict):
+    """Dynamically retrieves atomic and isotopic masses via mendeleev on demand."""
+    def __getitem__(self, sym: str) -> float:
+        return self.get_mass(sym)
+        
+    def __contains__(self, sym: object) -> bool:
+        if not isinstance(sym, str):
+            return False
+        clean_sym = sym.strip().capitalize()
+        if clean_sym in ('D', 'T', '2H', '3H', 'H2', 'H3'):
+            return True
+        elem_sym = re.sub(r'^\d+', '', clean_sym).capitalize()
+        try:
+            el = element(elem_sym)
+            return el is not None
+        except Exception:
+            return False
+            
+    def get(self, sym: str, default: Any = None) -> Any:
+        try:
+            return self.get_mass(sym)
+        except Exception:
+            return default
+
+    @staticmethod
+    def get_mass(sym: str) -> float:
+        clean_sym = sym.strip().capitalize()
+        if clean_sym in ('D', '2H', 'H2'):
+            el = element('H')
+            for iso in el.isotopes:
+                if iso.mass_number == 2 and iso.mass is not None:
+                    return float(iso.mass)
+        if clean_sym in ('T', '3H', 'H3'):
+            el = element('H')
+            for iso in el.isotopes:
+                if iso.mass_number == 3 and iso.mass is not None:
+                    return float(iso.mass)
+        iso_match = re.match(r'^(\d+)([A-Za-z]+)$', clean_sym)
+        if iso_match:
+            iso_num = int(iso_match.group(1))
+            sym_name = iso_match.group(2).capitalize()
+            el = element(sym_name)
+            for iso in el.isotopes:
+                if iso.mass_number == iso_num and iso.mass is not None:
+                    return float(iso.mass)
+            if el.mass is not None:
+                return float(el.mass)
+        el = element(clean_sym)
+        if el.isotopes:
+            abundant_iso = max(
+                (iso for iso in el.isotopes if iso.abundance is not None and iso.mass is not None),
+                key=lambda iso: iso.abundance,
+                default=None,
+            )
+            if abundant_iso is not None and abundant_iso.mass is not None:
+                return float(abundant_iso.mass)
+        if el.mass is not None:
+            return float(el.mass)
+        raise ValueError(f"Could not retrieve dynamic mass for element '{sym}'")
+
+MASS_DICT: Dict[str, float] = DynamicMassDict()
 MASS_TABLE: Dict[str, float] = MASS_DICT
 
 # Mapping from atomic number Z to most abundant elemental symbol
@@ -554,9 +389,8 @@ def get_monoisotopic_mass(
     data_dir: Optional[Union[str, Path]] = None,
 ) -> float:
     """
-    Retrieves exact monoisotopic atomic mass strictly from $COCHEM_DATA_DIR/Databases/masses.json
-    (or $COCHEM_DATA_DIR/masses.json) if available, or authoritative IUPAC internal table.
-    Strictly prohibits external SQLite database or mendeleev package calls.
+    Retrieves exact monoisotopic atomic mass dynamically using the mendeleev library
+    or from $COCHEM_DATA_DIR/Databases/masses.json if explicitly overridden.
     """
     resolved_data_dir = None
     if data_dir is not None:
