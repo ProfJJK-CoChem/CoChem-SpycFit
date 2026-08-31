@@ -2,19 +2,21 @@
 CoChem Core Chemical Elements and Dynamic Mendeleev Mass Resolver.
 
 Provenance:
-- Method Matrix [M]: Quantum spin-parity invariants ((N_e + M) mod 2 == 1), multiplicity upper bounds (M - 1 <= N_e),
-  and pre-flight charge/multiplicity gating (REQ-QC-081).
+- Method Matrix [M]: Dynamic atomic masses and Bondi-Mantina van der Waals radii dynamically
+  retrieved via Mendeleev. Quantum spin-parity invariants ((N_e + M) mod 2 == 1), multiplicity
+  upper bounds (M - 1 <= N_e), and pre-flight charge/multiplicity gating (REQ-QC-081).
 - Derived Relations [D]: IUPAC CIAAW standard atomic weights and isotopic masses dynamically retrieved via mendeleev.
 - Empirical [E]: Pre-flight oxidation state heuristics and valence boundaries.
 """
 
 from __future__ import annotations
 
-from functools import lru_cache
-from typing import List, Optional, Sequence, Union
+import functools
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from mendeleev import element as _mendeleev_element
 from mendeleev.models import Element
+import numpy as np
 
 from cochem.qc.exceptions import (
     CoChemQCException,
@@ -25,7 +27,7 @@ from cochem.qc.exceptions import (
 from cochem.qc.models import SpinChargeValidationResult
 
 
-@lru_cache(maxsize=256)
+@functools.lru_cache(maxsize=128)
 def _get_element(symbol_or_z: Union[str, int]) -> Element:
     """
     Retrieve mendeleev Element object with cached lookups and symbol normalization.
@@ -68,10 +70,10 @@ def _get_element(symbol_or_z: Union[str, int]) -> Element:
         raise ValueError(f"Could not resolve chemical element symbol '{symbol_or_z}': {err}") from err
 
 
-
-def get_element_atomic_number(symbol: str) -> int:
+@functools.lru_cache(maxsize=128)
+def get_atomic_number(symbol: str) -> int:
     """
-    [M][D] Retrieve the nuclear charge / atomic number Z for a chemical element symbol.
+    [M][D] Retrieve the atomic number Z for a chemical element symbol.
 
     Args:
         symbol: Chemical element symbol (e.g. 'H', 'C', 'Fe').
@@ -83,53 +85,118 @@ def get_element_atomic_number(symbol: str) -> int:
     return int(elem.atomic_number)
 
 
-def get_ciaaw_atomic_mass(symbol: str) -> float:
-    """
-    [D] Dynamically retrieve the standard IUPAC CIAAW atomic weight in atomic mass units (amu).
+def get_element_atomic_number(symbol: str) -> int:
+    """Alias for get_atomic_number for backwards compatibility."""
+    return get_atomic_number(symbol)
 
-    Strictly satisfies the dynamic Mendeleev mandate without hardcoded constants.
+
+@functools.lru_cache(maxsize=128)
+def get_atomic_mass(symbol: str, isotope: Optional[int] = None) -> float:
+    """
+    [M][D] Dynamically retrieve the atomic mass or isotopic mass in amu from Mendeleev.
 
     Args:
-        symbol: Chemical element symbol (e.g. 'H', 'C', 'Fe').
+        symbol: Chemical element symbol (e.g. 'H', 'C', 'Cl').
+        isotope: Optional integer isotope mass number A (e.g. 13 for C-13).
 
     Returns:
-        Standard atomic mass in amu (float > 0).
+        Atomic or isotopic mass in amu (float > 0).
+
+    Raises:
+        IsotopeNotFoundError: If specified isotope mass number is absent in Mendeleev database.
     """
     elem = _get_element(symbol)
+    if isotope is not None:
+        isotopes = elem.isotopes or []
+        for iso in isotopes:
+            if iso.mass_number == isotope and iso.mass is not None:
+                return float(iso.mass)
+        available = [iso.mass_number for iso in isotopes if iso.mass_number is not None]
+        raise IsotopeNotFoundError(
+            symbol=elem.symbol,
+            mass_number=isotope,
+            available_mass_numbers=available,
+        )
+
     mass_val = elem.mass if elem.mass is not None else elem.atomic_weight
     if mass_val is None:
         raise ValueError(f"Standard atomic mass not available for element '{symbol}'.")
     return float(mass_val)
 
 
+def get_ciaaw_atomic_mass(symbol: str) -> float:
+    """Alias for get_atomic_mass(symbol) for backwards compatibility."""
+    return get_atomic_mass(symbol)
+
+
 def get_ciaaw_isotope_mass(symbol: str, mass_number: int) -> float:
+    """Alias for get_atomic_mass(symbol, isotope=mass_number) for backwards compatibility."""
+    return get_atomic_mass(symbol, isotope=mass_number)
+
+
+@functools.lru_cache(maxsize=128)
+def get_vdw_radius(symbol: str) -> float:
     """
-    [D] Dynamically retrieve the IUPAC CIAAW isotopic mass in atomic mass units (amu).
+    [M][D] Retrieve Bondi-Mantina van der Waals radius in Ångströms (converted from pm / 100.0).
 
     Args:
-        symbol: Chemical element symbol (e.g. 'H', 'C', 'Cl').
-        mass_number: Isotope mass number A (e.g. 1, 2 for H; 12, 13 for C).
+        symbol: Chemical element symbol.
 
     Returns:
-        Isotopic mass in amu (float > 0).
-
-    Raises:
-        IsotopeNotFoundError: If isotope mass number is absent in IUPAC CIAAW records.
+        vdW radius in Ångströms.
     """
     elem = _get_element(symbol)
-    isotopes = elem.isotopes or []
-    available_mass_numbers = [iso.mass_number for iso in isotopes if iso.mass_number is not None]
+    radius_pm = elem.vdw_radius
+    if radius_pm is None:
+        radius_pm = getattr(elem, "vdw_radius_alvarez", None)
+    if radius_pm is None:
+        # Fallback default if not in table
+        radius_pm = 170.0
+    return float(radius_pm) / 100.0
 
-    for iso in isotopes:
-        if iso.mass_number == mass_number:
-            if iso.mass is not None:
-                return float(iso.mass)
 
-    raise IsotopeNotFoundError(
-        symbol=elem.symbol,
-        mass_number=mass_number,
-        available_mass_numbers=available_mass_numbers,
-    )
+@functools.lru_cache(maxsize=128)
+def get_element_symbol(atomic_number: int) -> str:
+    """
+    [D] Retrieve canonical chemical symbol for a given atomic number Z.
+
+    Args:
+        atomic_number: Nuclear charge Z (1 <= Z <= 118).
+
+    Returns:
+        Canonical element symbol string.
+    """
+    elem = _get_element(atomic_number)
+    return str(elem.symbol)
+
+
+def batch_get_masses(symbols: List[str]) -> np.ndarray:
+    """
+    [M][D] Return a 1D NumPy array of atomic masses in amu for a list of element symbols.
+
+    Args:
+        symbols: List of element symbols.
+
+    Returns:
+        1D float64 NumPy array of atomic masses.
+    """
+    return np.array([get_atomic_mass(s) for s in symbols], dtype=np.float64)
+
+
+@functools.lru_cache(maxsize=128)
+def is_heavy_element(symbol: str, threshold_z: int = 36) -> bool:
+    """
+    [M] Determine if element is a heavy element (Z > threshold_z). Default threshold Z=36 (Krypton).
+
+    Args:
+        symbol: Chemical element symbol.
+        threshold_z: Atomic number threshold (default 36).
+
+    Returns:
+        True if Z > threshold_z, False otherwise.
+    """
+    z = get_atomic_number(symbol)
+    return z > threshold_z
 
 
 def get_available_isotopes(symbol: str) -> List[int]:
@@ -145,20 +212,6 @@ def get_available_isotopes(symbol: str) -> List[int]:
     elem = _get_element(symbol)
     isotopes = elem.isotopes or []
     return sorted([iso.mass_number for iso in isotopes if iso.mass_number is not None])
-
-
-def get_element_symbol(atomic_number: int) -> str:
-    """
-    [D] Retrieve canonical chemical symbol for a given atomic number Z.
-
-    Args:
-        atomic_number: Nuclear charge Z (1 <= Z <= 118).
-
-    Returns:
-        Canonical element symbol string.
-    """
-    elem = _get_element(atomic_number)
-    return str(elem.symbol)
 
 
 def get_element_name(symbol: str) -> str:
@@ -198,6 +251,7 @@ def validate_charge_and_multiplicity(
     symbols: Sequence[str],
     charge: int,
     multiplicity: int,
+    coordinates_angstrom: Optional[Sequence[Tuple[float, float, float]]] = None,
 ) -> SpinChargeValidationResult:
     """
     [M][E] Pre-flight quantum chemistry spin-parity and oxidation state validator (REQ-QC-081).
@@ -215,6 +269,7 @@ def validate_charge_and_multiplicity(
         symbols: Sequence of chemical element symbols in the molecular system.
         charge: Net total molecular charge q (integer).
         multiplicity: Total spin multiplicity M = 2S + 1 (integer >= 1).
+        coordinates_angstrom: Optional Cartesian coordinates (x, y, z) per atom in Å.
 
     Returns:
         SpinChargeValidationResult containing validation status, electron tallies, and warnings.
@@ -226,7 +281,7 @@ def validate_charge_and_multiplicity(
     if not symbols:
         raise ValueError("Molecular symbols sequence cannot be empty.")
 
-    total_nuclear_charge = sum(get_element_atomic_number(s) for s in symbols)
+    total_nuclear_charge = sum(get_atomic_number(s) for s in symbols)
     total_electrons = total_nuclear_charge - int(charge)
 
     # 1. Total electron count floor
@@ -274,9 +329,11 @@ def validate_charge_and_multiplicity(
 
     # 5. Diagnostic valence and oxidation state heuristic checks
     warnings: List[str] = []
+    formal_ox: Dict[int, float] = {}
 
     # Single atom ionic checks
     if len(symbols) == 1:
+        formal_ox[0] = float(charge)
         elem = _get_element(symbols[0])
         oxistates = elem.oxistates or []
         if oxistates:
@@ -288,9 +345,24 @@ def validate_charge_and_multiplicity(
                     f"which exceeds standard physical oxidation state range [{min_oxi:+d}, {max_oxi:+d}]."
                 )
     else:
-        # Polyatomic average charge / oxidation heuristics
+        # Polyatomic formal oxidation states using electronegativity weighting
         n_atoms = len(symbols)
         avg_charge = charge / n_atoms
+        electronegativities = [get_element_electronegativity(s) for s in symbols]
+        
+        # Calculate electronegativity-weighted oxidation states
+        valid_ens = [en if en is not None else 2.2 for en in electronegativities]
+        mean_en = sum(valid_ens) / n_atoms
+        en_diffs = [mean_en - en for en in valid_ens]
+        diff_sum = sum(abs(d) for d in en_diffs)
+        
+        if diff_sum > 1e-6:
+            for idx, d in enumerate(en_diffs):
+                formal_ox[idx] = round(avg_charge + (d / diff_sum) * (abs(charge) if charge != 0 else 1.0), 3)
+        else:
+            for idx in range(n_atoms):
+                formal_ox[idx] = round(avg_charge, 3)
+
         if abs(charge) > 2 * n_atoms:
             warnings.append(
                 f"High net charge {charge:+d} across {n_atoms} atoms yields an unphysical "
@@ -298,7 +370,6 @@ def validate_charge_and_multiplicity(
             )
 
         # Check for highly positive charge on purely electronegative atoms
-        electronegativities = [get_element_electronegativity(s) for s in symbols]
         if (
             all(en is not None and en > 3.0 for en in electronegativities)
             and charge >= n_atoms
@@ -316,5 +387,6 @@ def validate_charge_and_multiplicity(
         multiplicity=multiplicity,
         parity_valid=True,
         max_unpaired_electrons=unpaired_electrons,
+        formal_oxidation_states=formal_ox,
         unphysical_valence_warnings=warnings,
     )

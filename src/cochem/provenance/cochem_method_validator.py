@@ -307,3 +307,20 @@ def validate_quantum_calculation_gate(
     verify_stationary_point(gradient_norm=res_grad, threshold=gradient_threshold)
 
     return True
+
+
+def validate_frequency_level_of_theory(
+    opt_lot: LevelOfTheoryEnvelope,
+    freq_lot: LevelOfTheoryEnvelope,
+    max_gradient_threshold_au: float = DEFAULT_STATIONARY_GRADIENT_THRESHOLD,
+) -> bool:
+    """
+    [M][D][E] Validates Level-of-Theory invariance and stationary point gradient constraint (REQ-QC-085).
+    """
+    return validate_quantum_calculation_gate(
+        opt_lot=opt_lot,
+        freq_lot=freq_lot,
+        gradient_threshold=max_gradient_threshold_au,
+    )
+
+

@@ -34,6 +34,9 @@ class SpinChargeValidationResult(BaseModel):
     multiplicity: int = Field(ge=1, description="Spin multiplicity M = 2S + 1")
     parity_valid: bool = Field(description="Whether (N_e + M) mod 2 == 1")
     max_unpaired_electrons: int = Field(default=0, ge=0, description="Upper bound on unpaired electrons (M - 1)")
+    formal_oxidation_states: Dict[int, float] = Field(
+        default_factory=dict, description="Estimated formal oxidation states per atom index"
+    )
     unphysical_valence_warnings: List[str] = Field(
         default_factory=list, description="Diagnostic warnings for unphysical valence or oxidation states"
     )
@@ -83,6 +86,8 @@ class IRCTrajectoryResult(BaseModel):
     connectivity_verified: bool = Field(description="Whether endpoints match expected reactant/product within 0.25 Å")
     path_coordinates_bohr: List[List[List[float]]] = Field(description="Trajectory coordinates per step [step, atom, xyz] in Bohr")
     path_energies_hartree: List[float] = Field(description="Energy profile along reaction coordinate in Hartree")
+    hdf5_trajectory_path: Optional[str] = Field(default=None, description="Path to HDF5 file storing the full trajectory")
+
 
 
 class StandardStateCorrectionPayload(BaseModel):
@@ -216,6 +221,8 @@ class ProjectedFrequencyResult(BaseModel):
         ge=0.0, description="Maximum absolute frequency residual of projected 6 rigid-body zero modes in cm^-1"
     )
     num_projected_zero_modes: int = Field(default=6, ge=0, description="Number of projected translational/rotational zero modes")
+    is_linear_molecule: bool = Field(default=False, description="Whether the molecular geometry is linear (5 zero modes)")
     is_projection_clean: bool = Field(
-        description="Whether all 6 rigid-body modes have residual frequencies <= 1.0e-4 cm^-1"
+        description="Whether all rigid-body modes have residual frequencies <= 1.0e-4 cm^-1"
     )
+
