@@ -1,9 +1,10 @@
 # Decision records
 
-One file per PI decision, named `D-SPYC-nn.md`. Open questions, options and recommendations
-live in `docs/handoff/PI_DECISIONS.md` until the PI answers. Only the PI's answer creates a
-record here; an agent may draft the file from the PI's words but may not invent or paraphrase
-an approval.
+One file per PI decision, named `D-SPYC-nn.md`; these files are the authoritative records.
+Open questions, options and recommendations live in `docs/handoff/PI_DECISIONS.md` until the PI
+answers. An agent drafts a record only from the PI's verbatim words, with date and source, and
+marks it ANSWERED. It becomes DECIDED only when the PI approves the PR that contains it. Never
+invent, paraphrase or relay an approval.
 
 Template:
 
@@ -12,9 +13,10 @@ Template:
 
 | Field | Value |
 | :--- | :--- |
-| Decided | YYYY-MM-DD |
-| Decided by | PI (Dr. Joshua John Klaassen) |
-| Where | PR / issue / conversation link |
+| Status | ANSWERED (agent) / DECIDED (only after the PI approves this PR) |
+| Answered | YYYY-MM-DD |
+| Answered by | PI (Dr. Joshua John Klaassen) |
+| Source | PR / issue link, or "conversation YYYY-MM-DD" |
 
 ## Decision
 <the PI's answer, quoted where possible>

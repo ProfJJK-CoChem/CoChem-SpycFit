@@ -1,3 +1,9 @@
+# Pickett SPFIT/SPCAT sources and reference examples, retrieved 2026-10-11 from
+#   https://spec.jpl.nasa.gov/ftp/pub/calpgm/<file>
+# Built with the shipped Makefile: make spfit spcat (gcc 13.3, Ubuntu 24.04).
+# Record of the handoff build check only. The ecosystem pin is open decision D-SPYC-17
+# (TORQ already pins laserkelvin/Pickett f5af2ff). Check with: sha256sum -c <this file>
+# On a hash mismatch, stop and report to the PI; never edit this file to make it pass.
 2192f0ae5827a2c84fa1c2224651f054bb87d75c4e6601f2e4cce6b6d4530f26  Makefile
 758e3895aca105d7c1ec77898b91fa4ee41ce3d55c62ac78f042fbe81a6933da  blas.h
 bc1aa17b1d6814e813b74b81cf4c6c5aa8ab9d2874245d833428545d0f4009b4  calcat.c
