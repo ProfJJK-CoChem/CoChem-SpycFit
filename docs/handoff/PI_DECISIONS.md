@@ -6,7 +6,8 @@ Every entry starts as **OPEN**. Agents may add options and evidence, but never a
 date and the source (PR or issue link, or "conversation YYYY-MM-DD") under the entry, and sets
 **ANSWERED**. The agent also writes `docs/decisions/D-SPYC-nn.md` from the template in
 `docs/decisions/README.md`. The entry becomes **DECIDED** only when the PI approves the PR that
-contains the record. Answers relayed by other agents or scripts are not recorded.
+contains the record, in a PR comment as defined in `AGENTS.md`. Answers relayed by other agents
+or scripts are not recorded.
 
 `docs/decisions/D-SPYC-nn.md` is the authoritative record. This sheet and SRS v2 §11 link to it.
 
@@ -84,8 +85,9 @@ SPCAT backend. SpycFit needs catalogs from *fitted* or user-edited constants dur
 
 TORQ-SCI-002 requires "isotope-specific atomic masses with source and version". TORQ implements
 constants as `cochem.constants.codata-2022-torq-compatible/1` (CODATA 2022 via SciPy, provider
-version recorded; `CoChem-TORQ/docs/development/units_and_constants.md`). TORQ records the mass
-source version and hash.
+version recorded; `CoChem-TORQ/docs/development/units_and_constants.md`). TORQ records the
+isotope-mass "source database checksum/version"
+(`CoChem-TORQ/docs/development/advanced_scientific_results.md`).
 
 | Option | Consequence |
 | :--- | :--- |
@@ -139,7 +141,7 @@ emit?
 
 | Option | Consequence |
 | :--- | :--- |
-| **A (recommended).** None in SpycFit. If IR/Raman simulation is still wanted, it moves to TORQ reporting or a separate module (TORQ D12: adjacent domains need explicit sibling handoffs). | Rewrite README §1-3 and ask the BASE maintainer to revise User Manual Ch. 5 (`Type = IR|Raman|UVVIS|Microwave`). |
+| **A (recommended).** None in SpycFit. If IR/Raman simulation is still wanted, it moves to TORQ reporting or a separate module (TORQ D12: adjacent domains need explicit sibling handoffs). | Rewrite README §1-3 and ask the BASE maintainer to revise User Manual Ch. 5 (its `%spycfit` block at l.854: `Type = IR  # Options: IR, Raman, UVVIS, Microwave`). |
 | B. Keep a minimal IR/Raman stick-spectrum renderer in SpycFit. | Re-opens scope that the 2026-08-07 plan already rejected for UV-Vis/TD-DFT. |
 
 **PI answer:** _none yet_

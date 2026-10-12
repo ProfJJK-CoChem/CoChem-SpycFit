@@ -3,7 +3,8 @@
 One file per PI decision, named `D-SPYC-nn.md`; these files are the authoritative records.
 Open questions, options and recommendations live in `docs/handoff/PI_DECISIONS.md` until the PI
 answers. An agent drafts a record only from the PI's verbatim words, with date and source, and
-marks it ANSWERED. It becomes DECIDED only when the PI approves the PR that contains it. Never
+marks it ANSWERED. It becomes DECIDED only when the PI approves the PR that contains it, in a PR comment as defined
+in `AGENTS.md`. Never
 invent, paraphrase or relay an approval.
 
 Template:

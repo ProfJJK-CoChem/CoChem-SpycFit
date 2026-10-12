@@ -3,7 +3,7 @@
 | Field | Value |
 | :--- | :--- |
 | Status | **Draft 0: structure and proposals only.** Nothing here is approved. The PI approves this document together with SRS v2 at gate G1. |
-| Depends on | `docs/srs/CoChem-SpycFit_SRS_v2.md`; PI decisions D-SPYC-01, 02, 03, 04, 05, 10, 11, 13, 14, 15, 16, 17, 18 and 19 in `docs/handoff/PI_DECISIONS.md`. |
+| Depends on | `docs/srs/CoChem-SpycFit_SRS_v2.md`; PI decisions D-SPYC-01, 02, 03, 04, 05, 07, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 and 20 in `docs/handoff/PI_DECISIONS.md`. |
 | Model | `CoChem-TORQ/docs/wiki/CoChem-TORQ_Implementation_SRS.md` §3 (context flowchart and component table with required error behaviour). |
 | Proposal source | Review finding ARCH-30 (`docs/wiki/review/CoChem-SpycFit_SRS_Review_findings.json`), corrected by `docs/handoff/REVIEW_ERRATA.md`. |
 
@@ -32,9 +32,9 @@ Proposed context, consistent with the TORQ SRS ownership statement (§1.2):
   - hosts the Voila UI;
   - owns durable task state (TORQ D08).
   BASE also declares `pickett_export`, `pgopher_export` and `spectroscopy_snapshot` boundaries
-  for SpycFit (`src/cochem_base/interfaces/cochem_pyckett_bridge.py`,
-  `cochem_pgopher_bridge.py`, `cochem_vibspyc_snap.py`), which SRS v2 §4.4 must accept, rename
-  or retire.
+  for SpycFit (`CoChem-BASE/src/cochem_base/interfaces/cochem_pyckett_bridge.py`,
+  `cochem_pgopher_bridge.py`, `cochem_vibspyc_snap.py`; not the vendored copy in this
+  repository), which SRS v2 §4.4 must accept, rename or retire.
 - **The user** supplies the experimental spectrum or peak list, nuclear-spin weights and
   assignment decisions.
 - **SpycFit** supports assignment and fits through the pinned SPFIT/SPCAT. It produces catalogs
@@ -49,7 +49,9 @@ A single package `src/cochem_spycfit/`, pure Python, CPU first. Candidate subpac
 | `io/pickett` | Read and write `.par`, `.var`, `.int`, `.lin`, `.cat`, `.egy`, `.fit` with their roles; round-trip against the pinned binaries on scratch copies. | D-SPYC-17 (pin); whether `pyckett` is a runtime dependency or a test-only cross-check |
 | `io/experimental` | Spectrum and peak-list input; peak picking with an uncertainty model. | Instrument formats from the PI |
 | `contract` | TORQ bundle reader and schema-version negotiation (later); BASE handoff receiver; configuration model. | D-SPYC-19; joint contracts with TORQ and BASE |
-| `model` | Optional in-process Hamiltonian model: Watson A/S, quadrupole hyperfine, multi-state; eigenvalue labelling; intensities with user spin weights; diagnostics (κ, inertial defect, planar moments). It must reproduce SPCAT before its output is shown. | D-SPYC-16, 18, 07, 11, 12 |
+| `model` | Only if D-SPYC-18 is B or C: in-process Hamiltonian (Watson A/S, quadrupole hyperfine, multi-state) and eigenvalue labelling. Each term must reproduce SPCAT before its output is shown. | D-SPYC-07, 11, 16, 18 |
+| `diag` | κ, inertial defect and planar moments from any set of constants, checked against published values. | D-SPYC-12 |
+| `catalog` | Intensities with user spin weights and catalogs at T_rot, through the pinned SPCAT (or `model` where D-SPYC-18 allows). | D-SPYC-13, 16, 17, 20 |
 | `fit` | Driver for the pinned SPFIT as fit of record (subprocess, scratch directory, timeouts, parsers); in-process sensitivity and what-if support. | D-SPYC-01 |
 | `assign` | Prediction catalogs, search windows, candidate ranking, pattern tools, the human assignment loop, `.lin` generation from approved assignments only. | D-SPYC-13, 14 |
 | `campaign` | Isotopologues, conformers, and structure fits gated by fluxionality. | D-SPYC-10 |

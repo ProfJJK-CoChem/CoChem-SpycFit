@@ -11,10 +11,10 @@
 
 | Phase | Work | Entry | Exit gate |
 | :--- | :--- | :--- | :--- |
-| 0. Baseline | The PI creates the tag `legacy-swarm-2026-10` on `7e42507`. An agent writes `docs/evidence/phase0_inventory.md` from a clone outside the repository. The inventory covers the whole-suite pytest manifest including collection errors, the diff of the two package trees, the `REQ-*` ids per test file, fabricated-success paths and a dependency scan. No changes to code, tests or configuration. If the PI explicitly asks for fabricated fallbacks to be removed before G1, that is a separate PR that only deletes lines listed in the inventory and quotes the PI's request. | This handoff | **G0**: PI answers D-SPYC-01 and approves these phases and gates. |
+| 0. Baseline | The PI creates the tag `legacy-swarm-2026-10` on `7e42507`. An agent writes `docs/evidence/phase0_inventory.md` from a clone outside the repository. The inventory covers the whole-suite pytest manifest including collection errors, the diff of the two package trees, the `REQ-*` ids per test file, fabricated-success paths and a dependency scan. No changes to code, tests or configuration. If the PI explicitly asks for fabricated fallbacks to be removed before G1, that is a separate PR that only deletes lines listed in the inventory and quotes the PI's request. | This handoff | **G0**: D-SPYC-01 is DECIDED and the PI approves these phases and gates. |
 | 1. Specification | SRS v2, architecture and this plan completed with the PI, one chapter per PR, with an acceptance catalog, a benchmark manifest with frozen tolerances, and a disposition of every review finding. Benchmark sources are recorded (DOI or URL, SHA-256) without committing data files. Decisions needed before G1 are listed in `docs/handoff/PI_DECISIONS.md`. | G0 | **G1**: PI approves and tags `srs-v2.0`. No code PR before that tag exists on origin, created by the PI. |
-| 2. Hygiene | One PR under the PI's D-SPYC-15 choice: <ul><li>a single package tree;</li><li>foreign code and committed junk removed, limited to paths listed in the Phase 0 inventory and approved by the PI;</li><li>every deleted test file listed with its reason, and no test deleted, skipped or xfailed to make CI green;</li><li>`pytest.ini` runs the whole suite, registers the `req` marker and enables `--strict-markers`;</li><li>CI runs the tests and builds the pinned SPFIT/SPCAT (D-SPYC-17);</li><li>`.gitignore` ignores run outputs by directory and allows `tests/fixtures/` and `tests/benchmarks/`;</li><li>the linter is reduced per D-SPYC-08 and D-SPYC-09;</li><li>the README is rewritten from SRS v2.</li></ul> | G1 | **G2**: PI approves the PR with CI green, or with a substitute the PI recorded in `docs/decisions/` if GitHub Actions cannot run. |
-| 3. Work packages | One PR each, in the order below. | G2 | **G3** per package: PI reads `docs/evidence/WP-<NAME>.md` and approves. |
+| 2. Hygiene | One PR under the PI's D-SPYC-15 choice: <ul><li>a single package tree;</li><li>foreign code and committed junk removed, limited to paths listed in the Phase 0 inventory and approved by the PI;</li><li>every deleted test file listed with its reason, and no test deleted, skipped or xfailed to make CI green;</li><li>`pytest.ini` runs the whole suite, registers the `req` marker and enables `--strict-markers`;</li><li>CI runs the tests and builds the pinned SPFIT/SPCAT (D-SPYC-17), and the `air_gap_enforcement` `find` step, which fails on any `.lin`, `.fit`, `.h5`, `.parquet` or `.lock` file outside a `test_fixtures` directory, is removed;</li><li>`.gitignore` ignores run outputs by directory and allows `tests/fixtures/` and `tests/benchmarks/`;</li><li>the linter is reduced per D-SPYC-08 and D-SPYC-09;</li><li>the README is rewritten from SRS v2.</li></ul> | G1 | **G2**: PI approves the PR (in a PR comment, per `AGENTS.md`) with CI green, or with a substitute the PI recorded in `docs/decisions/` if GitHub Actions cannot run. |
+| 3. Work packages | One PR each, in the order below. | G2 | **G3** per package: PI reads `docs/evidence/WP-<NAME>.md` and approves the PR in a PR comment. |
 | 4. Release | Preregistered benchmark run; SPFIT/SPCAT round trip; clean-wheel install; UI journey on a reference complex per deployment target. | All G3 | **G4**: PI signs the release tag. |
 
 ## Proposed work packages
@@ -59,7 +59,7 @@ Additionally:
 - The whole suite runs in CI.
 - `docs/evidence/WP-<NAME>.md` (two pages at most) records what ran, where, the numbers against
   tolerance, skips and open questions.
-- The PI approves the PR.
+- The PI approves the PR in a PR comment, as defined in `AGENTS.md`.
 
 Proposals from review §9.2-§9.3 for the PI to accept or reject at G1 (errata row 15):
 - a limit of about 1,500 changed lines per PR;
@@ -67,3 +67,5 @@ Proposals from review §9.2-§9.3 for the PI to accept or reject at G1 (errata r
 - `tests/acceptance/manifest.yaml` with a CI check that tolerances were committed before the
   implementation;
 - `docs/agent_tasks/<WP>/` for the prompts given to agents.
+
+Review §9.3's `docs/agent_reports/` is not carried forward (errata row 15).

@@ -15,14 +15,14 @@ documents this in detail.
 
 | Item | State on 2026-10-11 |
 | :--- | :--- |
-| Branch carrying this handoff | `ccr-c1697164-ao6hz4` (draft PR #1). If PR #1 is still open, do not push to its branch: branch from it, open your PR against it, and ask the PI to merge PR #1 first. If PR #1 has been merged, branch from `main`. |
+| Branch carrying this handoff | `ccr-c1697164-ao6hz4` (draft PR #1). If PR #1 is still open, do not push to its branch: branch from it, open your PR against it, and ask the PI to merge PR #1 first. If PR #1 has been merged, branch from `main`. Check with `gh api repos/ProfJJK-CoChem/CoChem-SpycFit/pulls/1 --jq '.state,.merged'`; `gh pr` commands use GraphQL, which cloud sessions block. |
 | `main` | `7e42507e4668751da393241294ffbb9dd4f0c259`, the swarm-generated SRS commit. |
 | Sibling checkouts used for this handoff | CoChem-BASE `7d5b8ac`, CoChem-TORQ `e0019e7`, CoChem-TOPOS `a6f763c`. Re-check them; they move. |
 | Normative SpycFit SRS | **None.** `docs/srs/CoChem-SpycFit_SRS_v2.md` is a skeleton to be written with the PI. |
 | Normative architecture | **None.** `docs/architecture/CoChem-SpycFit_Architecture.md` is a skeleton with proposals. |
 | Approved plan | **None.** `docs/plan/CoChem-SpycFit_Plan.md` is a proposal. |
 | PI decisions | All open: `docs/handoff/PI_DECISIONS.md`. D-SPYC-01 (what SpycFit is) blocks every functional requirement. |
-| CI | `.github/workflows/cochem_spycfit_ci.yml` runs one `find` for data files and no tests. It passed on `main` on 2026-10-07. All four runs on PR #1 (2026-10-11) failed in 2-5 seconds with no runner assigned (`runner_id` 0, no steps). CoChem-TORQ's Actions last succeeded on 2026-10-10. This points to an account-level Actions problem (minutes or spending limit), which the PI must check; it is not caused by the repository. |
+| CI | `.github/workflows/cochem_spycfit_ci.yml` runs one `find` for data files and no tests. It passed on `main` on 2026-10-07. Every run on PR #1's branch since 2026-10-11 (six by 23:51 UTC, one push and one pull_request run per commit) failed in 2-5 seconds with no runner assigned (`runner_id` 0, no steps). CoChem-TORQ's Actions last succeeded on 2026-10-10. This points to an account-level Actions problem (minutes or spending limit), which the PI must check; it is not caused by the repository. |
 | Tests | `pytest.ini` restricts `testpaths` to one file (11 tests). `tests/` holds 1,095 test functions in 63 test modules (67 `.py` files including four helper scripts). The whole suite has never been run in a recorded way. |
 
 ## 2. Read first, in this order
@@ -43,8 +43,8 @@ documents this in detail.
    - `CoChem-BASE/Method_Matrix.md`, Version 4 (2026-08-09). The ecosystem's science document:
      system class (§2), accuracy specification (§3.1), observables (§6), spin statistics (§7),
      validation set (§17), deliverables (§18). TORQ keeps a copy at `docs/wiki/Method_Matrix.md`
-     whose text matches after its two-line banner. That copy uses CRLF line endings, so its line
-     numbers are BASE's plus 2. The banner marks the raw matrix superseded *for TORQ
+     whose text matches BASE's after a two-line banner, so its line numbers are BASE's plus 2.
+     Apart from the banner it uses CRLF line endings; strip them (`tr -d '\r'`) before diffing. The banner marks the raw matrix superseded *for TORQ
      implementation* by the TORQ implementation SRS, the method contract and the decision register.
    - `CoChem-TORQ/docs/wiki/Method_Matrix_Implementation_Contract.md`: accepted corrections to
      the Method Matrix. §3.1-§3.4 and §4 bind SpycFit too (see the errata).
@@ -85,7 +85,8 @@ recorded here.
 
 **Product and scope.** The existing descriptions disagree.
 - The README ("Simulates IR, Raman, and Rotational spectra") and BASE User Manual Ch. 5
-  (`CoChem-BASE/CoChem_User_Manual.md`, from l.742; `Type = IR|Raman|UVVIS|Microwave`) describe
+  (`CoChem-BASE/CoChem_User_Manual.md`, from l.742; its `%spycfit` block at l.854 reads
+  `Type = IR  # Options: IR, Raman, UVVIS, Microwave`) describe
   a multi-spectrum simulator that hands rotational diagonalisation to PGOPHER.
 - The old SRS describes an air-gapped JAX least-squares engine with NMR and HITRAN chapters.
 - The 2026-08-07 plan describes a CP-FTMW assignment and fitting tool.
@@ -134,8 +135,11 @@ kind agreed with BASE.
 - This handoff separately built the JPL sources from https://spec.jpl.nasa.gov/ftp/pub/calpgm/
   on 2026-10-11. The headers read "Copyright (C) 1989, California Institute of Technology. All
   rights reserved." File hashes are in `docs/handoff/calpgm_sources_2026-10-11.sha256`.
-- Compared with the JPL files, TORQ's tree differs in `calcat.c` (15 lines) and the `Makefile`.
-  `calfit.c`, `spinv.c` and `subfit.c` match apart from line endings.
+- Compared with the JPL files, TORQ's tree differs in two places:
+  - `calcat.c`: a 2020 change by KLKL computes partition functions at 1,001 temperatures
+    (1000 K down to 1 K) instead of 8 fixed ones.
+  - `Makefile`: `-g -O3` instead of `-O2`.
+  The other sources match byte for byte or apart from CRLF line endings.
 - **One pin should serve the whole ecosystem**: decision D-SPYC-17. Do not add a CI pin before it
   is answered.
 
@@ -149,31 +153,37 @@ Findings from the JPL build (Ubuntu 24.04, gcc 13.3, shipped Makefile, `make spf
   on the shipped inputs converges to the same weighted RMS as the shipped `hco.fit` (0.74730).
   SPFIT rewrites `hco.par` and `hco.var` in place, so a later SPCAT run predicts from refitted
   constants (up to 0.36 MHz different). Always run each program on fresh copies of the inputs.
-- **NO does not run with this build.** SPFIT rejects 34 shipped `no.lin` lines ("Bad Line") and
-  ends with a microwave RMS of tens of thousands of MHz, against 0.046 MHz in the shipped
-  `no.fit`. SPCAT on the shipped `no.var` and `no.int` writes an empty catalog. Keep its hashes
-  for provenance; do not use it as a regression case until explained.
+- **NO does not run with either the JPL build or TORQ's `f5af2ff` tree.**
+  - Both builds reject the same 34 shipped `no.lin` lines ("Bad Line").
+  - Both end with a microwave RMS of about 67,615 MHz, against 0.046 MHz in the shipped `no.fit`.
+  - SPCAT on the shipped `no.var` and `no.int` writes an empty catalog.
+  - The shipped NO files date from 1993.
+  Keep the hashes for provenance. Do not use NO as a regression case until it is explained.
 - `pyckett` (PyPI 0.2.2) wraps SPFIT/SPCAT and reads and writes the Pickett files. It does not
   bundle the binaries: they must be on `PATH` or named by `PYCKETT_SPFIT_PATH` /
   `PYCKETT_SPCAT_PATH`.
 
 **Constants and masses.**
 - TORQ-SCI-002 requires "isotope-specific atomic masses with source and version".
-- TORQ's implementation uses the CODATA 2022 profile above and records the mass source version and
-  hash.
+- TORQ's implementation uses the CODATA 2022 profile above.
+- TORQ records the isotope-mass "source database checksum/version"
+  (`CoChem-TORQ/docs/development/advanced_scientific_results.md`).
 - The old SRS's "PCA-32" nuclear-mass rule is wrong.
 - The review's CODATA 2018 value is superseded (errata row 13). Decision D-SPYC-02.
 
 **Dependencies.**
-- `requirements.txt` cannot be installed on Python 3.12: PyPI has no `jaxlib==0.4.13` (the
-  oldest 0.4.x listed is 0.4.34) and no Python 3.12 wheel of `cupy-cuda12x==12.2.0`.
+- `requirements.txt` cannot be installed on Python 3.12. PyPI has no `jaxlib==0.4.13`; the
+  oldest jaxlib 0.4.x with a Python 3.12 wheel is 0.4.18. `cupy-cuda12x==12.2.0` has wheels
+  only for Python 3.8-3.11 and no source distribution.
 - `pyproject.toml` lists `jax`, `jaxlib` and `cupy-cuda12x` unpinned, so `pip install -e .`
   installs the latest JAX (0.11.2 on 2026-10-11, which has `jax.scipy.special.wofz`).
 - `pyproject.toml` omits many packages the code imports, for example `pydantic`, `scipy`,
   `pandas` and `PySide6`. Missing imports surface as collection errors, not install failures.
 - Whether SpycFit needs JAX at all is D-SPYC-11.
 
-**Repository state.** All of the following is from review §3.4 and §7.1, which give finding ids.
+**Repository state.** All of the following is from review §3.3, §3.4 and §7.1, which give
+finding ids. Counts were re-checked on 2026-10-11. The review's "1,096 `def test_`" includes one
+inside a string literal in `tests/test_cochem_spycfit_ci.py`.
 - There are two divergent package trees: `cochem_spycfit/` (26 kLOC) and `src/cochem_spycfit/`
   (42 kLOC). `pytest.ini` puts `src` first on the path.
 - About 21.5 kLOC of BASE/TORQ/TOPOS code was copied into `src/cochem`, `src/cochem_base` and stub
@@ -208,8 +218,8 @@ instrument, so ask rather than assume.
     "conversation YYYY-MM-DD") under the entry, and set its status to `ANSWERED`.
   - Write the matching `docs/decisions/D-SPYC-nn.md` from the template in
     `docs/decisions/README.md`.
-  - The decision becomes `DECIDED` only when the PI approves the PR containing that record.
-    Only then may an agent change the status.
+  - The decision becomes `DECIDED` only when the PI approves the PR containing that record, in a
+    PR comment as defined in `AGENTS.md`. Only then may an agent change the status.
 - Never mark a decision, requirement, tolerance or gate as approved yourself. See the authority
   rules in `AGENTS.md`.
 - Write specification text in small reviewable pieces (one SRS chapter or one interface per PR).
@@ -228,15 +238,16 @@ and gates at G0, and its work-package table with SRS v2 at G1. Gates are explici
 
 | Phase | Output | Exit gate |
 | :--- | :--- | :--- |
-| 0. Baseline | `docs/evidence/phase0_inventory.md` (commands in §6). No changes to code, tests or configuration. The PI creates the tag `legacy-swarm-2026-10` on `7e42507`. | **G0**: PI answers D-SPYC-01 and approves the plan's phases and gates. |
+| 0. Baseline | `docs/evidence/phase0_inventory.md` (commands in §6). No changes to code, tests or configuration. The PI creates the tag `legacy-swarm-2026-10` on `7e42507`. | **G0**: D-SPYC-01 is DECIDED and the PI approves the plan's phases and gates. |
 | 1. Specification | SRS v2, architecture and plan, chapter by chapter with the PI. Includes the acceptance catalog (`V-*`), benchmark manifest with frozen tolerances, work packages with definition of done, and a disposition of every review finding. | **G1**: PI approves and tags `srs-v2.0`. No code PR before that tag exists on origin, created by the PI. |
-| 2. Hygiene | One PR, under the PI's D-SPYC-15 choice. It makes a single package tree and removes foreign code and junk, limited to paths listed in the Phase 0 inventory and approved by the PI. It also makes `pytest.ini` run the whole suite, has CI run tests and build the pinned SPFIT/SPCAT, fixes `.gitignore` and reduces the linter. | **G2**: PI approves the PR with CI green, or with a substitute the PI recorded if Actions cannot run. |
+| 2. Hygiene | One PR, under the PI's D-SPYC-15 choice. It makes a single package tree and removes foreign code and junk, limited to paths listed in the Phase 0 inventory and approved by the PI. It also makes `pytest.ini` run the whole suite, has CI run tests and build the pinned SPFIT/SPCAT, fixes `.gitignore` and reduces the linter. | **G2**: PI approves the PR (in a PR comment, per `AGENTS.md`) with CI green, or with a substitute the PI recorded if Actions cannot run. |
 | 3. Work packages | One PR per package, in the plan's order: WP-PICK, WP-EXP, WP-HAM, WP-FIT, WP-INT, WP-DIAG, WP-ASSIGN, WP-CAMPAIGN, WP-LAM, WP-UI, WP-IF, WP-OUT (content depends on D-SPYC-01, 16, 18). | **G3** per package: PI reads `docs/evidence/WP-<NAME>.md` and approves. |
 | 4. Release | Preregistered benchmark run, SPFIT/SPCAT round trip, clean-wheel install, UI journey on a reference complex. | **G4**: PI signs the release tag. |
 
 ## 6. Your first session
 
-1. Confirm the branch state and PR #1 status (§1). Read the §2 documents 1-4.
+1. Confirm the branch state and PR #1 status with the `gh api` command in §1. Read the §2
+   documents 1-4.
 2. **Before anything else, ask the PI** for D-SPYC-01 and D-SPYC-16, and for the §7 inputs, in
    your first message or in an issue. Neither depends on the inventory.
 3. Run the Phase 0 inventory below in a clone outside the repository. Do not fix anything you
@@ -245,10 +256,12 @@ and gates at G0, and its work-package table with SRS v2 at G1. Gates are explici
    Chapter 0, §1.5 (definitions and glossary), §1.6 (references) and §8.1 (evidence classes).
    You may add options or evidence to `PI_DECISIONS.md` and rows to `REVIEW_ERRATA.md`. Do not
    change the plan's phases or gates. Do not draft §1.2, §2-§7, §8.2-§8.4 or §9 before
-   D-SPYC-01 (and, for §1.2, §1.3 and INT/HAM, D-SPYC-16) is answered.
+   D-SPYC-01 (and, for §1.2, §1.3 and INT/HAM, D-SPYC-16) is ANSWERED. Nothing drafted on an
+   ANSWERED decision may be put forward for approval until that decision is DECIDED.
 
-Phase 0 inventory commands. Adapt as needed, record exact versions and outputs, and keep every
-side effect out of the repository:
+Phase 0 inventory commands. Adapt as needed and record exact versions and outputs. Keep every
+side effect out of the repository: use absolute paths, and run each command after `cd "$C"` in
+the same shell call, because shells may reset their working directory between calls.
 
 ```bash
 # Ask the PI to create the baseline tag; do not create it yourself:
@@ -256,24 +269,31 @@ side effect out of the repository:
 #   git push origin legacy-swarm-2026-10
 git ls-remote --tags origin                                   # record whether the tag exists
 
-git clone . ../spycfit-phase0 && mkdir -p ../phase0-reports && cd ../spycfit-phase0 && git checkout 7e42507
+R=$(git rev-parse --show-toplevel); C=$(dirname "$R")/spycfit-phase0; O=$(dirname "$R")/phase0-reports
+git clone "$R" "$C" && git -C "$C" checkout 7e42507 && mkdir -p "$O"
 export PYTHONDONTWRITEBYTECODE=1
-python3.12 -m venv ~/.venvs/spycfit-phase0 && . ~/.venvs/spycfit-phase0/bin/activate
-python --version && pip install -e '.[dev]' ; pip freeze > ../phase0-reports/freeze.txt
-python -c 'import cochem_spycfit; print(cochem_spycfit.__file__)'   # with PYTHONPATH=src:. ; which tree?
+python3.12 -m venv ~/.venvs/spycfit-phase0      # if python3.12 is missing, record that and ask the PI
+. ~/.venvs/spycfit-phase0/bin/activate
+cd "$C" && python --version && pip install -e '.[dev]' ; pip freeze > "$O/freeze.txt"
+cd "$C" && PYTHONPATH=src:. python -c 'import cochem_spycfit; print(cochem_spycfit.__file__)'  # which tree?
 # In a second venv: pip install -r requirements.txt  (expected to fail; record the error)
 # Do not install undeclared packages: collection ImportErrors are findings. List every
 # third-party import that pyproject.toml does not declare.
-timeout 2h pytest tests -q -ra -p no:cacheprovider -o junit_family=xunit2 \
-    --junitxml=../phase0-reports/junit.xml ; echo "exit=$?"   # explicit path overrides testpaths
-pytest tests --collect-only -q -p no:cacheprovider | tail -5      # collection errors count too
-diff -rq -x __pycache__ -x '*.pyc' cochem_spycfit src/cochem_spycfit
-grep -rnoE --include='*.py' 'REQ-[A-Z0-9]+(-[A-Z0-9]+)*' tests | sort   # ids per test file (50 distinct expected)
-git status --porcelain                                          # must be empty in the clone afterwards
+cd "$C" && timeout 2h pytest tests -v -ra -p no:cacheprovider -o faulthandler_timeout=600 \
+    -o junit_family=xunit2 --junitxml="$O/junit.xml" 2>&1 | tee "$O/pytest.log"; echo "exit=${PIPESTATUS[0]}"
+#   explicit path overrides testpaths; on a hang, the faulthandler traceback and the last
+#   test node id in pytest.log name the test
+cd "$C" && pytest tests --collect-only -q -p no:cacheprovider | tail -5   # collection errors count too
+cd "$C" && diff -rq -x __pycache__ -x '*.pyc' cochem_spycfit src/cochem_spycfit
+cd "$C" && grep -rnoE --include='*.py' 'REQ-[A-Z0-9]+(-[A-Z0-9]+)*' tests | sort   # 50 distinct ids expected
+cd "$C" && git status --porcelain > "$O/git_status_after.txt"   # record, do not reset
 ```
 
-Record any hung or timed-out test by node id. Back in the real repository, `git status` should
-show only `docs/evidence/phase0_inventory.md` before you open the PR.
+`git status` in the clone is not expected to be clean. The editable install rewrites the tracked
+`src/CoChem_SpycFit.egg-info/SOURCES.txt` and `top_level.txt`. Any other entry is a file the test
+suite wrote into the tree: list it in the inventory as a finding. Record any hung or timed-out
+test by node id. Back in the real repository, `git status` should show only
+`docs/evidence/phase0_inventory.md` before you open the PR.
 
 ## 7. Inputs only the PI can supply
 
@@ -347,4 +367,4 @@ For SpycFit this means at least:
 - The whole suite runs in CI.
 - `docs/evidence/WP-<NAME>.md` (two pages at most) records what ran, where, the numbers against
   tolerance, skips and open questions.
-- The PI approves the PR.
+- The PI approves the PR in a PR comment, as defined in `AGENTS.md`.

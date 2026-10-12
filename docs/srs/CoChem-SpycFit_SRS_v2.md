@@ -24,7 +24,11 @@ Drafting rules for this document:
   - status.
 - Status values:
   - Agents write only `proposed`.
-  - The PI sets `approved`.
+  - The PI's `srs-v2.0` tag approves every requirement in the tagged commit, whatever its status
+    field says. After the tag, an agent may change exactly those ids to `approved` in a PR that
+    cites the tag.
+  - A requirement added or changed after the tag is approved only by a PI statement naming its
+    id (`AGENTS.md`).
   - `implemented` and `verified` are never written by hand. They come from the CI-generated
     traceability report (`@pytest.mark.req` markers plus evidence reports), and the PI confirms
     them at G3.
@@ -135,8 +139,10 @@ provenance fields, schema versions._
 ## 8. Verification
 
 ### 8.1 Evidence classes
-_Adopt TORQ SRS §15.1: no fabricated engine output; a claimed agent audit is not evidence;
-skips are counted and never satisfy a requirement._
+_Adopt TORQ SRS §15.1 (real engines with authentic outputs; no mocks or fabricated engine
+outputs; malformed fixtures test robustness only), §16 (a claimed agent audit cannot close a
+package) and V-RELEASE in §15.2 (passed, failed, skipped, blocked and unrun cases are all
+counted). A skip never satisfies a requirement._
 
 ### 8.2 Acceptance catalog (`V-*`)
 
