@@ -7,6 +7,12 @@
 
 ---
 
+## Requirements and agent handoff
+
+Start with the [current SRS](docs/wiki/CoChem-SpycFit_Comprehensive_SRS.md) and the [next-agent handoff](docs/HANDOFF.md). The [October 16 amendment](docs/wiki/CoChem-SpycFit_SRS_2026-10-16_Amendment.md) records the independent SPCAT/SPFIT comparison contract, confirmed user decisions, and implementation defects requiring follow-up. These requirements supersede conflicting claims in the [archived October 7 SRS](docs/archive/CoChem-SpycFit_Comprehensive_SRS_7e42507.md).
+
+Publication of these requirements does not establish that the current software passes scientific acceptance. The handoff distinguishes completed documentation work from pending implementation and validation.
+
 ## 1. Module Overview
 
 Translates Hessians and Dipoles into experimental spectra.
