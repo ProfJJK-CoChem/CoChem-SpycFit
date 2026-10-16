@@ -265,8 +265,8 @@ class TestFunctionalPhysicalSmoke:
             spfit_constants=spfit_params,
         )
 
-        assert report.status == ParityStatus.VERIFIED
-        assert report.is_verified is True
+        assert report.status == ParityStatus.WITHIN_TOLERANCE
+        assert report.is_within_tolerance is True
         assert report.max_delta_khz < 0.1
 
     def test_quantum_feature_extractor_and_gp_regressor(self) -> None:

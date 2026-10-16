@@ -102,15 +102,17 @@ class FairExporter:
                 uncertainties={},  # Use SPFIT-derived uncertainties
                 assignments=fit_state.locked_assignments,
             )
-            rmsd_khz = spfit_result.get("rmsd_khz", 0.0)
-            logger.info(f"Final SPFIT verification: RMSD = {rmsd_khz:.4f} kHz")
+            rmsd_khz = spfit_result.get("rmsd_khz")
+            logger.info("SPFIT run for export: microwave RMS = %s kHz", rmsd_khz)
         else:
             spfit_result = None
             logger.warning("SPFIT wrapper not provided. Skipping final verification.")
 
-        # 3. Generate LaTeX tables
+        # 3. Generate LaTeX tables: one per result record (SF-OUT-001)
         tex_table_path = self._generate_constants_table(fit_state, spfit_result)
         outputs["constants_table_tex"] = tex_table_path
+        if spfit_result is not None:
+            outputs["spfit_constants_table_tex"] = self._generate_spfit_constants_table(spfit_result)
 
         linelist_path = self._generate_linelist_table(fit_state)
         outputs["linelist_tex"] = linelist_path
@@ -138,9 +140,16 @@ class FairExporter:
         spfit_result: Optional[dict[str, Any]],
     ) -> Path:
         """
-        Generate AASTeX-formatted LaTeX table of spectroscopic constants.
+        Generate an AASTeX table of the constants in ``fit_state``.
 
-        Uses siunitx for decimal alignment. Columns: Parameter, Value, Uncertainty, Unit.
+        Values and uncertainties come from the same result record (SF-OUT-001). FitState
+        carries no parameter uncertainties, so every uncertainty reads ``unknown``
+        (SF-OUT-002); SPFIT's own values and uncertainties go to a separate table
+        (``_generate_spfit_constants_table``). FitState constants are in MHz and are
+        labelled MHz; no unit is attached without converting the number. Values are
+        written at full round-trip precision.
+
+        ``spfit_result`` is accepted for interface compatibility and is not read here.
 
         Returns
         -------
@@ -148,51 +157,56 @@ class FairExporter:
             Path to the generated .tex file.
         """
         out_path = self._export_dir / "publication_table.tex"
+        constants = getattr(fit_state, "physical_constants", {})
+        rows = [(param, float(value), None) for param, value in sorted(constants.items())]
+        self._write_constants_table(
+            out_path,
+            caption=r"Spectroscopic Constants (SpycFit fit state)\label{tab:constants}",
+            rows=rows,
+        )
+        return out_path
+
+    def _generate_spfit_constants_table(self, spfit_result: dict[str, Any]) -> Path:
+        """
+        Generate an AASTeX table of SPFIT's own constants and uncertainties.
+
+        Names follow the SPFIT result (Pickett storage sign, for example ``-DJ``). A
+        constant without an uncertainty in the SPFIT result reads ``unknown``.
+        """
+        out_path = self._export_dir / "publication_table_spfit.tex"
+        constants = spfit_result.get("constants", {}) or {}
+        uncertainties = spfit_result.get("uncertainties", {}) or {}
+        rows = [
+            (param, float(value), None if uncertainties.get(param) is None else float(uncertainties[param]))
+            for param, value in sorted(constants.items())
+        ]
+        self._write_constants_table(
+            out_path,
+            caption=r"Spectroscopic Constants (SPFIT; Pickett sign convention)\label{tab:constants_spfit}",
+            rows=rows,
+        )
+        return out_path
+
+    @staticmethod
+    def _write_constants_table(
+        out_path: Path,
+        caption: str,
+        rows: List[Tuple[str, float, Optional[float]]],
+    ) -> None:
         lines = [
             r"\begin{deluxetable}{lSSs}",
-            r"\tablecaption{Spectroscopic Constants\label{tab:constants}}",
+            rf"\tablecaption{{{caption}}}",
             r"\tablehead{\colhead{Parameter} & \colhead{Value} & \colhead{Uncertainty} & \colhead{Unit}}",
             r"\startdata",
         ]
-        constants = getattr(fit_state, "physical_constants", {})
-        # Use SPFIT uncertainties if available
-        uncertainties = (
-            spfit_result.get("uncertainties", {})
-            if (spfit_result and isinstance(spfit_result, dict))
-            else {}
-        )
-        unit_map = {
-            "A": "MHz",
-            "B": "MHz",
-            "C": "MHz",
-            "DJ": "kHz",
-            "DJK": "kHz",
-            "DK": "kHz",
-            "dJ": "kHz",
-            "dK": "kHz",
-            "-DJ": "kHz",
-            "-DJK": "kHz",
-            "-DK": "kHz",
-            "-dJ": "kHz",
-            "-dK": "kHz",
-            "Delta_J": "kHz",
-            "Delta_JK": "kHz",
-            "Delta_K": "kHz",
-            "delta_J": "kHz",
-            "delta_K": "kHz",
-        }
-
-        for param, value in sorted(constants.items()):
-            unc = uncertainties.get(param, 0.0)
-            unit = unit_map.get(param, "MHz")
-            lines.append(f"  {param} & {float(value):.6f} & {float(unc):.6f} & {{{unit}}} \\\\")
-
+        for param, value, unc in rows:
+            unc_text = "{unknown}" if unc is None else repr(unc)
+            lines.append(f"  {param} & {value!r} & {unc_text} & {{MHz}} \\\\")
         lines.extend([
             r"\enddata",
             r"\end{deluxetable}",
         ])
         out_path.write_text("\n".join(lines), encoding="utf-8")
-        return out_path
 
     def _generate_linelist_table(self, fit_state: FitState) -> Path:
         """
@@ -249,9 +263,11 @@ class FairExporter:
         rmsd = float(getattr(fit_state, "global_rmsd", 0.0))
         dof = n_lines - n_params
 
+        # FitState does not record the reduction or representation, so the paragraph does
+        # not name one (SF-PHYS-002).
         text = (
-            f"The rotational spectrum was analyzed using Watson's $A$-reduction "
-            f"Hamiltonian in the $I^r$ representation. "
+            f"The Hamiltonian reduction and representation are not recorded in this fit "
+            f"state and must be stated by the authors. "
             f"A total of {n_lines} transitions were included in the fit, "
             f"with quantum numbers up to $J = {max_j}$ and $K_a = {max_ka}$. "
             f"The fit yielded {n_params} spectroscopic constants with "
@@ -355,20 +371,18 @@ class FairExporter:
         var_path.write_text("\n".join(var_lines), encoding="ascii")
         outputs["var"] = var_path
 
-        # .lin file (assignments)
-        lin_path = self._export_dir / f"{stem}.lin"
-        lin_lines: list[str] = []
+        # .lin file (assignments). A Pickett .lin needs a measurement uncertainty per line.
+        # FitState assignments carry none, so no .lin is written and the reason is recorded
+        # beside the other outputs. At 7e42507 every line was given 0.0050 MHz.
         locked_assignments = getattr(fit_state, "locked_assignments", ())
-        for a in locked_assignments:
-            j_u, ka_u, kc_u = int(a[0]), int(a[1]), int(a[2])
-            j_l, ka_l, kc_l = int(a[3]), int(a[4]), int(a[5])
-            nu_obs = float(a[6])
-            lin_lines.append(
-                f"{j_u:3d}{ka_u:3d}{kc_u:3d}{j_l:3d}{ka_l:3d}{kc_l:3d}"
-                f"{nu_obs:13.4f}  0.0050  1.0"
-            )
-        lin_path.write_text("\n".join(lin_lines), encoding="ascii")
-        outputs["lin"] = lin_path
+        absent_path = self._export_dir / f"{stem}.lin.absent.txt"
+        absent_path.write_text(
+            f"{stem}.lin was not written: the {len(locked_assignments)} locked assignments in "
+            f"fit state {getattr(fit_state, 'state_id', '')} carry no measurement uncertainties, "
+            "and a Pickett .lin requires one per line (SF-IO-002).\n",
+            encoding="utf-8",
+        )
+        outputs["lin_absent"] = absent_path
 
         return outputs
 

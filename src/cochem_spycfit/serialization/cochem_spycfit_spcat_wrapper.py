@@ -1,15 +1,19 @@
 """
-Asynchronous SPCAT/SPFIT subprocess wrapper with Tripartite Air-Gap isolation.
-Provides Tier 3 ephemeral sandbox execution of legacy Pickett Fortran binaries
-for spectroscopic assignment verification and Classical Parity validation.
+SPFIT/SPCAT subprocess wrapper.
+
+Runs Pickett's SPFIT and SPCAT on scratch copies of their input files and keeps a record
+of each run (executable and its SHA-256, command, exit code, stdout, stderr, input and
+output files) as SF-CMP-011 requires. A missing program, a non-zero exit or a timeout
+raises a typed error that names the program; nothing substitutes for the program.
 """
 
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
+import hashlib
 import json
 import logging
-import math
 import os
 import platform
 import re
@@ -17,7 +21,15 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+
+from .cochem_spycfit_pickett_output import (
+    PickettOutputError,
+    PickettParameter,
+    SpfitFitReport,
+    parse_pickett_parameters,
+    parse_spfit_fit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +55,78 @@ SPFIT_WATSON_A_PARAM_MAP: Dict[str, int] = {
     "delta_K": 41000,
 }
 
+# Names for Pickett parameter codes whose meaning does not depend on the reduction.
+# SPFIT stores the negatives of the quartic distortion constants: code 200 holds -DJ,
+# 1100 holds -DJK and 2000 holds -DK in both Watson reductions, and 41000 holds -dK
+# (A reduction). Code 40100 is -dJ in the A reduction but d1 in the S reduction, so it
+# keeps its numeric name.
 PARAM_ID_TO_NAME_MAP: Dict[int, str] = {
     10000: "A",
     20000: "B",
     30000: "C",
-    200: "DJ",
-    1100: "DJK",
-    2000: "DK",
-    40100: "dJ",
-    41000: "dK",
+    200: "-DJ",
+    1100: "-DJK",
+    2000: "-DK",
+    41000: "-dK",
 }
+
+# Watson-sign names in SPFIT_WATSON_A_PARAM_MAP; their values are negated when written
+# into the Pickett code that stores the negative constant.
+_WATSON_SIGN_NAMES = frozenset({
+    "DJ", "DJK", "DK", "dJ", "dK",
+    "Delta_J", "Delta_JK", "Delta_K", "delta_J", "delta_K",
+})
+
+
+class PickettProgramError(RuntimeError):
+    """SPFIT or SPCAT could not be found, failed, or timed out.
+
+    Attributes:
+        program: "spfit" or "spcat".
+        record: The run record, when the program was started.
+    """
+
+    def __init__(self, program: str, message: str, record: Optional["PickettRunRecord"] = None) -> None:
+        super().__init__(f"{program}: {message}")
+        self.program = program
+        self.record = record
+
+
+class PickettInputError(ValueError):
+    """Inputs cannot be turned into a complete, truthful Pickett input file."""
+
+
+@dataclass(frozen=True)
+class PickettRunRecord:
+    """Evidence of one SPFIT or SPCAT execution (SF-CMP-011)."""
+
+    program: str
+    executable: str
+    executable_sha256: str
+    argv: Tuple[str, ...]
+    exit_code: Optional[int]
+    timed_out: bool
+    stdout: str
+    stderr: str
+    inputs: Dict[str, str] = field(default_factory=dict)
+    outputs: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SpfitRun:
+    """A genuine SPFIT run with its parsed outputs."""
+
+    record: PickettRunRecord
+    report: SpfitFitReport
+    parameters: Tuple[PickettParameter, ...]
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _format_fortran_double(
@@ -92,7 +166,7 @@ def _parse_fortran_float(val: Union[str, float, int]) -> float:
 
     s = str(val).strip()
     if not s:
-        return 0.0
+        raise ValueError("Cannot parse an empty field as a Fortran float")
 
     s_clean = s.replace("D", "e").replace("d", "e").replace("E", "e")
     match_implicit = re.match(r"^([+-]?\d+\.?\d*)([+-]\d+)$", s_clean)
@@ -112,6 +186,8 @@ class SpfitSandbox:
         self,
         scratch_root: Optional[Path] = None,
         timeout_seconds: float = 10.0,
+        spfit_binary: Optional[Path] = None,
+        spcat_binary: Optional[Path] = None,
     ) -> None:
         """
         Parameters
@@ -122,11 +198,23 @@ class SpfitSandbox:
             'scratch_root' key, that value is used instead.
         timeout_seconds : float
             Hard-kill timeout for SPFIT subprocess in seconds.
+        spfit_binary, spcat_binary : Path, optional
+            Explicit executables. When omitted, each is located by ``_resolve_binary``.
         """
         self._scratch_root: Optional[Path] = self._resolve_scratch_root(scratch_root)
         self._timeout: float = float(timeout_seconds)
-        self._spfit_binary: Path = self._resolve_binary("spfit")
-        self._spcat_binary: Path = self._resolve_binary("spcat")
+        self._spfit_binary: Path = self._explicit_binary("spfit", spfit_binary) or self._resolve_binary("spfit")
+        self._spcat_binary: Path = self._explicit_binary("spcat", spcat_binary) or self._resolve_binary("spcat")
+
+    @staticmethod
+    def _explicit_binary(name: str, path: Optional[Path]) -> Optional[Path]:
+        """Return an explicitly configured executable, or None if none was given."""
+        if path is None:
+            return None
+        candidate = Path(path).resolve()
+        if not candidate.is_file():
+            raise FileNotFoundError(f"Configured {name} executable not found: {candidate}")
+        return candidate
 
     @staticmethod
     def _resolve_scratch_root(user_path: Optional[Path]) -> Optional[Path]:
@@ -256,6 +344,20 @@ class SpfitSandbox:
         -------
         str
             Strict 80-column fixed-format .var content.
+
+        Raises
+        ------
+        PickettInputError
+            If a constant has no Pickett code or no a priori error. In SPFIT the a priori
+            error decides whether a parameter is free or constrained, so it is never
+            filled in.
+
+        Notes
+        -----
+        Watson-sign names (DJ, DJK, DK, dJ, dK and the Delta_/delta_ spellings) are written
+        negated, because SPFIT stores -DJ, -DJK, -DK, -dJ and -dK (A reduction). This
+        output has no option line, so it is not a complete SPFIT/SPCAT input; a complete
+        input is supplied to ``run_spfit_files``/``run_spcat_files``.
         """
         title = f"SPFIT Parameter File for {stem}"[:80]
         unc_dict = uncertainties or {}
@@ -268,10 +370,17 @@ class SpfitSandbox:
             else:
                 try:
                     pid = int(key)
-                except ValueError:
-                    pid = 10000
-            unc = float(unc_dict.get(key, 0.0))
-            records.append((pid, float(val), unc, key))
+                except ValueError as exc:
+                    raise PickettInputError(
+                        f"Constant {key!r} has no Pickett parameter code; pass a known name or a numeric code"
+                    ) from exc
+            if key not in unc_dict or unc_dict[key] is None:
+                raise PickettInputError(
+                    f"No a priori error given for {key!r}; SPFIT reads it to decide whether the parameter is free"
+                )
+            unc = float(unc_dict[key])
+            value = -float(val) if key in _WATSON_SIGN_NAMES else float(val)
+            records.append((pid, value, unc, key))
 
         # Control line: npar (5), nline (5), nopt (5), nwarn (5), erpar (10.4f), wtfac (10.4f), scale (10.4f), maxit (5)
         npar = len(records)
@@ -362,11 +471,12 @@ class SpfitSandbox:
         dipole_entries: List[Tuple[int, float, str]] = []
         for k, v in dipole_components.items():
             k_lower = str(k).lower().strip()
-            axis_idx = axis_mapping.get(k_lower, 1)
-            dipole_entries.append((axis_idx, float(v), k))
+            if k_lower not in axis_mapping:
+                raise PickettInputError(f"Unknown dipole component {k!r}; expected mu_a, mu_b or mu_c")
+            dipole_entries.append((axis_mapping[k_lower], float(v), k))
 
         if not dipole_entries:
-            dipole_entries.append((1, 1.0, "mu_a"))
+            raise PickettInputError("No dipole components given; SPCAT intensities need them")
 
         for axis_idx, dip_val, label in dipole_entries:
             line = f"{axis_idx:2d}  {dip_val:8.4f} / {label}"
@@ -410,7 +520,7 @@ class SpfitSandbox:
             ju, kau, kcu = int(entry[0]), int(entry[1]), int(entry[2])
             jl, kal, kcl = int(entry[3]), int(entry[4]), int(entry[5])
             freq_mhz = float(entry[6])
-            unc_mhz = float(entry[7]) if len(entry) > 7 else 0.0100
+            unc_mhz = float(entry[7]) if len(entry) > 7 and entry[7] is not None else None
             wt = float(entry[8]) if len(entry) > 8 else 1.0000
 
             # Buffer overflow checks for fixed-width Fortran I3 / F13.4
@@ -426,6 +536,11 @@ class SpfitSandbox:
             if freq_mhz > 99999999.9999 or freq_mhz < -9999999.9999:
                 raise ValueError(
                     f"Frequency {freq_mhz} exceeds F13.4 field width in fixed-format .lin file."
+                )
+            if unc_mhz is None:
+                raise PickettInputError(
+                    f"Assignment {entry[:6]} has no measurement uncertainty; SPFIT weights lines by "
+                    "1/ERR^2, so an uncertainty is never filled in"
                 )
 
             # Fortran format: 6I3, 6I3, F13.4, F8.4, F8.4
@@ -445,118 +560,83 @@ class SpfitSandbox:
     @classmethod
     def _parse_fit_file_static(cls, fit_path: Path) -> Dict[str, Any]:
         """
-        Parse SPFIT .fit output into a structured dictionary.
+        Parse an SPFIT ``.fit`` file, and the ``.var`` beside it when present.
 
-        Extracts fitted constants (MHz), uncertainties, global RMS deviation (kHz),
-        number of lines, and residuals.
+        Returns a dictionary with:
+
+        * ``constants`` / ``uncertainties``: final parameter values and errors keyed by
+          ``PARAM_ID_TO_NAME_MAP`` names (Pickett storage sign, e.g. ``-DJ``) or by the
+          numeric code. Full precision comes from the ``.var``; without it, from the
+          ``.fit`` value(error) text, which keeps at most three error digits.
+        * ``parameter_source``: ``"var"`` or ``"fit"``.
+        * ``rmsd_khz``: SPFIT's MICROWAVE RMS of the final iteration in kHz, or None.
+        * ``rms_error_old`` / ``rms_error_new``: SPFIT's dimensionless weighted RMS before
+          and after the final iteration's update.
+        * ``n_lines``: residual rows of the final iteration used in the fit.
+        * ``residuals``, ``bad_lines``, ``error_scaling_notes`` and ``missing``.
+
+        This is a fit report, not a comparison with another engine: it carries no parity
+        or agreement status (SF-CMP-008, SF-CMP-012).
+
+        Raises
+        ------
+        FileNotFoundError
+            If the .fit file does not exist.
+        PickettOutputError
+            If the file is not a completed SPFIT output.
         """
+        fit_path = Path(fit_path)
         if not fit_path.exists():
             raise FileNotFoundError(f"Fit file not found: {fit_path}")
 
-        lines = fit_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        report = parse_spfit_fit(fit_path.read_text(encoding="utf-8", errors="replace"))
+        final = report.final
+
+        var_path = fit_path.with_suffix(".var")
+        if var_path.exists():
+            params = [(p.code, p.value, p.error) for p in parse_pickett_parameters(
+                var_path.read_text(encoding="utf-8", errors="replace"))]
+            source = "var"
+        else:
+            params = [(p.code, p.value, p.est_error) for p in final.parameters]
+            source = "fit"
 
         constants: Dict[str, float] = {}
         uncertainties: Dict[str, float] = {}
-        std_error = 0.0
-        lines_fitted = 0
-        residuals_list: List[Dict[str, Any]] = []
+        for code, value, error in params:
+            name = PARAM_ID_TO_NAME_MAP.get(code, str(code))
+            constants[name] = value
+            uncertainties[name] = error
 
-        in_parameters = False
-        in_residuals = False
-
-        param_regex = re.compile(
-            r"^\s*(\d+)\s+([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)(?:\s*(?:/|!)\s*(.*))?"
-        )
-        res_regex = re.compile(
-            r"^\s*(\d+)\s+((?:\s*[+-]?\d+){2,6})\s+((?:\s*[+-]?\d+){2,6})\s+([+-]?\d+\.?\d*)\s+([+-]?\d+\.?\d*)\s+([+-]?\d+\.?\d*)\s+([+-]?\d+\.?\d*)\s+([+-]?\d+\.?\d*)"
-        )
-
-        for line in lines:
-            s_line = line.strip()
-            if not s_line:
-                continue
-
-            # Summary statistics
-            std_err_match = re.search(
-                r"(?:STANDARD\s+ERROR(?:\s+OF\s+FIT)?|MICROWAVE\s+RMS)\s*=\s*([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)",
-                s_line,
-                re.IGNORECASE,
-            )
-            if std_err_match:
-                std_error = _parse_fortran_float(std_err_match.group(1))
-
-            lines_fit_match = re.search(r"LINES\s+FITTED\s*=\s*(\d+)", s_line, re.IGNORECASE)
-            if lines_fit_match:
-                lines_fitted = int(lines_fit_match.group(1))
-
-            # Section headers
-            if "PARAMETERS" in s_line.upper():
-                in_parameters = True
-                in_residuals = False
-                continue
-
-            if "RESIDUALS" in s_line.upper() or "OBS-CALC" in s_line.upper():
-                in_residuals = True
-                in_parameters = False
-                continue
-
-            if in_parameters:
-                pmatch = param_regex.match(s_line)
-                if pmatch:
-                    pid = int(pmatch.group(1))
-                    val = _parse_fortran_float(pmatch.group(2))
-                    unc = _parse_fortran_float(pmatch.group(3))
-                    lbl = (pmatch.group(4) or "").strip()
-
-                    name = lbl if lbl else PARAM_ID_TO_NAME_MAP.get(pid, str(pid))
-                    constants[name] = val
-                    uncertainties[name] = unc
-                    if pid in PARAM_ID_TO_NAME_MAP and name != PARAM_ID_TO_NAME_MAP[pid]:
-                        constants[PARAM_ID_TO_NAME_MAP[pid]] = val
-                        uncertainties[PARAM_ID_TO_NAME_MAP[pid]] = unc
-
-            if in_residuals:
-                rmatch = res_regex.match(s_line)
-                if rmatch:
-                    line_idx = int(rmatch.group(1))
-                    qu = tuple(int(x) for x in rmatch.group(2).split())
-                    ql = tuple(int(x) for x in rmatch.group(3).split())
-                    f_obs = _parse_fortran_float(rmatch.group(4))
-                    f_calc = _parse_fortran_float(rmatch.group(5))
-                    residual = _parse_fortran_float(rmatch.group(6))
-                    unc = _parse_fortran_float(rmatch.group(7))
-                    wt = _parse_fortran_float(rmatch.group(8))
-
-                    residuals_list.append({
-                        "line": line_idx,
-                        "qu": qu,
-                        "ql": ql,
-                        "obs_mhz": f_obs,
-                        "calc_mhz": f_calc,
-                        "res_mhz": residual,
-                        "unc_mhz": unc,
-                        "weight": wt,
-                    })
-
-        # Calculate exact RMS deviation in kHz
-        if residuals_list:
-            res_sq = [r["res_mhz"] ** 2 for r in residuals_list]
-            rmsd_khz = math.sqrt(sum(res_sq) / len(res_sq)) * 1000.0
-            n_lines = len(residuals_list)
-        else:
-            rmsd_khz = std_error * 1000.0
-            n_lines = lines_fitted
-
-        parity_status = "PASS" if rmsd_khz < 1000.0 else "WARN"
+        used = [r for r in final.residuals if r.used_in_fit and not r.is_blend_width_record]
+        residuals_list = [
+            {
+                "line": r.line,
+                "qn": r.quantum_numbers,
+                "obs_mhz": r.obs,
+                "calc_mhz": r.calc,
+                "res_mhz": r.obs_minus_calc,
+                "unc_mhz": r.exp_err,
+                "est_err_mhz": r.est_err,
+                "used_in_fit": r.used_in_fit,
+                "blend_weight": r.blend_weight,
+            }
+            for r in final.residuals
+        ]
 
         return {
             "constants": constants,
             "uncertainties": uncertainties,
-            "rmsd_khz": rmsd_khz,
-            "n_lines": n_lines,
-            "exit_code": 0,
-            "parity_status": parity_status,
+            "parameter_source": source,
+            "rmsd_khz": None if final.microwave_rms_mhz is None else final.microwave_rms_mhz * 1000.0,
+            "rms_error_old": final.rms_error_old,
+            "rms_error_new": final.rms_error_new,
+            "n_lines": len(used) if final.residuals else None,
+            "iterations": len(report.iterations),
             "residuals": residuals_list,
+            "bad_lines": list(report.bad_lines),
+            "error_scaling_notes": list(report.error_scaling_notes),
+            "missing": list(report.missing),
         }
 
     def _parse_fit_file(self, fit_path: Path) -> Dict[str, Any]:
@@ -571,84 +651,25 @@ class SpfitSandbox:
         dipole_components: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         """
-        Execute SPFIT in an ephemeral Tier 3 sandbox.
+        Not available: a fit cannot be run from a constants dictionary alone.
 
-        1. Creates a tempfile.TemporaryDirectory() sandbox
-        2. Writes .var, .int, .lin files with strict Fortran formatting
-        3. Executes SPFIT subprocess with enforced timeout
-        4. Parses the resulting .fit file
-        5. Destroys the sandbox
+        SPFIT needs a ``.par`` file with the model's option line(s), a control line that
+        sets the line count, iterations and rejection threshold, and a ``.lin`` file with
+        measured uncertainties. None of these can be derived from the arguments without
+        inventing them. At commit 7e42507 this method wrote a ``.var`` file (SPFIT reads
+        ``.par``) without an option line, and genuine SPFIT exited with code 1.
 
-        Parameters
-        ----------
-        physical_constants : dict
-            Rotational constants (A, B, C, DJ, DJK, DK, etc.) in MHz.
-        uncertainties : dict, optional
-            Uncertainties for each constant in MHz.
-        assignments : tuple
-            Locked assignments as 7-tuples.
-        dipole_components : dict, optional
-            Dipole components {mu_a, mu_b, mu_c} in Debye.
-
-        Returns
-        -------
-        dict
-            Parsed results with keys: 'constants' (dict), 'uncertainties' (dict),
-            'rmsd_khz' (float), 'exit_code' (int), 'parity_status' (str).
+        Use ``run_spfit_files`` with complete ``.par`` and ``.lin`` text.
 
         Raises
         ------
-        subprocess.TimeoutExpired
-            If SPFIT exceeds the timeout.
-        RuntimeError
-            If SPFIT returns non-zero exit code or "NON-POSITIVE DEFINITE" error.
-        FileNotFoundError
-            If SPFIT did not produce .fit output file.
+        PickettInputError
+            Always.
         """
-        with tempfile.TemporaryDirectory(dir=self._scratch_root) as sandbox:
-            sandbox_path = Path(sandbox)
-            stem = "cochem_run"
-
-            # Write input files
-            var_content = self.format_var_file(physical_constants, uncertainties, stem)
-            (sandbox_path / f"{stem}.var").write_text(var_content, encoding="ascii")
-
-            max_j = max((int(a[0]) for a in assignments), default=10)
-            int_content = self.format_int_file(
-                dipole_components or {"mu_a": 1.0, "mu_b": 0.0, "mu_c": 0.0},
-                j_max=max_j,
-                stem=stem,
-            )
-            (sandbox_path / f"{stem}.int").write_text(int_content, encoding="ascii")
-
-            lin_content = self.format_lin_file(assignments, stem)
-            (sandbox_path / f"{stem}.lin").write_text(lin_content, encoding="ascii")
-
-            # Execute SPFIT
-            result = subprocess.run(
-                [str(self._spfit_binary), stem],
-                cwd=str(sandbox_path),
-                timeout=self._timeout,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            # Check for errors
-            if result.returncode != 0:
-                raise RuntimeError(
-                    f"SPFIT exited with code {result.returncode}: {result.stderr}"
-                )
-            if "NON-POSITIVE DEFINITE" in result.stdout or "NON-POSITIVE DEFINITE" in result.stderr:
-                raise RuntimeError("SPFIT: NON-POSITIVE DEFINITE matrix detected.")
-
-            # Parse .fit output
-            fit_path = sandbox_path / f"{stem}.fit"
-            if not fit_path.exists():
-                raise FileNotFoundError(f"SPFIT did not produce {stem}.fit")
-
-            parsed = self._parse_fit_file(fit_path)
-            return parsed
+        raise PickettInputError(
+            "run_spfit cannot build a complete SPFIT input from a constants dictionary "
+            "(no option line, control settings or measured uncertainties); use run_spfit_files"
+        )
 
     async def run_spfit_async(
         self,
@@ -680,55 +701,139 @@ class SpfitSandbox:
         stem: str = "cochem_run",
     ) -> Dict[str, Any]:
         """
-        Execute SPCAT in an ephemeral Tier 3 sandbox to calculate predicted transitions.
+        Not available: a catalog cannot be computed from a constants dictionary alone.
+
+        SPCAT needs a ``.var`` with the model's option line(s) and an ``.int`` file with
+        the partition function, frequency and intensity limits and dipole components. At
+        commit 7e42507 this method wrote neither correctly, and genuine SPCAT waited on
+        standard input until the timeout.
+
+        Use ``run_spcat_files`` with complete ``.var`` and ``.int`` text.
+
+        Raises
+        ------
+        PickettInputError
+            Always.
+        """
+        raise PickettInputError(
+            "run_spcat cannot build a complete SPCAT input from a constants dictionary "
+            "(no option line or .int settings); use run_spcat_files"
+        )
+
+    def run_pickett(
+        self,
+        program: str,
+        files: Mapping[str, str],
+        stem: str,
+    ) -> PickettRunRecord:
+        """
+        Run genuine SPFIT or SPCAT on scratch copies of ``files`` and return its record.
 
         Parameters
         ----------
-        physical_constants : dict
-            Rotational constants in MHz.
-        dipole_components : dict, optional
-            Dipole components in Debye.
-        j_max : int
-            Maximum J quantum number.
+        program : str
+            ``"spfit"`` or ``"spcat"``.
+        files : mapping of file name to text
+            Input files written into a fresh scratch directory (for example
+            ``{"mol.par": ..., "mol.lin": ...}``). The caller's files are never touched.
         stem : str
-            Stem name.
+            File stem passed to the program.
 
-        Returns
-        -------
-        dict
-            Parsed catalog output.
+        Raises
+        ------
+        PickettProgramError
+            On a non-zero exit code or a timeout. The run record is attached.
         """
+        if program not in ("spfit", "spcat"):
+            raise ValueError(f"Unknown Pickett program {program!r}")
+        executable = self._spfit_binary if program == "spfit" else self._spcat_binary
+        exe_sha256 = _sha256_file(executable)
+        argv = (str(executable), stem)
+
         with tempfile.TemporaryDirectory(dir=self._scratch_root) as sandbox:
             sandbox_path = Path(sandbox)
+            for name, text in files.items():
+                if Path(name).name != name:
+                    raise ValueError(f"Input file name must not contain a path: {name!r}")
+                (sandbox_path / name).write_text(text, encoding="ascii")
 
-            # Write .var and .int
-            var_content = self.format_var_file(physical_constants, stem=stem)
-            (sandbox_path / f"{stem}.var").write_text(var_content, encoding="ascii")
-
-            int_content = self.format_int_file(
-                dipole_components or {"mu_a": 1.0, "mu_b": 0.0, "mu_c": 0.0},
-                j_max=j_max,
-                stem=stem,
-            )
-            (sandbox_path / f"{stem}.int").write_text(int_content, encoding="ascii")
-
-            result = subprocess.run(
-                [str(self._spcat_binary), stem],
-                cwd=str(sandbox_path),
-                timeout=self._timeout,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            if result.returncode != 0:
-                raise RuntimeError(
-                    f"SPCAT exited with code {result.returncode}: {result.stderr}"
+            timed_out = False
+            try:
+                completed = subprocess.run(
+                    list(argv),
+                    cwd=str(sandbox_path),
+                    stdin=subprocess.DEVNULL,
+                    timeout=self._timeout,
+                    capture_output=True,
+                    text=True,
+                    check=False,
                 )
+                exit_code: Optional[int] = completed.returncode
+                stdout, stderr = completed.stdout, completed.stderr
+            except subprocess.TimeoutExpired as exc:
+                timed_out = True
+                exit_code = None
+                stdout = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+                stderr = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
 
-            cat_path = sandbox_path / f"{stem}.cat"
-            if not cat_path.exists():
-                raise FileNotFoundError(f"SPCAT did not produce {stem}.cat")
+            outputs = {
+                f.name: f.read_text(encoding="utf-8", errors="replace")
+                for f in sorted(sandbox_path.iterdir())
+                if f.is_file()
+            }
 
-            cat_text = cat_path.read_text(encoding="utf-8", errors="replace")
-            return {"raw_catalog": cat_text, "exit_code": 0}
+        record = PickettRunRecord(
+            program=program,
+            executable=str(executable),
+            executable_sha256=exe_sha256,
+            argv=argv,
+            exit_code=exit_code,
+            timed_out=timed_out,
+            stdout=stdout,
+            stderr=stderr,
+            inputs=dict(files),
+            outputs=outputs,
+        )
+        if timed_out:
+            raise PickettProgramError(program, f"timed out after {self._timeout} s", record)
+        if exit_code != 0:
+            raise PickettProgramError(program, f"exited with code {exit_code}: {stderr.strip()}", record)
+        return record
+
+    def run_spfit_files(self, par_text: str, lin_text: str, stem: str = "cochem_run") -> SpfitRun:
+        """
+        Run genuine SPFIT on complete ``.par`` and ``.lin`` text.
+
+        SPFIT rewrites the ``.par`` and writes ``.bak``, ``.var`` and ``.fit``; all are kept
+        in the record's ``outputs``. The returned parameters come from the ``.var``.
+
+        Raises
+        ------
+        PickettProgramError
+            If SPFIT fails or does not write a ``.fit`` and ``.var``.
+        PickettOutputError
+            If its output cannot be parsed.
+        """
+        record = self.run_pickett("spfit", {f"{stem}.par": par_text, f"{stem}.lin": lin_text}, stem)
+        for ext in ("fit", "var"):
+            if f"{stem}.{ext}" not in record.outputs:
+                raise PickettProgramError("spfit", f"did not write {stem}.{ext}", record)
+        report = parse_spfit_fit(record.outputs[f"{stem}.fit"])
+        parameters = parse_pickett_parameters(record.outputs[f"{stem}.var"])
+        return SpfitRun(record=record, report=report, parameters=parameters)
+
+    def run_spcat_files(self, var_text: str, int_text: str, stem: str = "cochem_run") -> PickettRunRecord:
+        """
+        Run genuine SPCAT on complete ``.var`` and ``.int`` text.
+
+        The catalog is ``record.outputs[f"{stem}.cat"]``.
+
+        Raises
+        ------
+        PickettProgramError
+            If SPCAT fails or does not write a ``.cat``.
+        """
+        record = self.run_pickett("spcat", {f"{stem}.var": var_text, f"{stem}.int": int_text}, stem)
+        if f"{stem}.cat" not in record.outputs:
+            raise PickettProgramError("spcat", f"did not write {stem}.cat", record)
+        return record

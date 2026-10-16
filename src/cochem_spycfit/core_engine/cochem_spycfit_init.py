@@ -103,23 +103,23 @@ TIER_BINARY_MAP: Dict[OSTier, str] = {
     OSTier.HPC_CONTAINER: "spycfit_engine_hpc_posix",
 }
 
-# Known reference SHA-256 registry for release binaries
-CANONICAL_BINARY_HASHES: Dict[str, str] = {
-    "spycfit_engine_win_x64.exe": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "spycfit_engine_linux_x86_64": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "spycfit_engine_linux_arm64": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "spycfit_engine_darwin_arm64": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "spycfit_engine_darwin_x86_64": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "spycfit_engine_hpc_posix": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+# SHA-256 digests of release engine binaries. No such binaries have been built or
+# verified, so every digest is unknown (None). At 7e42507 each entry was
+# e3b0c442...b855, the SHA-256 of the empty byte string (amendment §5; SF-RUN-006).
+CANONICAL_BINARY_HASHES: Dict[str, Optional[str]] = {
+    "spycfit_engine_win_x64.exe": None,
+    "spycfit_engine_linux_x86_64": None,
+    "spycfit_engine_linux_arm64": None,
+    "spycfit_engine_darwin_arm64": None,
+    "spycfit_engine_darwin_x86_64": None,
+    "spycfit_engine_hpc_posix": None,
 }
 
-# Known reference SHA-256 registry for legacy SPFIT / SPCAT binaries
-DEFAULT_LEGACY_HASHES: Dict[str, str] = {
-    "spfit": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "spcat": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "spfit.exe": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "spcat.exe": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-}
+# SHA-256 digests of pinned SPFIT/SPCAT builds. No build is pinned yet (decision
+# D-SPYC-17), so the registry is empty and validate_legacy_hashes reports every binary
+# as unverified unless the caller supplies digests. At 7e42507 the entries were the
+# SHA-256 of the empty byte string.
+DEFAULT_LEGACY_HASHES: Dict[str, str] = {}
 
 
 # =============================================================================
@@ -774,7 +774,9 @@ def validate_legacy_hashes(
 
     Raises:
         FileNotFoundError: If binary does not exist and raise_on_error is True.
-        CoChemIntegrityError: If checksum mismatch occurs and raise_on_error is True.
+        CoChemIntegrityError: If checksum mismatch occurs, or no digest is known for a
+            binary, and raise_on_error is True. A binary without a known digest is never
+            reported as verified (SF-RUN-006).
     """
     hashes_to_check = known_hashes if known_hashes is not None else DEFAULT_LEGACY_HASHES
     targets = [("spfit", Path(spfit_path).resolve()), ("spcat", Path(spcat_path).resolve())]
@@ -817,6 +819,14 @@ def validate_legacy_hashes(
                     raise CoChemIntegrityError(err_msg)
         else:
             clean_expected = None
+            verified = False
+            err_msg = (
+                f"No verified SHA-256 digest is recorded for legacy binary '{key}' at {path} "
+                f"(computed {actual_sha256})"
+            )
+            logger.error(err_msg)
+            if raise_on_error:
+                raise CoChemIntegrityError(err_msg)
 
         file_size = path.stat().st_size
         results[key] = BinaryVerificationResult(

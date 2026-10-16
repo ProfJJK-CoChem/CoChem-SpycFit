@@ -368,10 +368,30 @@ def apply_rm2_mass_scaling(rotational_constants: Any,
 def compute_sobol_sensitivity(model_fn: Callable = watson_s_reduced_model, 
                               param_bounds: Optional[np.ndarray] = None, 
                               n_samples: int = 500,
-                              random_seed: int = 42) -> Dict[str, Any]:
+                              random_seed: int = 42,
+                              param_names: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Performs Saltelli variance-based global Sobol sensitivity analysis for spectroscopic parameters.
-    Returns First-order (S_i) and Total-order (S_Ti) sensitivity indices.
+    Variance-based (Sobol) sensitivity indices of the scalar output sum(model_fn(p)).
+
+    Inputs are sampled independently and uniformly (pseudo-random) within ``param_bounds``.
+    With sample matrices A and B and B_A^(i) (B with column i taken from A):
+
+    * first order, Saltelli et al. 2010 (doi:10.1016/j.cpc.2009.09.018), with the roles of
+      A and B exchanged: S_i = mean(f(A) * (f(B_A^(i)) - f(B))) / V
+    * total effect, Jansen 1999 (doi:10.1016/S0010-4655(98)00154-4):
+      S_Ti = mean((f(B) - f(B_A^(i)))**2) / (2 V)
+
+    where V is the variance of the outputs of A and B together. Estimates are returned
+    unclipped, so sampling error stays visible. The indices depend on the output and on
+    the input ranges chosen; they are not identifiability diagnostics (SF-FIT-005).
+
+    At 7e42507 the total effect paired f(A) with f(B_A^(i)), which share only input i, so
+    it estimated 1 - S_i; a zero output variance was replaced by 1.0; and the estimates
+    were clipped to [0, 1].
+
+    Raises:
+        ValueError: if the output variance is zero (the indices are undefined), or if
+            ``param_names`` is missing or does not match the number of parameters.
     """
     if param_bounds is None:
         param_bounds = np.array([
@@ -386,8 +406,14 @@ def compute_sobol_sensitivity(model_fn: Callable = watson_s_reduced_model,
         ])
 
     n_params = len(param_bounds)
-    
-    # Low-discrepancy sampling for matrices A and B
+    if param_names is None:
+        if n_params != 8:
+            raise ValueError("param_names is required when param_bounds does not have 8 rows")
+        param_names = ["A", "B", "C", "DJ", "DJK", "DK", "dJ", "dK"]
+    if len(param_names) != n_params:
+        raise ValueError(f"{len(param_names)} names given for {n_params} parameters")
+
+    # Independent pseudo-random uniform samples for matrices A and B
     rng = np.random.default_rng(random_seed)
     A_sample = rng.uniform(param_bounds[:, 0], param_bounds[:, 1], size=(n_samples, n_params))
     B_sample = rng.uniform(param_bounds[:, 0], param_bounds[:, 1], size=(n_samples, n_params))
@@ -396,30 +422,27 @@ def compute_sobol_sensitivity(model_fn: Callable = watson_s_reduced_model,
     y_A = np.array([np.sum(model_fn(jnp.array(p))) for p in A_sample])
     y_B = np.array([np.sum(model_fn(jnp.array(p))) for p in B_sample])
 
-    var_y = np.var(y_A)
-    if var_y < 1e-12:
-        var_y = 1.0
+    var_y = float(np.var(np.concatenate([y_A, y_B])))
+    if var_y <= 0.0:
+        raise ValueError("Output variance is zero over the sampled ranges; Sobol indices are undefined")
 
     first_order_S = np.zeros(n_params)
     total_order_ST = np.zeros(n_params)
 
     for i in range(n_params):
-        # Create matrix C_i where column i comes from A, remaining from B
+        # B_A^(i): column i from A, remaining columns from B
         C_i = B_sample.copy()
         C_i[:, i] = A_sample[:, i]
         y_Ci = np.array([np.sum(model_fn(jnp.array(p))) for p in C_i])
 
-        # Saltelli estimators (corrected according to Saltelli 2010 formula for S_i)
         first_order_S[i] = np.mean(y_A * (y_Ci - y_B)) / var_y
-        total_order_ST[i] = np.mean((y_A - y_Ci)**2) / (2.0 * var_y)
+        total_order_ST[i] = np.mean((y_B - y_Ci) ** 2) / (2.0 * var_y)
 
-    first_order_S = np.clip(first_order_S, 0.0, 1.0)
-    total_order_ST = np.clip(total_order_ST, 0.0, 1.0)
-
-    param_names = ["A", "B", "C", "DJ", "DJK", "DK", "dJ", "dK"]
     sobol_results = {
         'first_order_S': {param_names[k]: float(first_order_S[k]) for k in range(n_params)},
-        'total_order_ST': {param_names[k]: float(total_order_ST[k]) for k in range(n_params)}
+        'total_order_ST': {param_names[k]: float(total_order_ST[k]) for k in range(n_params)},
+        'output_variance': var_y,
+        'n_model_evaluations': int(n_samples * (n_params + 2)),
     }
     return sobol_results
 
