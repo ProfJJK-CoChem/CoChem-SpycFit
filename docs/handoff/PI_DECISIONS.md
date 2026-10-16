@@ -22,13 +22,13 @@ Sources:
 
 | Id | Question | Needed before | Recommendation | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| D-SPYC-01 | What SpycFit is; fitter of record | any functional requirement | A: assignment and fitting workbench; pinned SPFIT/SPCAT is the fit of record | OPEN (PI direction 2026-10-16 to confirm) |
+| D-SPYC-01 | What SpycFit is; fitter of record | any functional requirement | A: assignment and fitting workbench; pinned SPFIT/SPCAT is the fit of record | ANSWERED 2026-10-16 |
 | D-SPYC-16 | Catalog and Hamiltonian boundary with TORQ | SRS §1.2, §1.3, HAM and INT | A: TORQ predicts from computed constants; SpycFit re-predicts from fitted or edited constants | OPEN |
 | D-SPYC-02 | Masses and constants | SRS §1.7 | Atomic masses with source and version; TORQ's CODATA 2022 profile, shared | OPEN |
-| D-SPYC-03 | Feedback to TORQ | SRS FB requirements; G1 | A: refinement-request file handed to BASE; a human approves any follow-up | OPEN (PI direction 2026-10-16 to confirm) |
-| D-SPYC-04 | Internal rotation and tunnelling | SRS LAM; G1 | C: defer to after the first release, then A or B | OPEN (PI direction 2026-10-16 to confirm) |
+| D-SPYC-03 | Feedback to TORQ | SRS FB requirements; G1 | A: refinement-request file handed to BASE; a human approves any follow-up | ANSWERED in part 2026-10-16 |
+| D-SPYC-04 | Internal rotation and tunnelling | SRS LAM; G1 | C: defer to after the first release, then A or B | ANSWERED in part 2026-10-16 |
 | D-SPYC-05 | UI stack and hosting | SRS UI; G1 | ipywidgets + Plotly under Voila as a BASE tab, plus CLI | OPEN |
-| D-SPYC-06 | IR / Raman / UV-Vis in SpycFit | SRS §1.2 | None in SpycFit | OPEN (PI direction 2026-10-16 to confirm) |
+| D-SPYC-06 | IR / Raman / UV-Vis in SpycFit | SRS §1.2 | None in SpycFit | ANSWERED in part 2026-10-16 |
 | D-SPYC-07 | Eigenvalue label swaps during a fit | SRS HAM/FIT (only if D-SPYC-18 includes a model) | Halt and show the swap | OPEN |
 | D-SPYC-08 | Anti-gaming checks | G2 (hygiene PR) | Keep narrow hygiene checks; gate on literature tests, SPFIT/SPCAT round trip, whole-suite CI, PI review | OPEN |
 | D-SPYC-09 | Parallel-execution import ban | G2 | Lift the ban | OPEN |
@@ -36,10 +36,10 @@ Sources:
 | D-SPYC-11 | Toolchain baseline | G1 (for SRS §6), Phase 2 code | A: Python 3.12, NumPy/SciPy, no JAX/CuPy, CPU only | OPEN |
 | D-SPYC-12 | Inertial-defect sign rule | SRS DIAG | Diagnostic flag, never automatic rejection | OPEN |
 | D-SPYC-13 | Dark dipole components | SRS INT/ASSIGN | De-prioritise in search; keep in archival catalogs | OPEN |
-| D-SPYC-14 | Benchmark set, data supply and tolerances | G1 | A: minimum set (see entry) | OPEN (PI direction 2026-10-16 to confirm) |
+| D-SPYC-14 | Benchmark set, data supply and tolerances | G1 | A: minimum set (see entry) | ANSWERED in part 2026-10-16 |
 | D-SPYC-15 | Repository strategy | Phase 2 | A: tag legacy, build fresh in `src/cochem_spycfit/`, port proven modules | OPEN |
 | D-SPYC-17 | SPFIT/SPCAT source, pin and use rights | SRS §4.1; Phase 2 CI | A: one ecosystem pin shared with TORQ | OPEN |
-| D-SPYC-18 | In-process Hamiltonian model and its scope | SRS HAM; G1 | B: model limited to what SPCAT reproduces, used for windows and what-if | OPEN (PI direction 2026-10-16 to confirm) |
+| D-SPYC-18 | In-process Hamiltonian model and its scope | SRS HAM; G1 | B: model limited to what SPCAT reproduces, used for windows and what-if | ANSWERED in part 2026-10-16 |
 | D-SPYC-19 | Dependency on the `cochem-base` package | SRS §4.4; Phase 2 | A: pinned dependency | OPEN |
 | D-SPYC-20 | Domain defaults (T_rot, window, J_max) | SRS §2 | T_rot 1.5 K; 2-22 GHz; J_max from population | OPEN |
 
@@ -47,7 +47,7 @@ Sources:
 
 ## D-SPYC-01 Product identity and fitter of record
 
-**Needed before:** any functional requirement. **Status:** OPEN
+**Needed before:** any functional requirement. **Status:** ANSWERED 2026-10-16; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-01.md`
 
 **Question.** What is SpycFit, and which program's least-squares fit is the published result?
 
@@ -60,13 +60,13 @@ Sources:
 **Draft scope statement for option A:** review §8.6, with the amendments in errata row 16. The
 text belongs in SRS v2 §1.2. The question of IR/Raman/UV-Vis is D-SPYC-06.
 
-**PI answer:** _none yet_
+**PI answer** (conversation 2026-10-16). The agent asked: "1. Confirm your October 16 decisions by id, for example "D-SPYC-06: IR, Raman, THz, NIR and MW are first-class". `PI_DECISIONS.md` quotes them under D-SPYC-01, 03, 04, 06, 14 and 18, but none is marked answered yet." The PI replied: "1. That is correct." The agent also asked: "3. When native and SPFIT results both exist, which one a publication table shows first." The PI replied: "3. SPFIT first." The confirmed direction is quoted below. Record: `docs/decisions/D-SPYC-01.md`. Still open: nothing in this entry. Related open questions are D-SPYC-16 and D-SPYC-18.
 
-**PI direction of 2026-10-16, not yet recorded as an answer.** Source: `docs/HANDOFF.md` ("User decisions already settled") and amendment §7 on `main` at `488dc87`, written by another agent in the PI's 2026-10-16 session; the PI asked agents to continue from that work. Under the rule above it is relayed text: the PI confirms it by id.
+**Direction confirmed by the PI on 2026-10-16** (first recorded from `docs/HANDOFF.md` and amendment §7 on `main` at `488dc87`):
 
 > "SpycFit is a computational chemistry-to-assignment/fitting/publication pipeline. It must support rotational assignment/fitting, joint rotational–rovibrational fitting, MLFF-assisted computational assignment, and vibrational band/line/envelope fitting."
 > "Run genuine SPCAT/SPFIT alongside native SpycFit for compatible microwave models."
-This differs from option A: there is a native path beside SPFIT, and the scope is wider than the MM §2.1 system class. Still open: which result a publication table reports first when both exist (SRS v2 §11).
+This differs from option A: there is a native path beside SPFIT, and the scope is wider than the MM §2.1 system class. When both exist, publication tables show the SPFIT result first (PI answer above).
 
 
 ## D-SPYC-16 Catalog and Hamiltonian boundary with TORQ
@@ -106,7 +106,7 @@ isotope-mass "source database checksum/version"
 
 ## D-SPYC-03 Feedback to TORQ
 
-**Needed before:** SRS feedback requirements; G1. **Status:** OPEN
+**Needed before:** SRS feedback requirements; G1. **Status:** ANSWERED in part 2026-10-16; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-03.md`
 
 When a fit shows the predictions were wrong (wrong conformer, poor barrier), what does SpycFit
 emit?
@@ -117,9 +117,9 @@ emit?
 | B. No feedback path in v2. | Simplest; feedback stays manual. |
 | C. Direct submission into TORQ or BASE task queues. | Conflicts with TORQ D08 and TORQ-ARC-002. Not recommended. |
 
-**PI answer:** _none yet_
+**PI answer** (conversation 2026-10-16). The agent asked: "1. Confirm your October 16 decisions by id, for example "D-SPYC-06: IR, Raman, THz, NIR and MW are first-class". `PI_DECISIONS.md` quotes them under D-SPYC-01, 03, 04, 06, 14 and 18, but none is marked answered yet." The PI replied: "1. That is correct." The confirmed direction is quoted below. Record: `docs/decisions/D-SPYC-03.md`. Still open: the hand-off route for refinement requests (options A-C).
 
-**PI direction of 2026-10-16, not yet recorded as an answer.** Source: `docs/HANDOFF.md` ("User decisions already settled") and amendment §7 on `main` at `488dc87`, written by another agent in the PI's 2026-10-16 session; the PI asked agents to continue from that work. Under the rule above it is relayed text: the PI confirms it by id.
+**Direction confirmed by the PI on 2026-10-16** (first recorded from `docs/HANDOFF.md` and amendment §7 on `main` at `488dc87`):
 
 > "PES/force-field refinement is required in the overall workflow and may be implemented in another CoChem module."
 Still open: the hand-off route (options A-C).
@@ -127,7 +127,7 @@ Still open: the hand-off route (options A-C).
 
 ## D-SPYC-04 Internal rotation and tunnelling
 
-**Needed before:** SRS LAM requirements; G1. **Status:** OPEN
+**Needed before:** SRS LAM requirements; G1. **Status:** ANSWERED in part 2026-10-16; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-04.md`
 
 | Option | Consequence |
 | :--- | :--- |
@@ -135,9 +135,9 @@ Still open: the hand-off route (options A-C).
 | B. A native effective torsion-rotation Hamiltonian (RAM or PAM) with XIAM-compatible parameters, validated against XIAM. | More code; one in-process model for assignment. |
 | **C (recommended for the first release).** Defer internal rotation; v2 covers semi-rigid species and two-state tunnelling doublets. Revisit A or B afterwards. | Matches TORQ D05's ordering (semi-rigid first, large-amplitude motion later). Leaves NH₃⋯HCOOH (MM §17 system 5; Roehling, Hill, Daly & Kukolich 2024), the only in-class V3 benchmark, out of the first release. |
 
-**PI answer:** _none yet_
+**PI answer** (conversation 2026-10-16). The agent asked: "1. Confirm your October 16 decisions by id, for example "D-SPYC-06: IR, Raman, THz, NIR and MW are first-class". `PI_DECISIONS.md` quotes them under D-SPYC-01, 03, 04, 06, 14 and 18, but none is marked answered yet." The PI replied: "1. That is correct." The confirmed direction is quoted below. Record: `docs/decisions/D-SPYC-04.md`. Still open: whether internal rotation is delegated to external engines (option A) or built natively (option B), and which engines.
 
-**PI direction of 2026-10-16, not yet recorded as an answer.** Source: `docs/HANDOFF.md` ("User decisions already settled") and amendment §7 on `main` at `488dc87`, written by another agent in the PI's 2026-10-16 session; the PI asked agents to continue from that work. Under the rule above it is relayed text: the PI confirms it by id.
+**Direction confirmed by the PI on 2026-10-16** (first recorded from `docs/HANDOFF.md` and amendment §7 on `main` at `488dc87`):
 
 > "Establish independent semirigid comparison first; then separately validate hyperfine, excited-state, and large-amplitude-motion extensions. All remain in scope."
 Consistent with option C's ordering; internal rotation stays in scope.
@@ -156,16 +156,16 @@ Consistent with option C's ordering; internal rotation stays in scope.
 
 ## D-SPYC-06 IR / Raman / UV-Vis in SpycFit
 
-**Needed before:** SRS §1.2. **Status:** OPEN
+**Needed before:** SRS §1.2. **Status:** ANSWERED in part 2026-10-16; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-06.md`
 
 | Option | Consequence |
 | :--- | :--- |
 | **A (recommended).** None in SpycFit. If IR/Raman simulation is still wanted, it moves to TORQ reporting or a separate module (TORQ D12: adjacent domains need explicit sibling handoffs). | Rewrite README §1-3 and ask the BASE maintainer to revise User Manual Ch. 5 (its `%spycfit` block at l.854: `Type = IR  # Options: IR, Raman, UVVIS, Microwave`). |
 | B. Keep a minimal IR/Raman stick-spectrum renderer in SpycFit. | Re-opens scope that the 2026-08-07 plan already rejected for UV-Vis/TD-DFT. |
 
-**PI answer:** _none yet_
+**PI answer** (conversation 2026-10-16). The agent asked: "1. Confirm your October 16 decisions by id, for example "D-SPYC-06: IR, Raman, THz, NIR and MW are first-class". `PI_DECISIONS.md` quotes them under D-SPYC-01, 03, 04, 06, 14 and 18, but none is marked answered yet." The PI replied: "1. That is correct." The confirmed direction is quoted below. Record: `docs/decisions/D-SPYC-06.md`. Still open: UV-Vis, and who produces vibrational and Raman predictions (TORQ or another provider).
 
-**PI direction of 2026-10-16, not yet recorded as an answer.** Source: `docs/HANDOFF.md` ("User decisions already settled") and amendment §7 on `main` at `488dc87`, written by another agent in the PI's 2026-10-16 session; the PI asked agents to continue from that work. Under the rule above it is relayed text: the PI confirms it by id.
+**Direction confirmed by the PI on 2026-10-16** (first recorded from `docs/HANDOFF.md` and amendment §7 on `main` at `488dc87`):
 
 > "IR, Raman, THz, near-IR, and microwave are first-class workflows with familiar interactions."
 This is option B or wider, against the recommendation. Still open: UV-Vis, and who produces vibrational and Raman predictions (TORQ or another provider; literature review R3-01).
@@ -268,7 +268,7 @@ threshold cannot delete nonzero archival transitions".
 
 ## D-SPYC-14 Benchmark set, data supply and tolerances
 
-**Needed before:** G1. **Status:** OPEN
+**Needed before:** G1. **Status:** ANSWERED in part 2026-10-16; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-14.md`
 
 Review §8.4 proposes 13 systems anchored on MM §17. Several rows depend on other decisions:
 rows 6-7 on D-SPYC-04, rows 9-10 on D-SPYC-10, and row 12 on TORQ's exporter. Rows 3-4 need
@@ -292,9 +292,9 @@ before execution.
 Phase 2 PR allows fixtures under `tests/`, sources are recorded (DOI or URL, SHA-256) without
 committing the files.
 
-**PI answer:** _none yet_
+**PI answer** (conversation 2026-10-16). The agent asked: "1. Confirm your October 16 decisions by id, for example "D-SPYC-06: IR, Raman, THz, NIR and MW are first-class". `PI_DECISIONS.md` quotes them under D-SPYC-01, 03, 04, 06, 14 and 18, but none is marked answered yet." The PI replied: "1. That is correct." The confirmed direction is quoted below. Record: `docs/decisions/D-SPYC-14.md`. Still open: the benchmark panel and the tolerance values.
 
-**PI direction of 2026-10-16, not yet recorded as an answer.** Source: `docs/HANDOFF.md` ("User decisions already settled") and amendment §7 on `main` at `488dc87`, written by another agent in the PI's 2026-10-16 session; the PI asked agents to continue from that work. Under the rule above it is relayed text: the PI confirms it by id.
+**Direction confirmed by the PI on 2026-10-16** (first recorded from `docs/HANDOFF.md` and amendment §7 on `main` at `488dc87`):
 
 > "Establish independent semirigid comparison first" (`docs/HANDOFF.md`); amendment §7 D-03: "Matched semirigid rotational models first, then separately validated extensions with explicit capability profiles."
 The literature review (R4-02) proposes a semirigid panel of CO, OCS, SO₂, H₂CO and propyne (SRS v2 §8.3) and notes that HCO is an open-shell case, valid as a file-handling regression but not as semirigid evidence. It also proposes four tolerance tiers (SF-CMP-008a); the forward tier for `.cat` comparisons would be half the 0.1 kHz print quantum plus a numerical bound.
@@ -338,7 +338,7 @@ dependency or a test-only cross-check.
 
 ## D-SPYC-18 In-process Hamiltonian model and its scope
 
-**Needed before:** SRS HAM requirements; G1. **Status:** OPEN
+**Needed before:** SRS HAM requirements; G1. **Status:** ANSWERED in part 2026-10-16; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-18.md`
 
 | Option | Consequence |
 | :--- | :--- |
@@ -351,9 +351,9 @@ J, Ka, Kc with an explicit Watson A or S reduction in I^r. It lists other repres
 hyperfine states, spin weights, tunnelling and multiple vibrational states as unsupported.
 Whatever SpycFit needs beyond that is new work under D-SPYC-16 and D-SPYC-17.
 
-**PI answer:** _none yet_
+**PI answer** (conversation 2026-10-16). The agent asked: "1. Confirm your October 16 decisions by id, for example "D-SPYC-06: IR, Raman, THz, NIR and MW are first-class". `PI_DECISIONS.md` quotes them under D-SPYC-01, 03, 04, 06, 14 and 18, but none is marked answered yet." The PI replied: "1. That is correct." The confirmed direction is quoted below. Record: `docs/decisions/D-SPYC-18.md`. Still open: which native terms, in which order.
 
-**PI direction of 2026-10-16, not yet recorded as an answer.** Source: `docs/HANDOFF.md` ("User decisions already settled") and amendment §7 on `main` at `488dc87`, written by another agent in the PI's 2026-10-16 session; the PI asked agents to continue from that work. Under the rule above it is relayed text: the PI confirms it by id.
+**Direction confirmed by the PI on 2026-10-16** (first recorded from `docs/HANDOFF.md` and amendment §7 on `main` at `488dc87`):
 
 > "Run genuine SPCAT/SPFIT alongside native SpycFit for compatible microwave models."
 A native model therefore exists for compatible microwave models (option B or C). Still open: which terms, in which order, and whether native results are ever results of record.

@@ -1050,6 +1050,10 @@ Owner: `export`.
   accepted only if the rounded parameter set reproduces the unrounded predictions of all fitted
   data with rms(Δν/u) ≤ 0.1·σ_f, otherwise adding digits or applying recorded sequential rounding.
   *Source* R2-04; [R-23] · Core · T, V-OUT-03 · proposed
+- **SF-OUT-006** SPFIT first. When a result exists from both SPFIT and the native path, publication
+  tables SHALL present the SPFIT result first, with the native result in a separate table
+  labelled with its engine.
+  *Source* PI 2026-10-16 (conversation; `docs/decisions/D-SPYC-01.md`) · Core · T, V-OUT-06 · proposed
 - **SF-OUT-004** Limitations exported. Exports SHALL include unresolved assignments, blends and
   model limitations.
   *Source* SRS SF-OUT-004 · Core · T, V-OUT-04 · proposed
@@ -1180,7 +1184,7 @@ with its tolerance committed before the implementation PR (SF-VER-004).
 | V-VIB-01..04, V-NIR-01, V-ROVIB-01, V-PHASE-01, V-RAMAN-01..03, V-THZ-01 | Profile-specific checks listed in the capability matrix | per profile |
 | V-HITL-01..03, V-UI-01..03 | Acceptance only by expert action; non-drag paths; stale marking; no older overwrite; views | software, demonstration |
 | V-DATA-01..07 | Reference-record fields, redistribution class, fetch-and-verify, lineage partitions, extrapolation labels | software |
-| V-OUT-01..05 | Coherent records, units, absent tokens, rounding reproduction check, provenance graph | software |
+| V-OUT-01..06 | Coherent records, units, absent tokens, rounding reproduction check, provenance graph, SPFIT-first ordering | software |
 | V-RUN-01..08, V-SEC-01 | Offline run, provenance, resource limits, outcomes, refinement versions, verified identity, use rights, subprocess safety | software |
 | V-IF-01..04, V-API-01, V-PROV-01..03, V-ML-01..03 | Interfaces and providers | software |
 | V-DEMO-1..5 | End-to-end demonstrations of the four workflows and of each capability-matrix row | demonstration, experimental |
@@ -1242,11 +1246,13 @@ SF-IF → WP-IF; SF-OUT, SF-PUB → WP-OUT; SF-DATA, SF-IO-007 → WP-BENCH (new
 
 `docs/decisions/D-SPYC-nn.md` files are the authoritative records; `docs/handoff/PI_DECISIONS.md`
 lists every open question. The PI's 2026-10-16 decisions (`docs/HANDOFF.md`; amendment §7
-D-01..D-03) bear on several entries:
+D-01..D-03) bear on several entries. On 2026-10-16 the PI confirmed them in conversation; the
+entries below are ANSWERED (records in `docs/decisions/`) and become DECIDED when the PI approves
+the PR containing the records.
 
 | Entry | PI direction 2026-10-16 | Remaining question |
 | :--- | :--- | :--- |
-| D-SPYC-01 Product identity, fitter of record | Broad assignment-and-fitting pipeline; native SpycFit and genuine SPCAT/SPFIT side by side | Which result a publication table reports first, or both |
+| D-SPYC-01 Product identity, fitter of record | Broad assignment-and-fitting pipeline; native SpycFit and genuine SPCAT/SPFIT side by side; publication tables show SPFIT first (answered 2026-10-16) | None |
 | D-SPYC-06 IR/Raman/UV-Vis | IR, Raman, THz, near-IR and microwave first-class | UV-Vis; owner of vibrational and Raman predictions |
 | D-SPYC-18 In-process model | A native model exists for compatible microwave models | Which terms, in which order |
 | D-SPYC-04 Internal rotation | In scope after semirigid acceptance | Engines and order |
@@ -1256,7 +1262,7 @@ D-01..D-03) bear on several entries:
 
 Open questions raised by this draft:
 
-1. Confirm by id each 2026-10-16 direction above, so the entries can be recorded.
+1. Confirm each 2026-10-16 direction above. Answered 2026-10-16 ("That is correct").
 2. Keep the `SF-` id scheme (this draft) instead of the `SPYC-` scheme of Draft 0.
 3. Who owns vibrational and Raman predictions: TORQ or another provider (R3-01)?
 4. Accept the semirigid panel of §8.3, including propyne, and reconcile it with D-SPYC-14.
