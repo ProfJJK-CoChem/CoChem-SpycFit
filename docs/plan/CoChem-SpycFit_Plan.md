@@ -17,6 +17,10 @@
 | 3. Work packages | One PR each, in the order below. | G2 | **G3** per package: PI reads `docs/evidence/WP-<NAME>.md` and approves the PR in a PR comment. |
 | 4. Release | Preregistered benchmark run; SPFIT/SPCAT round trip; clean-wheel install; UI journey on a reference complex per deployment target. | All G3 | **G4**: PI signs the release tag. |
 
+State on 2026-10-16: the Phase 0 inventory exists (`docs/evidence/phase0_inventory.md`); the
+baseline tag has not been created; the amendment §5 defects were corrected at the PI's request
+before G1 (PR #1); SRS v2 Draft 1 exists for Phase 1 review.
+
 ## Proposed work packages
 
 Final content and requirement ids come from SRS v2. Each package's acceptance tests and
@@ -40,6 +44,15 @@ an open decision say so.
 11. **WP-IF**: BASE integration (D-SPYC-19), and the TORQ bundle consumer once TORQ's exporter
     exists.
 12. **WP-OUT**: publication export and the refinement request (D-SPYC-03).
+13. **WP-CMP**: the native-versus-SPCAT/SPFIT comparison of amendment §3 (SRS v2 §5.6),
+    starting with the semirigid profile.
+14. **WP-BENCH**: the benchmark registry: reference records, redistribution classes,
+    fetch-and-verify fixtures, lineage partitions (SRS v2 §4.6, §8.3; D-SPYC-14).
+15. **WP-VIB**: the vibrational, rovibrational, Raman, THz and near-IR profiles of SRS v2 §1.2,
+    each with its own acceptance evidence (PI 2026-10-16; D-SPYC-06).
+
+Packages 13-15 were added on 2026-10-16 to follow the PI's 2026-10-16 scope; their order is a
+proposal.
 
 ## Definition of done (every package)
 

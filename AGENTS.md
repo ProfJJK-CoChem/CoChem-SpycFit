@@ -5,13 +5,16 @@ documents to read, the decisions the PI still has to make, and the first steps. 
 [PI decisions](docs/handoff/PI_DECISIONS.md) and [review errata](docs/handoff/REVIEW_ERRATA.md).
 
 The objective is to write the SpycFit SRS v2, architecture and plan **with the PI**, and only
-after the PI approves them (the PI's tag `srs-v2.0`) to build the code against them. No
-normative SRS exists yet. The old `docs/wiki/CoChem-SpycFit_Comprehensive_SRS.md`, the copied
-`.docs/task1_subsystems_architectural_specification.md`, `swarm_state.json`, the
+after the PI approves them (the PI's tag `srs-v2.0`) to build the code against them. The PI's
+current requirements baseline is the consolidated SRS and amendment in `docs/wiki/` at `488dc87`,
+with the PI's 2026-10-16 decisions in `docs/HANDOFF.md`; `docs/srs/CoChem-SpycFit_SRS_v2.md` is
+the proposed revision. The archived `docs/archive/CoChem-SpycFit_Comprehensive_SRS_7e42507.md`,
+the copied `.docs/task1_subsystems_architectural_specification.md`, `swarm_state.json`, the
 `*_payload.md` files and existing test names are historical evidence, not requirements.
 
-SpycFit is the rotational-spectroscopy assignment and fitting module of the CoChem ecosystem
-(pending PI confirmation in D-SPYC-01). TOPOS finds conformers. TORQ computes predicted
+SpycFit is the assignment and fitting module of the CoChem ecosystem for rotational,
+rovibrational and vibrational spectra (the PI's 2026-10-16 scope, `docs/HANDOFF.md`; to be
+recorded under D-SPYC-01 and D-SPYC-06). TOPOS finds conformers. TORQ computes predicted
 constants and predicted catalogs. BASE hosts the UI and owns task state. Respect the accepted
 TORQ implementation contract and decision register in `ProfJJK-CoChem/CoChem-TORQ`. Keep
 interfaces to BASE and TORQ explicit and versioned. Never write another module's database.

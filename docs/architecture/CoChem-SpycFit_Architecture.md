@@ -3,7 +3,7 @@
 | Field | Value |
 | :--- | :--- |
 | Status | **Draft 0: structure and proposals only.** Nothing here is approved. The PI approves this document together with SRS v2 at gate G1. |
-| Depends on | `docs/srs/CoChem-SpycFit_SRS_v2.md`; PI decisions D-SPYC-01, 02, 03, 04, 05, 07, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 and 20 in `docs/handoff/PI_DECISIONS.md`. |
+| Depends on | `docs/srs/CoChem-SpycFit_SRS_v2.md` (Draft 1, 2026-10-16); the PI's 2026-10-16 decisions in `docs/HANDOFF.md`; PI decisions D-SPYC-01, 02, 03, 04, 05, 07, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 and 20 in `docs/handoff/PI_DECISIONS.md`. |
 | Model | `CoChem-TORQ/docs/wiki/CoChem-TORQ_Implementation_SRS.md` §3 (context flowchart and component table with required error behaviour). |
 | Proposal source | Review finding ARCH-30 (`docs/wiki/review/CoChem-SpycFit_SRS_Review_findings.json`), corrected by `docs/handoff/REVIEW_ERRATA.md`. |
 
@@ -58,6 +58,9 @@ A single package `src/cochem_spycfit/`, pure Python, CPU first. Candidate subpac
 | `session` | One versioned project file per campaign; single writer; event log. | none |
 | `ui` | One UI stack calling the same headless API. | D-SPYC-05 |
 | `export` | Complete Pickett set, publication tables, refinement request, BASE handoff back. | D-SPYC-03; a new BASE handoff artifact kind |
+| `compare` | The SPCAT/SPFIT comparison stages, comparability records, tolerance tiers and statuses (SRS v2 §5.6). | D-SPYC-14, 17, 18 |
+| `bench` | Benchmark registry: reference records, redistribution classes, fetch-and-verify, lineage partitions (SRS v2 §4.6). | D-SPYC-14 |
+| `vib` | Vibrational, rovibrational, Raman, THz and near-IR models and envelope fitting (SRS v2 §1.2 profiles P6-P12). | D-SPYC-06; owner of vibrational predictions |
 
 ## 3. State (proposal)
 
