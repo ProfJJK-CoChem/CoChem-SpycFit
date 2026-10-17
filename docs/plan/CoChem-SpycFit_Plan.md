@@ -48,7 +48,9 @@ an open decision say so.
     TORQ's exporter exists.
 12. **WP-OUT**: publication export and the refinement request (D-SPYC-03).
 13. **WP-CMP**: the native-versus-SPCAT/SPFIT comparison of amendment §3 (SRS v2 §5.6),
-    starting with the semirigid profile.
+    starting with the semirigid profile. If the PI confirms the proposed SRS v2 SF-CMP-021c gate,
+    its benchmark runs, with WP-BENCH's registry and held-out partitions, decide whether native
+    fits are offered for a profile; forward prediction stays gated by SF-HAM-001 alone.
 14. **WP-BENCH**: the benchmark registry: reference records, redistribution classes,
     fetch-and-verify fixtures, lineage partitions (SRS v2 §4.6, §8.3; D-SPYC-14).
 15. **WP-VIB**: the vibrational, rovibrational, Raman, THz and near-IR profiles of SRS v2 §1.2,

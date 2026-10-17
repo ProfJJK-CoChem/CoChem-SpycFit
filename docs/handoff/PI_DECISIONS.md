@@ -36,7 +36,7 @@ Sources:
 | D-SPYC-11 | Toolchain baseline | G1 (for SRS §6), Phase 2 code | A: Python 3.12, NumPy/SciPy, no JAX/CuPy, CPU only | OPEN |
 | D-SPYC-12 | Inertial-defect sign rule | SRS DIAG | Diagnostic flag, never automatic rejection | OPEN |
 | D-SPYC-13 | Dark dipole components | SRS INT/ASSIGN | De-prioritise in search; keep in archival catalogs | OPEN |
-| D-SPYC-14 | Benchmark set, data supply and tolerances | G1 | A: minimum set (see entry) | ANSWERED in part 2026-10-16 and 2026-10-17 (panel; tolerances A for T1-T3, B for T4; native no farther than SPFIT/SPCAT) |
+| D-SPYC-14 | Benchmark set, data supply and tolerances | G1 | A: minimum set (see entry) | ANSWERED in part 2026-10-16 and 2026-10-17 (panel; tolerances A for T1-T3, B for T4; "equal or closer than SPCAT and SPFIT" added, reading to confirm) |
 | D-SPYC-15 | Repository strategy | Phase 2 | A: tag legacy, build fresh in `src/cochem_spycfit/`, port proven modules | OPEN |
 | D-SPYC-17 | SPFIT/SPCAT source, pin and use rights | SRS §4.1; Phase 2 CI | A: one ecosystem pin shared with TORQ | ANSWERED in part 2026-10-17 (JPL sources; DPFIT/DPCAT included) |
 | D-SPYC-18 | In-process Hamiltonian model and its scope | SRS HAM; G1 | B: model limited to what SPCAT reproduces, used for windows and what-if | ANSWERED in part 2026-10-16 |
@@ -270,7 +270,7 @@ threshold cannot delete nonzero archival transitions".
 
 ## D-SPYC-14 Benchmark set, data supply and tolerances
 
-**Needed before:** G1. **Status:** ANSWERED in part 2026-10-16; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-14.md`
+**Needed before:** G1. **Status:** ANSWERED in part 2026-10-16 and 2026-10-17; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-14.md`
 
 Review §8.4 proposes 13 systems anchored on MM §17. Several rows depend on other decisions:
 rows 6-7 on D-SPYC-04, rows 9-10 on D-SPYC-10, and row 12 on TORQ's exporter. Rows 3-4 need
@@ -283,7 +283,7 @@ before execution.
 | B. A plus Ar-ketene (two-state tunnelling, measured dipoles) and an isotopologue set for structure (needs D-SPYC-10). | Broader coverage; more data to obtain. |
 | C. The full review §8.4 set, with conditional rows following their decisions. | Most complete; largest data effort. |
 
-**Proposed default tolerances** for the PI to approve or change:
+**Earlier proposed default tolerances** (superseded by the 2026-10-17 answer below, whose A and B are the options of `docs/handoff/briefs/D-SPYC-14_tolerances_2026-10-17.md`, not the benchmark-set options above):
 - Refitted constants within the published 1σ (2σ for distortion constants).
 - σ_fit within 10 % of the published value.
 - SPCAT agreement within the 0.1 kHz print quantum.
