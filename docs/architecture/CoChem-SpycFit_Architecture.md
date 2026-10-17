@@ -55,7 +55,7 @@ A single package `src/cochem_spycfit/`, pure Python, CPU first. Candidate subpac
 | `fit` | Driver for the pinned SPFIT as fit of record (subprocess, scratch directory, timeouts, parsers); in-process sensitivity and what-if support. | D-SPYC-01 |
 | `assign` | Prediction catalogs, search windows, candidate ranking, pattern tools, the human assignment loop, `.lin` generation from approved assignments only. | D-SPYC-13, 14 |
 | `campaign` | Isotopologues and conformers; fitted constants per isotopologue for GEOM, which owns structure determination (D-SPYC-10). | GEOM payload schema |
-| `session` | One versioned project file per campaign; single writer; event log; session parameters (temperature, window, J_max) set before predictions and editable (D-SPYC-20). | D-SPYC-20 (presets) |
+| `session` | One versioned project file per campaign; single writer; event log; session parameters (temperature, window, J_max) set before predictions and editable (D-SPYC-20). | D-SPYC-20 (full-brief detail to confirm; XIAM/BELGI/RAM36 mappings) |
 | `ui` | One UI stack calling the same headless API. | D-SPYC-05 |
 | `export` | Complete Pickett set, publication tables, refinement request, BASE handoff back. | D-SPYC-03; a new BASE handoff artifact kind |
 | `compare` | The SPCAT/SPFIT comparison stages, comparability records, tolerance tiers and statuses (SRS v2 §5.6). | D-SPYC-14, 17, 18 |

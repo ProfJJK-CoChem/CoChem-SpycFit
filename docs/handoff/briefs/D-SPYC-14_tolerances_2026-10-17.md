@@ -40,12 +40,12 @@ No paper states a pass threshold. A fit passes when its rms is close to the meas
 
 **T1 (global).** |Δν| ≤ half the print quantum of the compared output + 1 Hz, with transitions matched by state identity.
 - Half print quanta: `.cat` 50 Hz (500 Hz above 99,999,999 MHz; 5×10⁻⁷ cm⁻¹ in IR mode). `.fit` 5 Hz (5×10⁻⁸ cm⁻¹ for IR lines). `.egy` 5×10⁻⁷ cm⁻¹.
-- The 1 Hz term and the `.fit` bound are SpycFit choices with no literature support.
+- The 1 Hz term and the `.fit` bound are agent proposals with no literature support.
 - Evidence so far is the E4 pilot run (49.5 Hz). V-PICK-03 and V-HAM will supply the committed evidence.
 
 **T2 (global).** Applies only when the model, data, weights, blend weighting, priors, ERRTST rejections and FRAC are all identical (SF-CMP-017). Never applied across Hamiltonians.
 - Rule: |Δp| ≤ 0.1 u for every free parameter. Compare against SPFIT's `.var` values and unscaled u (FRAC=1, or divide out the printed factor).
-- SPFIT's 10⁻⁶ stopping rule limits the rms change, not Δp. So SPFIT's last printed |Δp|/u must be ≤ 0.01; otherwise rerun SPFIT (SpycFit choice).
+- SPFIT's 10⁻⁶ stopping rule limits the rms change, not Δp. So SPFIT's last printed |Δp|/u must be ≤ 0.01; otherwise rerun SPFIT (agent proposal).
 - The native fit stops when σ_f changes by <10⁻⁷ relative and max |Δp|/u is <10⁻³.
 - Both fits use the same data, so Δp/u is a numerical scale, not a statistical test. Label it `approximation` (SF-CMP-009). Also report rms(Δν/u), because Δp/u is unreliable when |ρ|→1.
 
@@ -70,7 +70,7 @@ No paper states a pass threshold. A fit passes when its rms is close to the meas
 
 **Search windows (not a tier; needs its own decision line, not D-SPYC-20).** Half-widths q, applied as [B_pred/(1+q), B_pred/(1−q)]. They are labelled uncalibrated and never used as acceptance tolerances.
 - Conflict: REVIEW_ERRATA item 4 lets windows default to the Method Matrix §3.1 bands: B₀ 0.3-0.5% semirigid, 1-2% floppy, quartic factor 2, and no double-hybrid row. The values below differ.
-- Rule (SpycFit choice): q = 2 × rRMSD where a set statistic exists, otherwise 1.5 × the largest error seen.
+- Rule (agent proposal): q = 2 × rRMSD where a set statistic exists, otherwise 1.5 × the largest error seen.
 - Hybrid DFT: B3LYP-D3(BJ)/def2-TZVP 4.5%, PBE0-D3(BJ)/def2-TZVP 5.1%, r2SCAN-3c 5.4%, B3LYP-D3(BJ)/def2-SVP 5.5%, PBEh-3c 6.2%. MP2 2.1% (one paper).
 - Double hybrid 1.5%, or 2% with ΔBvib. Composite or CCSD(T) + ΔBvib 1%.
 - Complexes 7.5%. Multi-water clusters 16% (one functional).
@@ -79,7 +79,7 @@ No paper states a pass threshold. A fit passes when its rms is close to the meas
 ### Options
 
 **A. Adopt the suggested values for every tier.**
-- Pros: testing can start now. Every value has a source or is labelled a SpycFit choice.
+- Pros: testing can start now. Every value has a source or is labelled an agent proposal.
 - Cons: T2 rests on one comparison limited by print precision, and T4 on none.
 - Risks: an inflated u can hide a poor fit. If the T4 floors are wrong, tests must be rewritten.
 

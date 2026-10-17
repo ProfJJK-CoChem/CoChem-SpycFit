@@ -2,7 +2,7 @@
 
 | Field | Value |
 | :--- | :--- |
-| Status | ANSWERED (agent). DECIDED only after the PI approves the PR that contains this record. |
+| Status | ANSWERED in part (agent). DECIDED only after the PI approves the PR that contains this record. |
 | Answered | 2026-10-17 (three replies) |
 | Answered by | PI (Dr. Joshua John Klaassen) |
 | Source | conversation 2026-10-17 (agent question and PI reply quoted below) |
@@ -21,18 +21,45 @@ with suggested values for each technique?"
 
 The PI replied: "20 prefilled. Research default values from publications"
 
-The agent then sent a brief (`docs/handoff/briefs/D-SPYC-20_prefills_2026-10-17.md`) with a
-per-technique table (option D20-TABLE) or one preset per technique family (D20-FAMILY), and three
-J_max options: a population rule (D20-JPOP), a line-intensity rule (D20-JLINE) or a fixed value
-per technique (D20-JFIX). It asked: "**To answer:** "D-SPYC-20 pre-fills: D20-TABLE, D20-JPOP",
-plus any value changes".
+The agent then sent a summary in the conversation, pointing to the full brief (a working copy,
+committed unchanged as `docs/handoff/briefs/D-SPYC-20_prefills_2026-10-17.md`). The summary
+offered D20-TABLE ("per-technique values as above") or D20-FAMILY ("one value per family (jets
+2 K, gas cells 300/296 K, condensed 298 K)"), and three J_max options: D20-JPOP (the population
+rule), D20-JLINE ("keep every line within 10⁻⁴ of the strongest") and D20-JFIX ("a fixed J_max
+per technique"). It ended: "**To answer:** "D-SPYC-20 pre-fills: D20-TABLE, D20-JPOP", plus any
+value changes, for example "jet mm-wave 10 K"."
 
 The PI replied: "D-SPYC-20 pre-fills: D20-TABLE, D20-JPOP"
 
-### Pre-filled values (D20-TABLE)
+### Table the PI answered (D20-TABLE as presented)
 
-Parentheses give the range in the sources read; * marks an agent proposal not taken from a paper.
-A value outside its range produces a warning, not a block.
+Quoted from the summary. Ranges seen in papers are in brackets; * marks an agent proposal, not a
+value from a paper.
+
+| Technique | Temperature | Window | Third box | Evidence |
+| :--- | :--- | :--- | :--- | :--- |
+| CP-FTMW jet | 2 K (0.4–10) | 2–18 GHz (2–40) | J_max rule | Moderate |
+| Cavity FTMW jet | 2 K (0.5–10) | 2–26.5 GHz | J_max rule | Good |
+| mm-wave jet | 7 K (5–20) | 60–95 GHz | J_max rule | Thin |
+| Room-temperature cell, mm/sub-mm/THz | 300 K | 75–500 GHz; THz 500–1500 GHz | J_max rule | Good |
+| LN₂-cooled cell | 130 K | as above | J_max rule | Thin |
+| IR, gas cell | 296 K | band ±50 cm⁻¹* | J_max rule | Good |
+| IR, jet | 10 K (6–50) | band ±50 cm⁻¹* | J_max rule | Moderate |
+| Band contour, gas | 298 K | band ±50 cm⁻¹* | J_max rule; line width 1 cm⁻¹ | Moderate |
+| NIR, gas cell | 296 K | 5000–6600 cm⁻¹ | J_max rule | Thin |
+| Raman, gas | 296 K | vibrational 0–4200*, rotational 0–300* cm⁻¹ | J_max rule | Thin |
+| Condensed IR / Raman / NIR | 298 K | IR 400–4000*, Raman 100–2000, NIR 4000–10000 cm⁻¹ | band width 10 cm⁻¹ (no J_max) | Thin |
+| THz-TDS, condensed | 295 K (78 K if cryogenic) | 20–120 cm⁻¹ | band width 5 cm⁻¹ | Thin |
+
+### Detail in the full brief that the summary did not show (needs PI confirmation)
+
+The full brief's table, reproduced below, adds: a row for computation-led work and PES refinement
+(P13, P14: "Row of the data fitted"); a uniform-flow entry in the mm-wave row; an optional NIR
+intensity cutoff of 1e-25 cm/molecule at 296 K; published ranges for rows where the summary showed
+none; key DOIs; and line-width definitions. The summary's "band width 10 cm⁻¹" is a Lorentzian
+half width at half maximum (HWHM) in the brief, its "band width 5 cm⁻¹" a Lorentzian full width
+at half maximum (FWHM), and its "line width 1 cm⁻¹" an FWHM, so the two condensed-phase entries
+differ in definition by a factor of two.
 
 |Profile|Technique|T (range)|Window (range)|Third box|Evidence|Key DOIs|
 |---|---|---|---|---|---|---|
@@ -68,13 +95,16 @@ A value outside its range produces a warning, not a block.
   whether each value came from the user or from a preset.
 - The fields are pre-filled with per-technique values drawn from published practice. The user
   can change every pre-filled value, and provenance records that it was a pre-filled default.
-- The values in the table above are the named defaults under AGENTS.md. Each is recorded in
-  provenance as a pre-filled default together with its evidence grade from the table's
-  Evidence column; rows graded "Thin" are shown to the user as provisional (as the brief
-  recommended).
+- Once this record is DECIDED, the values in the table the PI answered are the named defaults
+  under AGENTS.md. Each is recorded in provenance as a pre-filled default together with its
+  evidence grade; rows graded "Thin" are shown to the user as provisional until the PI's own
+  data replace them (as the summary and the brief proposed). A value outside its bracketed range
+  produces a warning, not a block.
 - J_max is computed by the D20-JPOP rule above, without a cap. Condensed-phase rows, where J_max
-  does not apply, record J_max as "not applicable" and use the band-width value in the third
-  box.
+  does not apply, record J_max as "not applicable" and use the table's third-box entry (a
+  Lorentzian line width; for condensed NIR, also "up to 2 quanta").
+- Still open: the PI's confirmation of the full-brief detail listed above; how temperature and
+  J_max map onto XIAM, BELGI and RAM36 inputs (not researched).
 - The 300 K reference for microwave cells and 296 K for IR and NIR cells is an agent choice,
   following the JPL/CDMS (300 K) and HITRAN (296 K) conventions.
 
