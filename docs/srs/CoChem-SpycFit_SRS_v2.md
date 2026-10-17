@@ -419,10 +419,9 @@ Owner: `io/pickett`, `fit`, `catalog`.
   PI-determined use rights and whether the engine may be redistributed, and an engine without
   recorded rights SHALL NOT be bundled.
   *Source* R1-16; errata row 9 · Core · I, V-RUN-08 · proposed; use rights blocked on D-SPYC-17
-- **SF-RUN-009** Pickett sources. SPFIT, SPCAT, DPFIT and DPCAT SHALL be built only from the calpgm
-  source files
-  published at `https://spec.jpl.nasa.gov/ftp/pub/calpgm/` whose SHA-256 match a recorded source
-  manifest.
+- **SF-RUN-009** Pickett sources. SPFIT, SPCAT, DPFIT and DPCAT SHALL be built only from the
+  calpgm source files published at `https://spec.jpl.nasa.gov/ftp/pub/calpgm/` whose SHA-256
+  match a recorded source manifest.
   *Source* D-SPYC-17 (PI 2026-10-17) · Core · T, V-RUN-09 · proposed
 
 ### 4.2 Experimental input
