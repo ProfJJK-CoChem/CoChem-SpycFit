@@ -111,6 +111,10 @@ from cochem_spycfit.serialization import (
     write_spycfit_telemetry,
 )
 from cochem_spycfit.core_engine.cochem_spycfit_state import CommitManager, FitState
+from cochem_spycfit.serialization.cochem_spycfit_pickett_output import (
+    PickettOutputError,
+    parse_spfit_fit,
+)
 
 logger = logging.getLogger("Test.SerializationInit")
 
@@ -148,7 +152,9 @@ H2O_TRANSITIONS: Tuple[Tuple[int, int, int, int, int, int, float], ...] = (
     (5, 1, 4, 5, 0, 5, 2264148.770),
 )
 
-# Authentic Pickett SPFIT .fit output text
+# Invented text in a .fit-like layout. It is NOT SPFIT output: genuine SPFIT writes a
+# different layout (see tests/test_cochem_spycfit_pickett_output.py). Kept only because
+# the Pickett bridge parser test below still uses it (follow-up in the Phase 0 inventory).
 AUTHENTIC_FIT_OUTPUT: str = (
     "WATER (H2O) GROUND STATE ROTATIONAL SPECTRUM FIT\n"
     "MICROWAVE RMS = 0.0042   STANDARD ERROR OF FIT = 0.8412   VARIANCE = 0.7076\n"
@@ -290,14 +296,17 @@ class TestSerializationInitExports:
         assert SPFIT_WATSON_A_PARAM_MAP["dJ"] == 40100
         assert SPFIT_WATSON_A_PARAM_MAP["dK"] == 41000
 
+        # Reverse names give the value SPFIT stores: -DJ at 200, -DJK at 1100, -DK at 2000,
+        # -dK at 41000. Code 40100 is -dJ (A reduction) or d1 (S reduction), so it has no
+        # reduction-free name. At 7e42507 these were named DJ, DJK, DK, dJ, dK (sign error).
         assert PARAM_ID_TO_NAME_MAP[10000] == "A"
         assert PARAM_ID_TO_NAME_MAP[20000] == "B"
         assert PARAM_ID_TO_NAME_MAP[30000] == "C"
-        assert PARAM_ID_TO_NAME_MAP[200] == "DJ"
-        assert PARAM_ID_TO_NAME_MAP[1100] == "DJK"
-        assert PARAM_ID_TO_NAME_MAP[2000] == "DK"
-        assert PARAM_ID_TO_NAME_MAP[40100] == "dJ"
-        assert PARAM_ID_TO_NAME_MAP[41000] == "dK"
+        assert PARAM_ID_TO_NAME_MAP[200] == "-DJ"
+        assert PARAM_ID_TO_NAME_MAP[1100] == "-DJK"
+        assert PARAM_ID_TO_NAME_MAP[2000] == "-DK"
+        assert 40100 not in PARAM_ID_TO_NAME_MAP
+        assert PARAM_ID_TO_NAME_MAP[41000] == "-dK"
 
 
 class TestDualTreeParity:
@@ -368,7 +377,9 @@ class TestFunctionalPhysicalSmoke:
         assert "4.35351717" in var_text
         assert "2.78138700" in var_text
 
-        lin_text = SpfitSandbox.format_lin_file(H2O_TRANSITIONS)
+        # 0.1 MHz and weight 1.0 are formatting inputs, not measured uncertainties; the
+        # writer refuses lines without an uncertainty.
+        lin_text = SpfitSandbox.format_lin_file(tuple(t + (0.1, 1.0) for t in H2O_TRANSITIONS))
         data_lines = [ln for ln in lin_text.splitlines() if ln.strip() and not ln.startswith("!")]
         assert len(data_lines) == len(H2O_TRANSITIONS)
         assert "556935.985" in lin_text
@@ -405,18 +416,31 @@ class TestFunctionalPhysicalSmoke:
         assert abs(parsed.residuals[0].residual_mhz - 0.0038) < 1e-4
 
     def test_spfit_sandbox_static_fit_parser(self) -> None:
-        """Verify SpfitSandbox._parse_fit_file_static parses on-disk .fit files."""
+        """Verify SpfitSandbox._parse_fit_file_static parses on-disk .fit files.
+
+        Uses the .fit SPFIT itself wrote for the JPL HCO example (tests/pickett_reference.py).
+        At 7e42507 this test used AUTHENTIC_FIT_OUTPUT, which is not SPFIT's layout; the
+        parser now rejects that text.
+        """
+        from pickett_reference import hco_example
+
+        hco = hco_example()
         with tempfile.TemporaryDirectory() as temp_dir:
-            fit_file = Path(temp_dir) / "water.fit"
-            fit_file.write_text(AUTHENTIC_FIT_OUTPUT, encoding="utf-8")
+            fit_file = Path(temp_dir) / "hco.fit"
+            fit_file.write_text(hco["hco.fit"], encoding="utf-8")
 
             parsed = SpfitSandbox._parse_fit_file_static(fit_file)
-            assert abs(parsed["rmsd_khz"] - 2.835) < 0.01
-            assert parsed["n_lines"] == 5
-            assert parsed["constants"]["A"] == pytest.approx(835840.288, rel=1e-5)
-            assert parsed["constants"]["B"] == pytest.approx(435351.717, rel=1e-5)
-            assert parsed["constants"]["C"] == pytest.approx(278138.700, rel=1e-5)
-            assert len(parsed["residuals"]) == 5
+            report = parse_spfit_fit(hco["hco.fit"])
+            assert parsed["rmsd_khz"] == pytest.approx(report.final.microwave_rms_mhz * 1000.0)
+            assert parsed["n_lines"] == len(report.final.residuals)
+            assert parsed["parameter_source"] == "fit"
+            assert parsed["constants"]["A"] == report.final.parameters[11].value
+            assert len(parsed["residuals"]) == len(report.final.residuals)
+
+            invented = Path(temp_dir) / "water.fit"
+            invented.write_text(AUTHENTIC_FIT_OUTPUT, encoding="utf-8")
+            with pytest.raises(PickettOutputError):
+                SpfitSandbox._parse_fit_file_static(invented)
 
     def test_fair_exporter_full_pipeline_execution(self) -> None:
         """Verify FairExporter generates publication tables, methods paragraph, and Parquet."""
@@ -438,7 +462,9 @@ class TestFunctionalPhysicalSmoke:
             assert "methods_tex" in outputs
             assert "parquet" in outputs
             assert "var" in outputs
-            assert "lin" in outputs
+            # No .lin without measurement uncertainties; the reason is written instead.
+            assert "lin" not in outputs
+            assert "lin_absent" in outputs
 
             for path in outputs.values():
                 assert path.exists(), f"Generated export file missing: {path}"
@@ -446,13 +472,13 @@ class TestFunctionalPhysicalSmoke:
             # Verify publication table contains Deluxetable and rotational constants
             tex_content = outputs["constants_table_tex"].read_text(encoding="utf-8")
             assert r"\begin{deluxetable}" in tex_content
-            assert "835840.288000" in tex_content
-            assert "435351.717000" in tex_content
-            assert "278138.700000" in tex_content
+            assert "835840.288 & {unknown}" in tex_content
+            assert "435351.717 & {unknown}" in tex_content
+            assert "278138.7 & {unknown}" in tex_content
 
-            # Verify methods paragraph contains degrees of freedom and RMSD
+            # The methods paragraph does not assert a reduction the fit state does not record.
             methods_content = outputs["methods_tex"].read_text(encoding="utf-8")
-            assert "Watson" in methods_content
+            assert "Watson" not in methods_content
             assert r"\SI{4.20}{kHz}" in methods_content
 
             # Verify Parquet table is readable

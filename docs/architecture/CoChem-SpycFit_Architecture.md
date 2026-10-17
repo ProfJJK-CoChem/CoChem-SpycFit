@@ -1,0 +1,100 @@
+# CoChem-SpycFit architecture
+
+| Field | Value |
+| :--- | :--- |
+| Status | **Draft 0: structure and proposals only.** Nothing here is approved. The PI approves this document together with SRS v2 at gate G1. |
+| Depends on | `docs/srs/CoChem-SpycFit_SRS_v2.md` (Draft 1, 2026-10-16, updated 2026-10-17); the PI's 2026-10-16 decisions in `docs/HANDOFF.md`; PI decisions D-SPYC-01, 02, 03, 04, 05, 07, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21 and 22 in `docs/handoff/PI_DECISIONS.md` and `docs/decisions/`. |
+| Model | `CoChem-TORQ/docs/wiki/CoChem-TORQ_Implementation_SRS.md` §3 (context flowchart and component table with required error behaviour). |
+| Proposal source | Review finding ARCH-30 (`docs/wiki/review/CoChem-SpycFit_SRS_Review_findings.json`), corrected by `docs/handoff/REVIEW_ERRATA.md`. |
+
+The text in §1-§5 is a **proposal** for discussion with the PI. Do not implement from it before
+G1.
+
+---
+
+## 1. Context
+
+_To write after D-SPYC-01 and D-SPYC-16: one diagram and one table._
+
+Proposed context, consistent with the TORQ SRS ownership statement (§1.2):
+
+- **TOPOS** finds conformers and binding topologies.
+- **TORQ** runs quantum chemistry. It exports predicted constants as a versioned HDF5 bundle
+  (TORQ-EXP-004) and Pickett prediction inputs (TORQ-EXP-002). It produces predicted catalogs
+  (TORQ-SPEC-001 spectral-catalog stage, D12) through its own pinned SPCAT backend.
+  - The HDF5 bundle exporter does not exist yet.
+  - The legacy `tar.zst` payload exporter in TORQ `Libraries/` is not a contract.
+- **BASE** owns the shared services:
+  - discovers modules (`cochem.modules` entry point; `spycfit` registered);
+  - hands work over with `cochem.module-handoff/1` manifests (`load_module_handoff`), which today
+    accept only geometries, Hessians and calculation-result JSON;
+  - supplies artifact and scratch roots;
+  - hosts the Voila UI;
+  - owns durable task state (TORQ D08).
+  BASE also declares `pickett_export`, `pgopher_export` and `spectroscopy_snapshot` boundaries
+  for SpycFit (`CoChem-BASE/src/cochem_base/interfaces/cochem_pyckett_bridge.py`,
+  `cochem_pgopher_bridge.py`, `cochem_vibspyc_snap.py`; not the vendored copy in this
+  repository), which SRS v2 §4.4 must accept, rename or retire.
+- **The user** supplies the experimental spectrum or peak list, nuclear-spin weights and
+  assignment decisions.
+- **SpycFit** supports assignment and fits through the pinned SPFIT/SPCAT and its native path. It
+  produces every catalog it makes itself, from fitted, edited, user-supplied or computed constants,
+  labelled with its producer and the origin of the constants (D-SPYC-16, PI 2026-10-17: split by
+  producer), and exports results to the BASE artifact root. The PI named the module SPYFY on
+  2026-10-17 (D-SPYC-22); this document keeps "SpycFit" until the rename PR.
+
+## 2. Package layout (proposal)
+
+A single package `src/cochem_spycfit/`, pure Python, CPU first. Candidate subpackages:
+
+| Subpackage | Responsibility | Open decisions |
+| :--- | :--- | :--- |
+| `io/pickett` | Read and write `.par`, `.var`, `.int`, `.lin`, `.cat`, `.egy`, `.fit` with their roles; round-trip against the pinned binaries on scratch copies. | D-SPYC-17 (JPL sources chosen; DPFIT/DPCAT and TORQ's pin open); whether `pyckett` is a runtime dependency or a test-only cross-check |
+| `io/experimental` | Spectrum and peak-list input; peak picking with an uncertainty model. | Instrument formats from the PI |
+| `contract` | TORQ bundle reader and schema-version negotiation (later); BASE handoff receiver; direct-input reader for user-supplied ORCA and Pickett files; GEOM payload; configuration model. | D-SPYC-19 (ORCA quantities and parser); joint contracts with TORQ, BASE and GEOM |
+| `model` | Only if D-SPYC-18 is B or C: in-process Hamiltonian (Watson A/S, quadrupole hyperfine, multi-state) and eigenvalue labelling. Each term must reproduce SPCAT before its output is shown (SF-HAM-001). SF-CMP-021 results are reported with the comparison, not gated (D-SPYC-14, PI 2026-10-17). The engine architecture (GPU and array parallelism, on-the-fly recalculation, autodiff) waits for the research the PI requested on 2026-10-17 (`docs/decisions/D-SPYC-04.md`). | D-SPYC-07, 11, 18; the GPU research |
+| `diag` | κ, inertial defect and planar moments from any set of constants, checked against published values. | D-SPYC-12 |
+| `catalog` | Intensities with user spin weights and catalogs at T_rot, through the pinned SPCAT (or `model` where D-SPYC-18 allows); every catalog labelled with its producer and the origin of its constants, consumed catalogs keeping their producer label (D-SPYC-16 D). | D-SPYC-13, 17, 20 |
+| `fit` | Driver for the pinned SPFIT as fit of record (subprocess, scratch directory, timeouts, parsers); in-process sensitivity and what-if support. | D-SPYC-01 |
+| `assign` | Prediction catalogs, search windows with the D-SPYC-21 per-method-class defaults (SF-WIN-001..003), candidate ranking, pattern tools, the human assignment loop, `.lin` generation from approved assignments only. | D-SPYC-13 |
+| `campaign` | Isotopologues and conformers; fitted constants per isotopologue for GEOM, which owns structure determination (D-SPYC-10). | GEOM payload schema |
+| `session` | One versioned project file per campaign; single writer; event log; session parameters (temperature, window, J_max) set before predictions and editable (D-SPYC-20). | D-SPYC-20 (full-brief detail to confirm; XIAM/BELGI/RAM36 mappings) |
+| `ui` | One UI stack calling the same headless API, delivered as a notebook that BASE's Voila renders in a SpycFit-environment kernel on one port (D-SPYC-05 H2); HPC headless in the first release. | D-SPYC-05 (toolkit, after the usability research the PI requested) |
+| `export` | Complete Pickett set, publication tables, refinement request as a BASE handoff kind with a SpycFit-drafted schema mapped to `cochem.torq.request/1` for TORQ (D-SPYC-03 A, staged), BASE handoff back. | BASE adding the handoff kind; a receiver |
+| `compare` | The SPCAT/SPFIT comparison stages, comparability records, tolerance tiers and statuses (SRS v2 §5.6). | D-SPYC-14, 17, 18 |
+| `bench` | Benchmark registry: reference records, redistribution classes, fetch-and-verify, lineage partitions (SRS v2 §4.6). | D-SPYC-14 |
+| `vib` | Vibrational, rovibrational, Raman, THz and near-IR models and envelope fitting (SRS v2 §1.2 profiles P6-P12). | D-SPYC-06; owner of vibrational predictions |
+
+## 3. State (proposal)
+
+- One project file per campaign under the BASE artifact root, written by one writer.
+- Kernel memory is a cache, never the record.
+- SPFIT/SPCAT work files go under the BASE scratch root.
+- The source tree is never written at run time.
+- No shared databases and no daemons. SpycFit never writes another module's task state.
+
+## 4. Process boundaries (proposal)
+
+- In process: file I/O, the optional model, assignment, UI and export.
+- Subprocess: the pinned SPFIT, SPCAT, DPFIT and DPCAT (and XIAM, ERHAM, PGOPHER or STRFIT if
+  selected), located through configuration. A missing program raises a typed error; nothing
+  substitutes for it.
+- Never launched by SpycFit: TORQ, ORCA, CFOUR, PySCF or any quantum-chemistry engine.
+
+## 5. Deployment targets (proposal)
+
+- Codespaces under BASE (the default for students).
+- A local Linux, WSL2 or macOS workstation.
+- An HPC login node (API and CLI only in the first release; D-SPYC-05, PI 2026-10-17).
+
+GitHub Actions is CI only. Each target needs its own acceptance evidence: a clean install, the
+SPFIT/SPCAT round trip, and, except on HPC, a UI journey on a reference complex.
+
+## 6. Error behaviour
+
+_To write: per component, the typed errors and the explicit missing-value states it can return
+(model on the TORQ SRS §3 component table and the TORQ-DATA-002 absent states)._
+
+## 7. Mapping to requirements
+
+_To write after SRS v2 ids exist: component to requirement ids to acceptance tests._

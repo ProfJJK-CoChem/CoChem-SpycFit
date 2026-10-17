@@ -71,7 +71,11 @@ def create_water_landscape_h5(h5_path: Path, uuid_str: str) -> Path:
 
 
 class DirectSpfitValidator:
-    """Validator object providing run_spfit protocol."""
+    """Interface stand-in for the run_spfit protocol.
+
+    It is not SPFIT: its numbers are test inputs that let the export layout be checked.
+    Genuine SPFIT runs are tested in tests/test_cochem_spycfit_pickett_output.py.
+    """
 
     def __init__(self, uncertainties: Dict[str, float], rmsd_khz: float) -> None:
         self._uncertainties = uncertainties
@@ -89,7 +93,6 @@ class DirectSpfitValidator:
             "rmsd_khz": self._rmsd_khz,
             "n_lines": len(assignments),
             "exit_code": 0,
-            "parity_status": "PASS",
         }
 
 
@@ -147,7 +150,8 @@ def test_fair_exporter_finalize_full_pipeline(tmp_path: Path) -> None:
     assert "methods_tex" in outputs
     assert "parquet" in outputs
     assert "var" in outputs
-    assert "lin" in outputs
+    assert "lin" not in outputs
+    assert "lin_absent" in outputs
 
     # 2. Verify all files exist
     for file_key, out_file in outputs.items():
@@ -157,17 +161,18 @@ def test_fair_exporter_finalize_full_pipeline(tmp_path: Path) -> None:
     # 3. Verify constants table LaTeX
     table_content = outputs["constants_table_tex"].read_text(encoding="utf-8")
     assert r"\begin{deluxetable}{lSSs}" in table_content
-    assert r"\tablecaption{Spectroscopic Constants\label{tab:constants}}" in table_content
+    assert r"\tablecaption{Spectroscopic Constants (SpycFit fit state)\label{tab:constants}}" in table_content
     assert r"\tablehead{\colhead{Parameter} & \colhead{Value} & \colhead{Uncertainty} & \colhead{Unit}}" in table_content
     assert r"\startdata" in table_content
-    assert "A & 835840.300000" in table_content
-    assert "B & 435351.700000" in table_content
-    assert "C & 278139.800000" in table_content
-    assert "DJ & 37.600000" in table_content
-    assert "DJK & -172.000000" in table_content
-    assert "DK & 648.000000" in table_content
-    assert r"{MHz}" in table_content
-    assert r"{kHz}" in table_content
+    # FitState holds no uncertainties, so they read unknown (SF-OUT-002); values keep
+    # full precision and constants stored in MHz are labelled MHz.
+    assert "A & 835840.3 & {unknown} & {MHz}" in table_content
+    assert "B & 435351.7 & {unknown} & {MHz}" in table_content
+    assert "C & 278139.8 & {unknown} & {MHz}" in table_content
+    assert "DJ & 37.6 & {unknown} & {MHz}" in table_content
+    assert "DJK & -172.0 & {unknown} & {MHz}" in table_content
+    assert "DK & 648.0 & {unknown} & {MHz}" in table_content
+    assert r"{kHz}" not in table_content
     assert r"\enddata" in table_content
     assert r"\end{deluxetable}" in table_content
 
@@ -185,8 +190,9 @@ def test_fair_exporter_finalize_full_pipeline(tmp_path: Path) -> None:
 
     # 5. Verify methods paragraph
     methods_content = outputs["methods_tex"].read_text(encoding="utf-8")
-    assert "Watson's $A$-reduction" in methods_content
-    assert "$I^r$ representation" in methods_content
+    # The fit state records no reduction or representation, so none is asserted.
+    assert "Watson's $A$-reduction" not in methods_content
+    assert "reduction and representation are not recorded" in methods_content
     assert "A total of 5 transitions were included in the fit" in methods_content
     assert "$J = 6$" in methods_content
     assert "$K_a = 2$" in methods_content
@@ -230,20 +236,12 @@ def test_fair_exporter_finalize_full_pipeline(tmp_path: Path) -> None:
         assert param_name in water_constants
         assert float(val_str) == pytest.approx(water_constants[param_name])
 
-    # 8. Verify legacy .lin file formatting
-    lin_content = outputs["lin"].read_text(encoding="ascii")
-    lin_lines = [l for l in lin_content.splitlines() if l.strip()]
-    assert len(lin_lines) == 5
-    for line, authentic_entry in zip(lin_lines, water_assignments):
-        ju = int(line[0:3])
-        kau = int(line[3:6])
-        kcu = int(line[6:9])
-        jl = int(line[9:12])
-        kal = int(line[12:15])
-        kcl = int(line[15:18])
-        freq = float(line[18:31])
-        assert (ju, kau, kcu, jl, kal, kcl) == authentic_entry[0:6]
-        assert freq == pytest.approx(authentic_entry[6], abs=1e-4)
+    # 8. No legacy .lin without measurement uncertainties; the reason is recorded.
+    # At 7e42507 every line was written with an invented 0.0050 MHz uncertainty.
+    assert not (export_dir / "cochem_export.lin").exists()
+    absent_text = outputs["lin_absent"].read_text(encoding="utf-8")
+    assert "carry no measurement uncertainties" in absent_text
+    assert "5 locked assignments" in absent_text
 
 
 def test_fair_exporter_with_spfit_wrapper(tmp_path: Path) -> None:
@@ -284,10 +282,17 @@ def test_fair_exporter_with_spfit_wrapper(tmp_path: Path) -> None:
         landscape_h5_path=None,
     )
 
+    # Regression: at 7e42507 the table paired fit-state values with SPFIT uncertainties
+    # (amendment §5). Each result now has its own table (SF-OUT-001).
     table_content = outputs["constants_table_tex"].read_text(encoding="utf-8")
-    assert "A & 835840.300000 & 0.051200" in table_content
-    assert "B & 435351.700000 & 0.032100" in table_content
-    assert "C & 278139.800000 & 0.021000" in table_content
+    assert "A & 835840.3 & {unknown} & {MHz}" in table_content
+    assert "0.0512" not in table_content
+
+    spfit_table = outputs["spfit_constants_table_tex"].read_text(encoding="utf-8")
+    assert "SPFIT" in spfit_table
+    assert "A & 835840.3 & 0.0512 & {MHz}" in spfit_table
+    assert "B & 435351.7 & 0.0321 & {MHz}" in spfit_table
+    assert "C & 278139.8 & 0.021 & {MHz}" in spfit_table
 
 
 def test_fair_exporter_missing_optional_files(tmp_path: Path) -> None:
@@ -394,5 +399,7 @@ def test_fair_exporter_various_distortion_units(tmp_path: Path) -> None:
     assert "Delta_K" in table_content
     assert "delta_J" in table_content
     assert "delta_K" in table_content
-    assert r"{kHz}" in table_content
+    # Regression: these MHz values were labelled kHz without conversion (amendment §5).
+    assert r"{kHz}" not in table_content
+    assert "Delta_J & 0.0376 & {unknown} & {MHz}" in table_content
 

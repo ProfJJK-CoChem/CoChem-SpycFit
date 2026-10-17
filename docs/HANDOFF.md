@@ -2,6 +2,10 @@
 
 Date: October 16, 2026 (America/Chicago)
 
+Later on the same day the work continued in PR #1: see `docs/handoff/AGENT_HANDOFF.md` (current
+state and next steps), `docs/evidence/phase0_inventory.md` (test baseline and the defects
+corrected) and `docs/srs/CoChem-SpycFit_SRS_v2.md` (proposed SRS revision).
+
 ## Start here
 
 1. Read the [consolidated SRS](wiki/CoChem-SpycFit_Comprehensive_SRS.md).
