@@ -36,7 +36,7 @@ Sources:
 | D-SPYC-11 | Toolchain baseline | G1 (for SRS §6), Phase 2 code | A: Python 3.12, NumPy/SciPy, no JAX/CuPy, CPU only | OPEN |
 | D-SPYC-12 | Inertial-defect sign rule | SRS DIAG | Diagnostic flag, never automatic rejection | OPEN |
 | D-SPYC-13 | Dark dipole components | SRS INT/ASSIGN | De-prioritise in search; keep in archival catalogs | OPEN |
-| D-SPYC-14 | Benchmark set, data supply and tolerances | G1 | A: minimum set (see entry) | ANSWERED in part 2026-10-16 and 2026-10-17 (panel accepted; tolerances open) |
+| D-SPYC-14 | Benchmark set, data supply and tolerances | G1 | A: minimum set (see entry) | ANSWERED in part 2026-10-16 and 2026-10-17 (panel; tolerances A for T1-T3, B for T4; native no farther than SPFIT/SPCAT) |
 | D-SPYC-15 | Repository strategy | Phase 2 | A: tag legacy, build fresh in `src/cochem_spycfit/`, port proven modules | OPEN |
 | D-SPYC-17 | SPFIT/SPCAT source, pin and use rights | SRS §4.1; Phase 2 CI | A: one ecosystem pin shared with TORQ | ANSWERED in part 2026-10-17 (JPL sources; DPFIT/DPCAT included) |
 | D-SPYC-18 | In-process Hamiltonian model and its scope | SRS HAM; G1 | B: model limited to what SPCAT reproduces, used for windows and what-if | ANSWERED in part 2026-10-16 |
@@ -301,7 +301,7 @@ committing the files.
 > "Establish independent semirigid comparison first" (`docs/HANDOFF.md`); amendment §7 D-03: "Matched semirigid rotational models first, then separately validated extensions with explicit capability profiles."
 The literature review (R4-02) proposes a semirigid panel of CO, OCS, SO₂, H₂CO and propyne (SRS v2 §8.3) and notes that HCO is an open-shell case, valid as a file-handling regression but not as semirigid evidence. It also proposes four tolerance tiers (SF-CMP-008a); the forward tier for `.cat` comparisons would be half the 0.1 kHz print quantum plus a numerical bound.
 
-**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-14** first semirigid comparison panel (proposed: CO, OCS, SO₂, H₂CO, propyne)". The PI replied: "2. Yes, proceed." On tolerances the agent asked: "**D-SPYC-14** tolerance tiers and their starting values". The PI replied: "3. Research what limits are considered valid in publications from the last 5 years and give me suggestions." Record: `docs/decisions/D-SPYC-14.md`. Still open: tolerance tiers and values; reconciling the option A set with the accepted panel (R4-12).
+**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-14** first semirigid comparison panel (proposed: CO, OCS, SO₂, H₂CO, propyne)". The PI replied: "2. Yes, proceed." On tolerances the agent asked: "**D-SPYC-14** tolerance tiers and their starting values". The PI replied: "3. Research what limits are considered valid in publications from the last 5 years and give me suggestions." Record: `docs/decisions/D-SPYC-14.md`. On tolerances the agent sent a summary of suggested values and asked for "D-SPYC-14 (tolerances): A for T1-T3, B for T4" or a variant; the PI replied: "D-SPYC-14 (tolerances): A for T1-T3, B for T4 Additionally ensure that SpycFit predictions are equal or closer than SPCAT and SPFIT." (the second sentence on a new line). Record: `docs/decisions/D-SPYC-14.md`. Still open: confirmation of the full-brief tolerance detail and of the agent's reading of the additional instruction; search-window widths; tolerances outside the tiers; reconciling the option A benchmark set with the accepted panel (R4-12).
 
 
 ## D-SPYC-15 Repository strategy
