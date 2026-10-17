@@ -3,7 +3,7 @@
 | Field | Value |
 | :--- | :--- |
 | Status | ANSWERED in part (agent). DECIDED only after the PI approves the PR that contains this record. |
-| Answered | 2026-10-17 |
+| Answered | 2026-10-17 (two replies) |
 | Answered by | PI (Dr. Joshua John Klaassen) |
 | Source | conversation 2026-10-17 (agent question and PI reply quoted below) |
 
@@ -16,6 +16,11 @@ The PI replied: "10. These should be set at the beginning before the predictions
 happening, and then they should be boxes that can be modified and changed by the user as need
 be."
 
+The agent then asked: "**D-SPYC-20:** should the three boxes start empty, or come pre-filled
+with suggested values for each technique?"
+
+The PI replied: "20 prefilled. Research default values from publications"
+
 ## Consequences
 
 - Temperature, frequency window and J_max are set when a project or session is set up, before
@@ -24,9 +29,10 @@ be."
   prediction, window and catalog made with the old values stale until it is regenerated.
 - The values used are recorded in the provenance of every prediction, catalog and fit, with
   whether each value came from the user or from a preset.
-- Still open: whether the fields start empty or are pre-filled with per-technique presets, and
-  if pre-filled, the values. A preset counts as a default under AGENTS.md only if this record
-  names it.
+- The fields are pre-filled with per-technique values drawn from published practice. The user
+  can change every pre-filled value, and provenance records that it was a pre-filled default.
+- Still open: the pre-filled values themselves. The PI asked for them to be researched from
+  publications. A value counts as a default under AGENTS.md only once this record names it.
 
 ## Alternatives not chosen
 

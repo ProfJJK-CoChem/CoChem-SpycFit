@@ -172,7 +172,7 @@ TORQ produces the vibrational and Raman predictions these profiles use (D-SPYC-0
 | Module | Owns | SpycFit's relation |
 | :--- | :--- | :--- |
 | BASE | Module discovery (`cochem.modules`), handoff manifests (`cochem.module-handoff/1`), artifact and scratch roots, ingestion, the unified GUI, durable task state (TORQ D08) | Hard requirement (D-SPYC-19); registered module; receives and returns handoffs (§4.4) |
-| TOPOS | Conformer and binding-topology search | Dependency of the normal workflow, upstream of TORQ; no direct interface (D-SPYC-19) |
+| TOPOS | Conformer and binding-topology search | Always installed, because BASE requires it; upstream of TORQ; no direct interface (D-SPYC-19) |
 | TORQ | Quantum chemistry, predicted constants (TORQ-EXP-004, HDF5 bundle, not yet built), Pickett prediction inputs (TORQ-EXP-002), predicted catalogs (TORQ-SPEC-001, D12) | Consumer of TORQ bundles (§4.3); sender of refinement requests (SF-RUN-005) |
 | GEOM | Molecular geometry, including structure determination (r₀, r_s, r_m) | Receives fitted constants per isotopologue (SF-IF-008; D-SPYC-10) |
 | User-supplied files | Predicted ORCA output and Pickett files | Direct-input path that does not need TOPOS or TORQ (SF-IF-005; D-SPYC-19) |
@@ -307,8 +307,8 @@ From the pinned source (`calfit.c`) [R-6, R-7]:
   `cochem.constants.codata-2022-torq-compatible/1`. Blocked on D-SPYC-02.
 - Temperature, frequency window and J_max are session parameters. The user sets them before the
   first prediction and may change them at any time (D-SPYC-20, PI 2026-10-17; SF-SET-001 to
-  SF-SET-004). Whether the fields start empty or with per-technique presets is open; a preset is
-  a default only if D-SPYC-20 names it, and is then recorded in provenance as a default.
+  SF-SET-005). The fields are pre-filled per technique with values drawn from publications; the
+  values are pending, and each becomes a default only when D-SPYC-20 names it.
 
 ---
 
@@ -413,13 +413,14 @@ Owner: `io/pickett`, `fit`, `catalog`.
 - **SF-RUN-007** Provisioning acceptance per library. Each pinned Pickett build SHALL pass an
   acceptance run on scratch copies of the example shipped for its library (SPINV: HCO with SPFIT
   and SPCAT; DPI: NO with DPFIT and DPCAT), recording byte equality or the listed differences.
-  *Source* R1-02, R4-07 · Core · T, V-PICK-05 · proposed; the DPI part is blocked on D-SPYC-17
-  (DPFIT/DPCAT)
+  *Source* R1-02, R4-07; D-SPYC-17 (PI 2026-10-17: "include DPFIT/DPCAT") · Core · T, V-PICK-05 ·
+  proposed
 - **SF-RUN-008** Use rights recorded. Each external engine record SHALL state the source, the
   PI-determined use rights and whether the engine may be redistributed, and an engine without
   recorded rights SHALL NOT be bundled.
   *Source* R1-16; errata row 9 · Core · I, V-RUN-08 · proposed; use rights blocked on D-SPYC-17
-- **SF-RUN-009** Pickett sources. SPFIT and SPCAT SHALL be built only from the calpgm source files
+- **SF-RUN-009** Pickett sources. SPFIT, SPCAT, DPFIT and DPCAT SHALL be built only from the calpgm
+  source files
   published at `https://spec.jpl.nasa.gov/ftp/pub/calpgm/` whose SHA-256 match a recorded source
   manifest.
   *Source* D-SPYC-17 (PI 2026-10-17) · Core · T, V-RUN-09 · proposed
@@ -805,8 +806,12 @@ Owner: `assign`, `session`, `ui`.
   *Source* D-SPYC-20; SF-HITL-003a · Core · T, V-SET-03 · proposed
 - **SF-SET-004** Parameters in provenance. Every prediction, catalog and fit SHALL record the
   temperature, frequency window and J_max it used, and whether each value was entered by the
-  user or taken from a preset.
+  user or pre-filled as a default.
   *Source* D-SPYC-20; AGENTS.md (defaults recorded as defaults) · Core · T, V-SET-04 · proposed
+- **SF-SET-005** Pre-filled per technique. For each technique, the temperature, frequency window
+  and J_max fields SHALL be pre-filled with the values D-SPYC-20 lists for that technique.
+  *Source* D-SPYC-20 (PI 2026-10-17: "prefilled") · Core · T, V-SET-05 · proposed; blocked on
+  D-SPYC-20 (values)
 
 The UI toolkit is open decision D-SPYC-05. These requirements hold for any toolkit.
 
@@ -1243,7 +1248,7 @@ with its tolerance committed before the implementation PR (SF-VER-004).
 | V-LS-01..03 | Line-shape declarations; agreement with HAPI and analytic limits; chunked equals unchunked | analytical |
 | V-VIB-01..04, V-NIR-01, V-ROVIB-01, V-PHASE-01, V-RAMAN-01..03, V-THZ-01 | Profile-specific checks listed in the capability matrix | per profile |
 | V-HITL-01..03, V-UI-01..03 | Acceptance only by expert action; non-drag paths; stale marking; no older overwrite; views | software, demonstration |
-| V-SET-01..04 | No prediction before temperature, window and J_max are set; editable in UI and API; edits mark results stale; values and their origin in provenance | software, demonstration |
+| V-SET-01..05 | No prediction before temperature, window and J_max are set; editable in UI and API; edits mark results stale; values and their origin in provenance; pre-filled values equal the D-SPYC-20 table | software, demonstration |
 | V-DATA-01..07 | Reference-record fields, redistribution class, fetch-and-verify, lineage partitions, extrapolation labels | software |
 | V-OUT-01..06 | Coherent records, units, absent tokens, rounding reproduction check, provenance graph, SPFIT-first ordering | software |
 | V-RUN-01..09, V-SEC-01 | Offline run, provenance, resource limits, outcomes, refinement versions, verified identity, use rights, builds only from manifest-verified JPL sources, subprocess safety | software |
@@ -1320,9 +1325,9 @@ answered further questions on 2026-10-17. The entries below are ANSWERED (record
 | D-SPYC-04 Internal rotation | In scope after semirigid acceptance | Engines and order |
 | D-SPYC-14 Benchmarks | Semirigid first (D-03); §8.3 panel accepted (2026-10-17) | Tolerance tiers and values; one registry with the earlier set (R4-12) |
 | D-SPYC-03 Feedback to TORQ | PES refinement required, possibly in another module | Hand-off route |
-| D-SPYC-17 SPFIT/SPCAT source | JPL sources (2026-10-17) | DPFIT/DPCAT; TORQ's pin; storage of verified copies; `pyckett`; use rights |
-| D-SPYC-19 Dependencies | BASE is a hard requirement; TOPOS and TORQ are dependencies; ORCA and Pickett files are valid direct inputs (2026-10-17) | TOPOS/TORQ install-time or optional; ORCA quantities and parser |
-| D-SPYC-20 Session parameters | Set before predictions; editable fields (2026-10-17) | Empty fields or per-technique presets, and their values |
+| D-SPYC-17 SPFIT/SPCAT source | JPL sources; DPFIT/DPCAT included (2026-10-17) | TORQ's pin; storage of verified copies; `pyckett`; use rights |
+| D-SPYC-19 Dependencies | BASE is a hard requirement; TOPOS and TORQ come with BASE; ORCA and Pickett files are valid direct inputs (2026-10-17) | ORCA quantities and parser |
+| D-SPYC-20 Session parameters | Set before predictions; editable fields; pre-filled per technique from publications (2026-10-17) | The pre-filled values |
 | D-SPYC-10 Structure determination | Deferred to GEOM (2026-10-17) | GEOM payload schema |
 | D-01, D-02, D-03 | Divergence review at export; offline-capable core; semirigid first | Recorded as D-SPYC entries |
 
@@ -1334,7 +1339,7 @@ Questions raised by this draft:
 3. Who owns vibrational and Raman predictions? Answered 2026-10-17: TORQ (D-SPYC-06).
 4. Accept the semirigid panel of §8.3. Answered 2026-10-17 (D-SPYC-14); reconciliation with the
    earlier D-SPYC-14 set is open.
-5. Pin SPFIT/SPCAT. Source answered 2026-10-17: JPL (D-SPYC-17). DPFIT/DPCAT is open.
+5. Pin SPFIT/SPCAT. Answered 2026-10-17: JPL sources, with DPFIT/DPCAT included (D-SPYC-17).
 6. Accept the four tolerance tiers of SF-CMP-008a and set their values. Open; the PI asked for
    suggestions from publications of the last five years.
 

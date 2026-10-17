@@ -38,10 +38,10 @@ Sources:
 | D-SPYC-13 | Dark dipole components | SRS INT/ASSIGN | De-prioritise in search; keep in archival catalogs | OPEN |
 | D-SPYC-14 | Benchmark set, data supply and tolerances | G1 | A: minimum set (see entry) | ANSWERED in part 2026-10-16 and 2026-10-17 (panel accepted; tolerances open) |
 | D-SPYC-15 | Repository strategy | Phase 2 | A: tag legacy, build fresh in `src/cochem_spycfit/`, port proven modules | OPEN |
-| D-SPYC-17 | SPFIT/SPCAT source, pin and use rights | SRS §4.1; Phase 2 CI | A: one ecosystem pin shared with TORQ | ANSWERED in part 2026-10-17 (JPL sources) |
+| D-SPYC-17 | SPFIT/SPCAT source, pin and use rights | SRS §4.1; Phase 2 CI | A: one ecosystem pin shared with TORQ | ANSWERED in part 2026-10-17 (JPL sources; DPFIT/DPCAT included) |
 | D-SPYC-18 | In-process Hamiltonian model and its scope | SRS HAM; G1 | B: model limited to what SPCAT reproduces, used for windows and what-if | ANSWERED in part 2026-10-16 |
-| D-SPYC-19 | Dependency on the `cochem-base` package | SRS §4.4; Phase 2 | A: pinned dependency | ANSWERED in part 2026-10-17 (BASE required; direct input) |
-| D-SPYC-20 | Domain defaults (T_rot, window, J_max) | SRS §2 | T_rot 1.5 K; 2-22 GHz; J_max from population | ANSWERED in part 2026-10-17 (set first, editable) |
+| D-SPYC-19 | Dependency on the `cochem-base` package | SRS §4.4; Phase 2 | A: pinned dependency | ANSWERED in part 2026-10-17 (BASE required, TOPOS and TORQ through BASE; direct input) |
+| D-SPYC-20 | Domain defaults (T_rot, window, J_max) | SRS §2 | T_rot 1.5 K; 2-22 GHz; J_max from population | ANSWERED in part 2026-10-17 (set first, editable, pre-filled; values pending) |
 
 ---
 
@@ -338,7 +338,7 @@ Also decide where verified copies are kept, if JPL or GitHub content changes: a 
 repository, a release asset or an Actions cache. Also decide whether `pyckett` is a runtime
 dependency or a test-only cross-check.
 
-**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-17** SPFIT/SPCAT source and pin (JPL sources or TORQ's laserkelvin copy), and whether DPFIT/DPCAT are included". The PI replied: "1. JPL sources. What are DPFIT/DPCAT?" Record: `docs/decisions/D-SPYC-17.md`. Conflict: TORQ's validator accepts only laserkelvin/Pickett `f5af2ff` (`CoChem-TORQ/src/cochem_torq/spectroscopy/pickett_backend.py`); whether TORQ moves to the JPL build is a cross-repository question. Still open: DPFIT/DPCAT; where verified copies are kept; `pyckett`; use rights.
+**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-17** SPFIT/SPCAT source and pin (JPL sources or TORQ's laserkelvin copy), and whether DPFIT/DPCAT are included". The PI replied: "1. JPL sources. What are DPFIT/DPCAT?" Record: `docs/decisions/D-SPYC-17.md`. Conflict: TORQ's validator accepts only laserkelvin/Pickett `f5af2ff` (`CoChem-TORQ/src/cochem_torq/spectroscopy/pickett_backend.py`); whether TORQ moves to the JPL build is a cross-repository question. The agent then asked for "D-SPYC-17: include DPFIT/DPCAT" or "exclude"; the PI replied: "include DPFIT/DPCAT". The PI also asked: "What is the difference between SPCAT and SPFIT sources. Which is more reputable." (brief in preparation). Still open: where verified copies are kept; `pyckett`; use rights.
 
 ## D-SPYC-18 In-process Hamiltonian model and its scope
 
@@ -372,7 +372,7 @@ A native model therefore exists for compatible microwave models (option B or C).
 | **A (recommended).** `cochem-base` is a pinned dependency, used for `load_module_handoff`, the module registry and shared constants. The vendored copy in `src/cochem_base/` is removed. | One implementation; SpycFit follows BASE releases. |
 | B. SpycFit carries copies of the handoff schema and constants, with tests against BASE's versions. | Independent install; duplication guarded by tests. |
 
-**PI answer** (conversation 2026-10-17; dictated, quoted as received). The agent asked: "**D-SPYC-19** declare `cochem-base` as a dependency (it is vendored today)". The PI replied: "13. CoChem-BASE, TOPOS, and TORQ are all dependencies. However, there should be a way to input the predicted um Mhm. That settles that. Welcome to the no-chat or the predicted um orca files or SP um Cat SP fit files and have them read and act as a valid input rather than having to go through topo and torque. CoChem-BASE though is a hard requirement cuz that has the ingestion and the unified GUI." Record: `docs/decisions/D-SPYC-19.md`. Still open: whether TOPOS and TORQ are install-time requirements or optional; which ORCA outputs the direct-input path reads, and whose ORCA parser it uses.
+**PI answer** (conversation 2026-10-17; dictated, quoted as received). The agent asked: "**D-SPYC-19** declare `cochem-base` as a dependency (it is vendored today)". The PI replied: "13. CoChem-BASE, TOPOS, and TORQ are all dependencies. However, there should be a way to input the predicted um Mhm. That settles that. Welcome to the no-chat or the predicted um orca files or SP um Cat SP fit files and have them read and act as a valid input rather than having to go through topo and torque. CoChem-BASE though is a hard requirement cuz that has the ingestion and the unified GUI." Record: `docs/decisions/D-SPYC-19.md`. The agent then asked whether TOPOS and TORQ must be installed or are optional with direct input; the PI replied: "19 They are mandatory for CoChem BASE anyways so it is mute point." Still open: which ORCA outputs the direct-input path reads, and whose ORCA parser it uses.
 
 ## D-SPYC-20 Domain defaults
 
@@ -385,4 +385,4 @@ Recommended defaults, all user-overridable and recorded with every catalog and f
   at 30.
 - Line width from the instrument; the PI to supply typical CP-FTMW values.
 
-**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-20** default temperature, frequency window and J_max, now needed per technique (the old defaults were CP-FTMW only)". The PI replied: "10. These should be set at the beginning before the predictions start happening, and then they should be boxes that can be modified and changed by the user as need be." Record: `docs/decisions/D-SPYC-20.md`. Still open: whether the fields start empty or pre-filled with per-technique presets, and their values.
+**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-20** default temperature, frequency window and J_max, now needed per technique (the old defaults were CP-FTMW only)". The PI replied: "10. These should be set at the beginning before the predictions start happening, and then they should be boxes that can be modified and changed by the user as need be." Record: `docs/decisions/D-SPYC-20.md`. The agent then asked whether the boxes start empty or pre-filled; the PI replied: "20 prefilled. Research default values from publications". Still open: the pre-filled values (research in progress).

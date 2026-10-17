@@ -3,7 +3,7 @@
 | Field | Value |
 | :--- | :--- |
 | Status | ANSWERED in part (agent). DECIDED only after the PI approves the PR that contains this record. |
-| Answered | 2026-10-17 |
+| Answered | 2026-10-17 (two replies) |
 | Answered by | PI (Dr. Joshua John Klaassen) |
 | Source | conversation 2026-10-17 (agent question and PI reply quoted below) |
 
@@ -14,6 +14,12 @@ The agent asked, as item 1 of the list of decisions needed before the SRS can be
 DPFIT/DPCAT are included".
 
 The PI replied: "1. JPL sources. What are DPFIT/DPCAT?"
+
+The agent explained DPFIT/DPCAT (Pickett's `calfit.c`/`calcat.c` linked with `dpi.c`, "PACKAGE
+FOR DOUBLET PI", for molecules in a ²Π state such as NO and OH) and asked for "D-SPYC-17:
+include DPFIT/DPCAT" or "exclude".
+
+The PI replied: "include DPFIT/DPCAT"
 
 ## Consequences
 
@@ -32,12 +38,20 @@ The PI replied: "1. JPL sources. What are DPFIT/DPCAT?"
   `upstream_url` check). Whether TORQ moves to the JPL build is a cross-repository question for
   the PI and the TORQ maintainer. Until TORQ and SpycFit use one build, catalog parity between
   them (D-SPYC-16) needs a cross-build equivalence check.
-- Still open: whether DPFIT/DPCAT are built with SPFIT/SPCAT (the PI asked what they are);
-  where verified copies are kept if the JPL files change; whether `pyckett` is a runtime
-  dependency or a test-only cross-check; the use rights to record under SF-RUN-008.
+- DPFIT and DPCAT are built with SPFIT and SPCAT from the same JPL download. The source manifest
+  must add `dpi.c`, which the 2026-10-11 manifest omits. Their acceptance run uses JPL's NO
+  example (SF-RUN-007). An agent run on 2026-10-17 did not reproduce the shipped 1993 NO outputs
+  (DPFIT RMS ERROR 1.15158 against 1.1534; DPCAT 3,900 catalog lines against 1,131), and DPFIT
+  crashed when the shipped `no.var` was used as its parameter file. These differences are listed
+  in the acceptance record; until they are explained, DPFIT/DPCAT results are not used as
+  evidence.
+- Still open: where verified copies are kept if the JPL files change; whether `pyckett` is a
+  runtime dependency or a test-only cross-check; the use rights to record under SF-RUN-008. The
+  PI also asked how the available source copies differ and which is more reputable (brief in
+  preparation).
 
 ## Alternatives not chosen
 
 TORQ's laserkelvin/Pickett copy as SpycFit's source, and Kisiel's PROSPE binaries (option C),
-were not chosen. Whether the JPL build becomes the one ecosystem pin (option A with a jointly
+were not chosen. Excluding DPFIT/DPCAT was not chosen. Whether the JPL build becomes the one ecosystem pin (option A with a jointly
 chosen replacement) or a separate SpycFit pin (option B) depends on the TORQ question above.
