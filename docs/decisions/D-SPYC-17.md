@@ -23,7 +23,8 @@ The PI replied: "include DPFIT/DPCAT"
 
 The agent had reported that TORQ pins laserkelvin/Pickett and that "Either TORQ switches to the JPL
 build, or the two builds need a check that they give the same catalogs." After a preliminary
-comparison of the source copies, the PI replied: "Switch to the JPL source".
+comparison of the source copies, the PI replied: "Switch to the JPL source". Asked to confirm a
+change in TORQ itself, the PI replied: "Yes, change TORQ".
 
 ## Consequences
 
@@ -39,9 +40,9 @@ comparison of the source copies, the PI replied: "Switch to the JPL source".
 - Conflict with TORQ, stated as AGENTS.md requires: TORQ pins the laserkelvin/Pickett mirror at
   `f5af2ff0f1acb1eb11ecffe7ef3b55d457801f7b`, and its validator rejects any other upstream URL
   (`CoChem-TORQ/src/cochem_torq/spectroscopy/pickett_backend.py`, `SUPPORTED_COMMIT` and the
-  `upstream_url` check). The PI's reply "Switch to the JPL source" is read as moving TORQ to the
-  JPL build, so that the ecosystem has one Pickett source. The TORQ change is made on TORQ's own
-  branch and pull request; until it is merged, catalog parity between TORQ and SpycFit
+  `upstream_url` check). Following "Switch to the JPL source" and "Yes, change TORQ", TORQ is
+  moved to the JPL build in ProfJJK-CoChem/CoChem-TORQ#5 (draft), so that the ecosystem has one
+  Pickett source. Until that pull request is merged, catalog parity between TORQ and SpycFit
   (D-SPYC-16) still needs a cross-build equivalence check.
 - DPFIT and DPCAT are built with SPFIT and SPCAT from the same JPL download. The source manifest
   must add `dpi.c`, which the 2026-10-11 manifest omits. Their acceptance run uses JPL's NO
