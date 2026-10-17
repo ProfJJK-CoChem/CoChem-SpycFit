@@ -28,20 +28,20 @@ Sources:
 | D-SPYC-03 | Feedback to TORQ | SRS FB requirements; G1 | A: refinement-request file handed to BASE; a human approves any follow-up | ANSWERED in part 2026-10-16 |
 | D-SPYC-04 | Internal rotation and tunnelling | SRS LAM; G1 | C: defer to after the first release, then A or B | ANSWERED in part 2026-10-16 |
 | D-SPYC-05 | UI stack and hosting | SRS UI; G1 | ipywidgets + Plotly under Voila as a BASE tab, plus CLI | OPEN |
-| D-SPYC-06 | IR / Raman / UV-Vis in SpycFit | SRS §1.2 | None in SpycFit | ANSWERED in part 2026-10-16 |
+| D-SPYC-06 | IR / Raman / UV-Vis in SpycFit | SRS §1.2 | None in SpycFit | ANSWERED in part 2026-10-16 and 2026-10-17 (TORQ predicts; UV-Vis open) |
 | D-SPYC-07 | Eigenvalue label swaps during a fit | SRS HAM/FIT (only if D-SPYC-18 includes a model) | Halt and show the swap | OPEN |
 | D-SPYC-08 | Anti-gaming checks | G2 (hygiene PR) | Keep narrow hygiene checks; gate on literature tests, SPFIT/SPCAT round trip, whole-suite CI, PI review | OPEN |
 | D-SPYC-09 | Parallel-execution import ban | G2 | Lift the ban | OPEN |
-| D-SPYC-10 | Structure determination in v2 | SRS STR; G1 | In scope, gated by fluxionality | OPEN |
+| D-SPYC-10 | Structure determination in v2 | SRS STR; G1 | In scope, gated by fluxionality | ANSWERED 2026-10-17 (defer to GEOM) |
 | D-SPYC-11 | Toolchain baseline | G1 (for SRS §6), Phase 2 code | A: Python 3.12, NumPy/SciPy, no JAX/CuPy, CPU only | OPEN |
 | D-SPYC-12 | Inertial-defect sign rule | SRS DIAG | Diagnostic flag, never automatic rejection | OPEN |
 | D-SPYC-13 | Dark dipole components | SRS INT/ASSIGN | De-prioritise in search; keep in archival catalogs | OPEN |
-| D-SPYC-14 | Benchmark set, data supply and tolerances | G1 | A: minimum set (see entry) | ANSWERED in part 2026-10-16 |
+| D-SPYC-14 | Benchmark set, data supply and tolerances | G1 | A: minimum set (see entry) | ANSWERED in part 2026-10-16 and 2026-10-17 (panel accepted; tolerances open) |
 | D-SPYC-15 | Repository strategy | Phase 2 | A: tag legacy, build fresh in `src/cochem_spycfit/`, port proven modules | OPEN |
-| D-SPYC-17 | SPFIT/SPCAT source, pin and use rights | SRS §4.1; Phase 2 CI | A: one ecosystem pin shared with TORQ | OPEN |
+| D-SPYC-17 | SPFIT/SPCAT source, pin and use rights | SRS §4.1; Phase 2 CI | A: one ecosystem pin shared with TORQ | ANSWERED in part 2026-10-17 (JPL sources) |
 | D-SPYC-18 | In-process Hamiltonian model and its scope | SRS HAM; G1 | B: model limited to what SPCAT reproduces, used for windows and what-if | ANSWERED in part 2026-10-16 |
-| D-SPYC-19 | Dependency on the `cochem-base` package | SRS §4.4; Phase 2 | A: pinned dependency | OPEN |
-| D-SPYC-20 | Domain defaults (T_rot, window, J_max) | SRS §2 | T_rot 1.5 K; 2-22 GHz; J_max from population | OPEN |
+| D-SPYC-19 | Dependency on the `cochem-base` package | SRS §4.4; Phase 2 | A: pinned dependency | ANSWERED in part 2026-10-17 (BASE required; direct input) |
+| D-SPYC-20 | Domain defaults (T_rot, window, J_max) | SRS §2 | T_rot 1.5 K; 2-22 GHz; J_max from population | ANSWERED in part 2026-10-17 (set first, editable) |
 
 ---
 
@@ -168,7 +168,9 @@ Consistent with option C's ordering; internal rotation stays in scope.
 **Direction confirmed by the PI on 2026-10-16** (first recorded from `docs/HANDOFF.md` and amendment §7 on `main` at `488dc87`):
 
 > "IR, Raman, THz, near-IR, and microwave are first-class workflows with familiar interactions."
-This is option B or wider, against the recommendation. Still open: UV-Vis, and who produces vibrational and Raman predictions (TORQ or another provider; literature review R3-01).
+This is option B or wider, against the recommendation.
+
+**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-06** who produces vibrational and Raman predictions: TORQ, another provider or SpycFit". The PI replied: "4. TORQ." On UV-Vis the agent asked: "**D-SPYC-06** UV-Vis: in scope or out (you named IR, Raman, THz, NIR and MW only)". The PI replied: "20. Research then give suggestions, context, pros, cons, and risks. I think the calculations and requirements for fitting UV-Vis share little to no overlap with rotovibrational spectroscopy predictions." Record: `docs/decisions/D-SPYC-06.md`. Still open: UV-Vis.
 
 
 ## D-SPYC-07 Eigenvalue label swaps during a fit
@@ -215,7 +217,7 @@ Parsl elsewhere.
 
 ## D-SPYC-10 Structure determination in v2
 
-**Needed before:** SRS STR requirements; G1. **Status:** OPEN
+**Needed before:** SRS STR requirements; G1. **Status:** ANSWERED 2026-10-17; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-10.md`
 
 | Option | Consequence |
 | :--- | :--- |
@@ -223,7 +225,7 @@ Parsl elsewhere.
 | B. Defer to a later release. | Smaller v2. |
 | C. Delegate to Kisiel's STRFIT/KRA. | Less code; depends on external programs. |
 
-**PI answer:** _none yet_
+**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-10** structure determination (r₀, r_s, r_m): include or defer". The PI replied: "17. Defer to GEOM which is the molecular geometry module." Record: `docs/decisions/D-SPYC-10.md`. GEOM's plan already lists Pickett files and SpycFit JSON payloads as inputs and r₀/r_s/r_m outputs (`CoChem-GEOM/CoChem_GEOM_Workflow_Plan_v4.md`); the payload schema is a cross-repository item.
 
 ## D-SPYC-11 Toolchain baseline
 
@@ -299,6 +301,8 @@ committing the files.
 > "Establish independent semirigid comparison first" (`docs/HANDOFF.md`); amendment §7 D-03: "Matched semirigid rotational models first, then separately validated extensions with explicit capability profiles."
 The literature review (R4-02) proposes a semirigid panel of CO, OCS, SO₂, H₂CO and propyne (SRS v2 §8.3) and notes that HCO is an open-shell case, valid as a file-handling regression but not as semirigid evidence. It also proposes four tolerance tiers (SF-CMP-008a); the forward tier for `.cat` comparisons would be half the 0.1 kHz print quantum plus a numerical bound.
 
+**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-14** first semirigid comparison panel (proposed: CO, OCS, SO₂, H₂CO, propyne)". The PI replied: "2. Yes, proceed." On tolerances the agent asked: "**D-SPYC-14** tolerance tiers and their starting values". The PI replied: "3. Research what limits are considered valid in publications from the last 5 years and give me suggestions." Record: `docs/decisions/D-SPYC-14.md`. Still open: tolerance tiers and values; reconciling the option A set with the accepted panel (R4-12).
+
 
 ## D-SPYC-15 Repository strategy
 
@@ -315,7 +319,7 @@ The literature review (R4-02) proposes a semirigid panel of CO, OCS, SO₂, H₂
 ## D-SPYC-17 SPFIT/SPCAT source, pin and use rights
 
 **Needed before:** SRS §4.1 and the Phase 2 CI work. Decide jointly with the TORQ maintainer.
-**Status:** OPEN
+**Status:** ANSWERED in part 2026-10-17; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-17.md`
 
 TORQ already pins the laserkelvin/Pickett mirror at `f5af2ff` (gcc 14.2, binary hashes recorded,
 distribution status `unverified_not_bundled`). Student-image provisioning there is "blocked until
@@ -334,7 +338,7 @@ Also decide where verified copies are kept, if JPL or GitHub content changes: a 
 repository, a release asset or an Actions cache. Also decide whether `pyckett` is a runtime
 dependency or a test-only cross-check.
 
-**PI answer:** _none yet_
+**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-17** SPFIT/SPCAT source and pin (JPL sources or TORQ's laserkelvin copy), and whether DPFIT/DPCAT are included". The PI replied: "1. JPL sources. What are DPFIT/DPCAT?" Record: `docs/decisions/D-SPYC-17.md`. Conflict: TORQ's validator accepts only laserkelvin/Pickett `f5af2ff` (`CoChem-TORQ/src/cochem_torq/spectroscopy/pickett_backend.py`); whether TORQ moves to the JPL build is a cross-repository question. Still open: DPFIT/DPCAT; where verified copies are kept; `pyckett`; use rights.
 
 ## D-SPYC-18 In-process Hamiltonian model and its scope
 
@@ -361,18 +365,18 @@ A native model therefore exists for compatible microwave models (option B or C).
 
 ## D-SPYC-19 Dependency on the `cochem-base` package
 
-**Needed before:** SRS §4.4 and Phase 2. **Status:** OPEN
+**Needed before:** SRS §4.4 and Phase 2. **Status:** ANSWERED in part 2026-10-17; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-19.md`
 
 | Option | Consequence |
 | :--- | :--- |
 | **A (recommended).** `cochem-base` is a pinned dependency, used for `load_module_handoff`, the module registry and shared constants. The vendored copy in `src/cochem_base/` is removed. | One implementation; SpycFit follows BASE releases. |
 | B. SpycFit carries copies of the handoff schema and constants, with tests against BASE's versions. | Independent install; duplication guarded by tests. |
 
-**PI answer:** _none yet_
+**PI answer** (conversation 2026-10-17; dictated, quoted as received). The agent asked: "**D-SPYC-19** declare `cochem-base` as a dependency (it is vendored today)". The PI replied: "13. CoChem-BASE, TOPOS, and TORQ are all dependencies. However, there should be a way to input the predicted um Mhm. That settles that. Welcome to the no-chat or the predicted um orca files or SP um Cat SP fit files and have them read and act as a valid input rather than having to go through topo and torque. CoChem-BASE though is a hard requirement cuz that has the ingestion and the unified GUI." Record: `docs/decisions/D-SPYC-19.md`. Still open: whether TOPOS and TORQ are install-time requirements or optional; which ORCA outputs the direct-input path reads, and whose ORCA parser it uses.
 
 ## D-SPYC-20 Domain defaults
 
-**Needed before:** SRS §2. **Status:** OPEN
+**Needed before:** SRS §2. **Status:** ANSWERED in part 2026-10-17; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-20.md`
 
 Recommended defaults, all user-overridable and recorded with every catalog and fit:
 - T_rot = 1.5 K (allowed 0.5-20 K).
@@ -381,4 +385,4 @@ Recommended defaults, all user-overridable and recorded with every catalog and f
   at 30.
 - Line width from the instrument; the PI to supply typical CP-FTMW values.
 
-**PI answer:** _none yet_
+**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-20** default temperature, frequency window and J_max, now needed per technique (the old defaults were CP-FTMW only)". The PI replied: "10. These should be set at the beginning before the predictions start happening, and then they should be boxes that can be modified and changed by the user as need be." Record: `docs/decisions/D-SPYC-20.md`. Still open: whether the fields start empty or pre-filled with per-technique presets, and their values.

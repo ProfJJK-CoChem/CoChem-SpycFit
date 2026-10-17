@@ -45,8 +45,9 @@ Each requirement is one bullet:
   part split from a compound requirement at `488dc87`; the unsuffixed id names the whole.
 - **Source.** "Amd §n" is the amendment and "SRS §n" the consolidated SRS at `488dc87`.
   "PI 2026-10-16" marks substance the PI settled on that date (`docs/HANDOFF.md`, amendment §2
-  and §7); the wording here is new and is proposed. "R1-nn" to "R5-nn" are literature-review
-  findings, whose citations are in §1.6.
+  and §7); the wording here is new and is proposed. "PI 2026-10-17" marks an answer the PI gave
+  in conversation on that date, recorded in `docs/decisions/`. "R1-nn" to "R5-nn" are
+  literature-review findings, whose citations are in §1.6.
 - **Priority.** Core (the semirigid comparison profile and anything it depends on), Profile
   (one of the later capability profiles in §1.2) or Optional.
 - **Verification.** T = Test, A = Analysis, I = Inspection, D = Demonstration, followed by an
@@ -135,7 +136,9 @@ profile (PI 2026-10-16; Amd §7 D-03).
 
 **Is not.** SpycFit does not reduce raw instrument data (FIDs, interferograms, THz time traces):
 adapters or other CoChem modules do (SF-ING-001). It does not run quantum chemistry: TORQ and
-other providers do (§1.3). It does not train PES or MLFF models: a provider does, through the
+other providers do (§1.3); TORQ produces vibrational and Raman predictions (D-SPYC-06). It does
+not determine molecular structures (r₀, r_s, r_m): GEOM does, from constants SpycFit exports
+(D-SPYC-10; SF-IF-008). It does not train PES or MLFF models: a provider does, through the
 interface in §4.3 (SF-SCOPE-005). It does not accept assignments autonomously (SF-HITL-001).
 It does not write another module's database.
 
@@ -161,16 +164,18 @@ into gas-phase and condensed-phase work, because the observables and models diff
 | P14 PES and force-field refinement | Inverse fits of provider models to observables | A provider module (SF-SCOPE-005) | Interface only |
 
 The order column is a proposal for the plan. Every profile stays in scope (PI 2026-10-16).
-Owner of vibrational and Raman predictions (TORQ or another provider) is an open question
-(R3-01; §11).
+TORQ produces the vibrational and Raman predictions these profiles use (D-SPYC-06, PI
+2026-10-17; SF-IF-006). UV-Vis is an open question (D-SPYC-06).
 
 ### 1.3 Product perspective
 
 | Module | Owns | SpycFit's relation |
 | :--- | :--- | :--- |
-| BASE | Module discovery (`cochem.modules`), handoff manifests (`cochem.module-handoff/1`), artifact and scratch roots, UI hosting, durable task state (TORQ D08) | Registered module; receives and returns handoffs (§4.4) |
-| TOPOS | Conformer and binding-topology search | Upstream of TORQ; no direct interface |
+| BASE | Module discovery (`cochem.modules`), handoff manifests (`cochem.module-handoff/1`), artifact and scratch roots, ingestion, the unified GUI, durable task state (TORQ D08) | Hard requirement (D-SPYC-19); registered module; receives and returns handoffs (§4.4) |
+| TOPOS | Conformer and binding-topology search | Dependency of the normal workflow, upstream of TORQ; no direct interface (D-SPYC-19) |
 | TORQ | Quantum chemistry, predicted constants (TORQ-EXP-004, HDF5 bundle, not yet built), Pickett prediction inputs (TORQ-EXP-002), predicted catalogs (TORQ-SPEC-001, D12) | Consumer of TORQ bundles (§4.3); sender of refinement requests (SF-RUN-005) |
+| GEOM | Molecular geometry, including structure determination (r₀, r_s, r_m) | Receives fitted constants per isotopologue (SF-IF-008; D-SPYC-10) |
+| User-supplied files | Predicted ORCA output and Pickett files | Direct-input path that does not need TOPOS or TORQ (SF-IF-005; D-SPYC-19) |
 | SpycFit | Observation semantics, assignment interaction, fitting, engine comparison, reporting | This document |
 
 Where TORQ's predicted catalog ends and SpycFit's re-prediction from fitted or edited constants
@@ -300,8 +305,10 @@ From the pinned source (`calfit.c`) [R-6, R-7]:
 - Isotope masses: AME2020 [R-31], with standard uncertainty and the estimated-value flag.
   Isotopic abundances: CIAAW. Fundamental constants: CODATA 2022 through TORQ's profile
   `cochem.constants.codata-2022-torq-compatible/1`. Blocked on D-SPYC-02.
-- Domain defaults (T_rot, frequency window, J_max) are those the PI sets in D-SPYC-20. A default
-  is user-overridable and recorded in provenance as a default.
+- Temperature, frequency window and J_max are session parameters. The user sets them before the
+  first prediction and may change them at any time (D-SPYC-20, PI 2026-10-17; SF-SET-001 to
+  SF-SET-004). Whether the fields start empty or with per-technique presets is open; a preset is
+  a default only if D-SPYC-20 names it, and is then recorded in provenance as a default.
 
 ---
 
@@ -359,6 +366,8 @@ These requirements bound every claim SpycFit makes. Owner: all components.
 | UC-5 | Compare native results with genuine SPCAT and SPFIT, review divergence, export | SF-CMP |
 | UC-6 | Send a refinement request to a theory provider and receive a new version | SF-RUN-005 |
 | UC-7 | Run a fit headless in a batch | SF-API-001, SF-RUN-004 |
+| UC-8 | Start from user-supplied ORCA or Pickett prediction files, without TOPOS or TORQ | SF-IF-005 |
+| UC-9 | Send fitted isotopologue constants to GEOM for structure determination | SF-IF-008 |
 
 The PI selects and orders the use cases for the first release.
 
@@ -404,11 +413,16 @@ Owner: `io/pickett`, `fit`, `catalog`.
 - **SF-RUN-007** Provisioning acceptance per library. Each pinned Pickett build SHALL pass an
   acceptance run on scratch copies of the example shipped for its library (SPINV: HCO with SPFIT
   and SPCAT; DPI: NO with DPFIT and DPCAT), recording byte equality or the listed differences.
-  *Source* R1-02, R4-07 · Core · T, V-PICK-05 · proposed; blocked on D-SPYC-17
+  *Source* R1-02, R4-07 · Core · T, V-PICK-05 · proposed; the DPI part is blocked on D-SPYC-17
+  (DPFIT/DPCAT)
 - **SF-RUN-008** Use rights recorded. Each external engine record SHALL state the source, the
   PI-determined use rights and whether the engine may be redistributed, and an engine without
   recorded rights SHALL NOT be bundled.
-  *Source* R1-16; errata row 9 · Core · I, V-RUN-08 · proposed; blocked on D-SPYC-17
+  *Source* R1-16; errata row 9 · Core · I, V-RUN-08 · proposed; use rights blocked on D-SPYC-17
+- **SF-RUN-009** Pickett sources. SPFIT and SPCAT SHALL be built only from the calpgm source files
+  published at `https://spec.jpl.nasa.gov/ftp/pub/calpgm/` whose SHA-256 match a recorded source
+  manifest.
+  *Source* D-SPYC-17 (PI 2026-10-17) · Core · T, V-RUN-09 · proposed
 
 ### 4.2 Experimental input
 
@@ -472,6 +486,23 @@ Owner: `contract`.
   (TORQ-EXP-004) only through a schema-version check that rejects unknown versions.
   *Source* TORQ SRS §12, V-CONSUMER · Profile · T, V-IF-01 · proposed; blocked on D-SPYC-16 and on
   TORQ's exporter, which does not exist yet
+- **SF-IF-005a** Direct input of Pickett files. SpycFit SHALL accept user-supplied Pickett `.par`,
+  `.var`, `.int`, `.lin` and `.cat` files as prediction inputs without TOPOS or TORQ.
+  *Source* D-SPYC-19 (PI 2026-10-17) · Core · T, V-IF-05 · proposed
+- **SF-IF-005b** Direct input of ORCA output. SpycFit SHALL accept user-supplied ORCA output files
+  as prediction inputs without TOPOS or TORQ, reading the quantities listed in a published
+  coverage table.
+  *Source* D-SPYC-19 (PI 2026-10-17) · Core · T, V-IF-05 · proposed; blocked on D-SPYC-19 (which
+  ORCA outputs and quantities, and whose parser)
+- **SF-IF-005c** Direct inputs are labelled. A prediction from the direct-input path SHALL record
+  its source file, format, SHA-256 and the producing program and version where the file states
+  them, and SHALL be labelled user-supplied, never as a TORQ prediction.
+  *Source* D-SPYC-19 (PI 2026-10-17); SF-PHYS-001a · Core · T, V-IF-05 · proposed
+- **SF-IF-006** Vibrational and Raman predictions are imported. SpycFit SHALL obtain
+  quantum-chemical vibrational and Raman predictions from TORQ or from the direct-input path,
+  and SHALL NOT compute them itself.
+  *Source* D-SPYC-06 (PI 2026-10-17) · Profile P6-P12 · I, V-IF-06 · proposed; blocked on TORQ's
+  exporter for these quantities
 
 ### 4.4 BASE integration
 
@@ -479,7 +510,7 @@ Owner: `contract`, `ui`.
 
 - **SF-IF-002** Module registration. SpycFit SHALL register through the `cochem.modules` entry
   point and receive work only through `cochem.module-handoff/1` manifests.
-  *Source* BASE; architecture §1 · Core · T, V-IF-02 · proposed; blocked on D-SPYC-19
+  *Source* BASE; architecture §1; D-SPYC-19 · Core · T, V-IF-02 · proposed
 - **SF-IF-003** Roots from BASE. SpycFit SHALL write run outputs only under the artifact and
   scratch roots BASE supplies, and SHALL NOT write the source tree at run time.
   *Source* architecture §3 · Core · T, V-IF-03 · proposed
@@ -487,6 +518,11 @@ Owner: `contract`, `ui`.
   (`pickett_export`, `pgopher_export`, `spectroscopy_snapshot`), the SRS SHALL state whether it is
   accepted, renamed or retired before G1.
   *Source* architecture §1 · Core · I, V-IF-04 · proposed
+- **SF-IF-007a** BASE is required. The SpycFit package SHALL declare `cochem-base` as a required
+  dependency.
+  *Source* D-SPYC-19 (PI 2026-10-17: "CoChem-BASE though is a hard requirement") · Core · I, V-IF-07 · proposed
+- **SF-IF-007b** No vendored BASE. SpycFit SHALL NOT ship its own copy of BASE modules.
+  *Source* D-SPYC-19 (PI 2026-10-17) · Core · I, V-IF-07 · proposed
 
 ### 4.5 Command-line and Python API
 
@@ -549,6 +585,16 @@ Owner: `bench` (benchmark registry).
   envelopes, computed frequencies), and computed sources SHALL NOT count as experimental
   validation.
   *Source* R4-13 · Profile P6-P12 · I, V-DATA-07 · proposed
+
+### 4.7 GEOM
+
+Owner: `contract`, `export`.
+
+- **SF-IF-008** Constants for structure determination. SpycFit SHALL export, for each fitted
+  isotopologue, the fitted rotational constants with uncertainties, correlations, reduction,
+  representation and isotopologue identity, in a versioned payload that GEOM reads.
+  *Source* D-SPYC-10 (PI 2026-10-17); `CoChem-GEOM/CoChem_GEOM_Workflow_Plan_v4.md` Stage 1.0 ·
+  Profile · T, V-IF-08 · proposed; blocked on the payload schema agreed with GEOM
 
 ---
 
@@ -748,6 +794,20 @@ Owner: `assign`, `session`, `ui`.
   revision events.
   *Source* SRS SF-UI-005 · Core · T, V-HITL-03 · proposed
 
+- **SF-SET-001** Parameters before predictions. SpycFit SHALL NOT generate a prediction, window
+  or catalog for a project until the project's temperature, frequency window and J_max are set.
+  *Source* D-SPYC-20 (PI 2026-10-17) · Core · T, V-SET-01 · proposed
+- **SF-SET-002** Editable parameters. Temperature, frequency window and J_max SHALL be editable
+  at any time through input fields in the UI and through the API.
+  *Source* D-SPYC-20 (PI 2026-10-17) · Core · T and D, V-SET-02 · proposed
+- **SF-SET-003** Edits mark results stale. A change to any of these parameters SHALL mark every
+  prediction, window and catalog made with the previous values stale until it is regenerated.
+  *Source* D-SPYC-20; SF-HITL-003a · Core · T, V-SET-03 · proposed
+- **SF-SET-004** Parameters in provenance. Every prediction, catalog and fit SHALL record the
+  temperature, frequency window and J_max it used, and whether each value was entered by the
+  user or taken from a preset.
+  *Source* D-SPYC-20; AGENTS.md (defaults recorded as defaults) · Core · T, V-SET-04 · proposed
+
 The UI toolkit is open decision D-SPYC-05. These requirements hold for any toolkit.
 
 ### 5.4 Fitting and inference
@@ -887,7 +947,7 @@ informed-fit extension.
 - **SF-CMP-001a** Genuine engines beside the native path. For each model in a profile that
   SPCAT/SPFIT support, SpycFit SHALL run the pinned SPCAT and SPFIT and the native path on the
   same inputs.
-  *Source* Amd SF-CMP-001 (PI 2026-10-16) · Core · T, V-CMP-01 · proposed; pin blocked on D-SPYC-17
+  *Source* Amd SF-CMP-001 (PI 2026-10-16); D-SPYC-17 · Core · T, V-CMP-01 · proposed
 - **SF-CMP-001b** Results kept per engine. Each engine's results SHALL be stored separately.
   *Source* Amd SF-CMP-001 · Core · T, V-CMP-01 · proposed
 - **SF-CMP-002** Comparability first. A comparability record (isotopologue, conformer, state,
@@ -1183,18 +1243,20 @@ with its tolerance committed before the implementation PR (SF-VER-004).
 | V-LS-01..03 | Line-shape declarations; agreement with HAPI and analytic limits; chunked equals unchunked | analytical |
 | V-VIB-01..04, V-NIR-01, V-ROVIB-01, V-PHASE-01, V-RAMAN-01..03, V-THZ-01 | Profile-specific checks listed in the capability matrix | per profile |
 | V-HITL-01..03, V-UI-01..03 | Acceptance only by expert action; non-drag paths; stale marking; no older overwrite; views | software, demonstration |
+| V-SET-01..04 | No prediction before temperature, window and J_max are set; editable in UI and API; edits mark results stale; values and their origin in provenance | software, demonstration |
 | V-DATA-01..07 | Reference-record fields, redistribution class, fetch-and-verify, lineage partitions, extrapolation labels | software |
 | V-OUT-01..06 | Coherent records, units, absent tokens, rounding reproduction check, provenance graph, SPFIT-first ordering | software |
-| V-RUN-01..08, V-SEC-01 | Offline run, provenance, resource limits, outcomes, refinement versions, verified identity, use rights, subprocess safety | software |
-| V-IF-01..04, V-API-01, V-PROV-01..03, V-ML-01..03 | Interfaces and providers | software |
+| V-RUN-01..09, V-SEC-01 | Offline run, provenance, resource limits, outcomes, refinement versions, verified identity, use rights, builds only from manifest-verified JPL sources, subprocess safety | software |
+| V-IF-01..08, V-API-01, V-PROV-01..03, V-ML-01..03 | Interfaces and providers, including direct input of ORCA and Pickett files, BASE as a required dependency and the GEOM payload | software |
 | V-DEMO-1..5 | End-to-end demonstrations of the four workflows and of each capability-matrix row | demonstration, experimental |
 | V-VER-01..05, V-PERF-01 | Evidence-class tags, no substitution, non-empty coverage, criteria committed first, improvement claims; performance workloads | inspection |
 
-### 8.3 Benchmark manifest (proposed; D-SPYC-14)
+### 8.3 Benchmark manifest (panel accepted 2026-10-17; D-SPYC-14)
 
 The first semirigid panel needs at least one linear, one symmetric-top and one asymmetric-top
 closed-shell case, each compared only on transitions whose reference model has no hyperfine,
-electron-spin, internal-rotation, inversion or interstate-coupling terms (R4-02). Proposed:
+electron-spin, internal-rotation, inversion or interstate-coupling terms (R4-02). The PI accepted
+this panel on 2026-10-17 (D-SPYC-14: "Yes, proceed."):
 
 | Case | Rotor type | Reference records | Notes |
 | :--- | :--- | :--- | :--- |
@@ -1202,7 +1264,7 @@ electron-spin, internal-rotation, inversion or interstate-coupling terms (R4-02)
 | OCS | linear | CDMS 060503; JPL 60001 | No published fit inputs: forward prediction only until a line list is compiled |
 | SO₂ | asymmetric top | CDMS 064502 with A- and S-reduction fit files on the same data | Best reduction test |
 | H₂CO | asymmetric top | CDMS 030501 and fit files; JPL 30004 | Exclude hyperfine-resolved lines |
-| CH₃CCH (propyne) | symmetric top | CDMS 040502; ground-state fit files | Proposed addition: the only semirigid symmetric top without hyperfine found |
+| CH₃CCH (propyne) | symmetric top | CDMS 040502; ground-state fit files | The only semirigid symmetric top without hyperfine found |
 
 HCl and CH₃CN belong to P2; NH₃, CH₃OH, CH₃CHO, dimethyl ether, ethanol, 1-propanol and H₂O to P4
 or conformer work; CO₂ (no permanent dipole) to P6-P9; NO and OH to open-shell stress tests. The
@@ -1224,7 +1286,7 @@ install; UI journey on a reference case per deployment target.
 areas map to packages as follows: SF-IO-004, SF-PICK, SF-RUN-006..008 → WP-PICK; SF-ING, SF-IO-003,
 SF-THZ, SF-RAMAN-001 → WP-EXP; SF-HAM, SF-PHYS-002..004 → WP-HAM; SF-FIT, SF-INF → WP-FIT;
 SF-INT, SF-PHYS-007/008 → WP-INT; SF-CMP → WP-CMP (new); SF-HITL, SF-UI → WP-ASSIGN and WP-UI;
-SF-IF → WP-IF; SF-OUT, SF-PUB → WP-OUT; SF-DATA, SF-IO-007 → WP-BENCH (new); vibrational profiles
+SF-IF → WP-IF; SF-SET → WP-UI; SF-OUT, SF-PUB → WP-OUT; SF-DATA, SF-IO-007 → WP-BENCH (new); vibrational profiles
 → WP-VIB (new).
 
 ---
@@ -1246,30 +1308,35 @@ SF-IF → WP-IF; SF-OUT, SF-PUB → WP-OUT; SF-DATA, SF-IO-007 → WP-BENCH (new
 
 `docs/decisions/D-SPYC-nn.md` files are the authoritative records; `docs/handoff/PI_DECISIONS.md`
 lists every open question. The PI's 2026-10-16 decisions (`docs/HANDOFF.md`; amendment §7
-D-01..D-03) bear on several entries. On 2026-10-16 the PI confirmed them in conversation; the
-entries below are ANSWERED (records in `docs/decisions/`) and become DECIDED when the PI approves
-the PR containing the records.
+D-01..D-03) bear on several entries. The PI confirmed them in conversation on 2026-10-16 and
+answered further questions on 2026-10-17. The entries below are ANSWERED (records in
+`docs/decisions/`) and become DECIDED when the PI approves the PR containing the records.
 
-| Entry | PI direction 2026-10-16 | Remaining question |
+| Entry | PI answer | Remaining question |
 | :--- | :--- | :--- |
-| D-SPYC-01 Product identity, fitter of record | Broad assignment-and-fitting pipeline; native SpycFit and genuine SPCAT/SPFIT side by side; publication tables show SPFIT first (answered 2026-10-16) | None |
-| D-SPYC-06 IR/Raman/UV-Vis | IR, Raman, THz, near-IR and microwave first-class | UV-Vis; owner of vibrational and Raman predictions |
+| D-SPYC-01 Product identity, fitter of record | Broad assignment-and-fitting pipeline; native SpycFit and genuine SPCAT/SPFIT side by side; publication tables show SPFIT first (2026-10-16) | None |
+| D-SPYC-06 IR/Raman/UV-Vis | IR, Raman, THz, near-IR and microwave first-class (2026-10-16); TORQ produces vibrational and Raman predictions (2026-10-17) | UV-Vis |
 | D-SPYC-18 In-process model | A native model exists for compatible microwave models | Which terms, in which order |
 | D-SPYC-04 Internal rotation | In scope after semirigid acceptance | Engines and order |
-| D-SPYC-14 Benchmarks | Semirigid first (D-03) | Panel (§8.3) and tolerances |
+| D-SPYC-14 Benchmarks | Semirigid first (D-03); §8.3 panel accepted (2026-10-17) | Tolerance tiers and values; one registry with the earlier set (R4-12) |
 | D-SPYC-03 Feedback to TORQ | PES refinement required, possibly in another module | Hand-off route |
+| D-SPYC-17 SPFIT/SPCAT source | JPL sources (2026-10-17) | DPFIT/DPCAT; TORQ's pin; storage of verified copies; `pyckett`; use rights |
+| D-SPYC-19 Dependencies | BASE is a hard requirement; TOPOS and TORQ are dependencies; ORCA and Pickett files are valid direct inputs (2026-10-17) | TOPOS/TORQ install-time or optional; ORCA quantities and parser |
+| D-SPYC-20 Session parameters | Set before predictions; editable fields (2026-10-17) | Empty fields or per-technique presets, and their values |
+| D-SPYC-10 Structure determination | Deferred to GEOM (2026-10-17) | GEOM payload schema |
 | D-01, D-02, D-03 | Divergence review at export; offline-capable core; semirigid first | Recorded as D-SPYC entries |
 
-Open questions raised by this draft:
+Questions raised by this draft:
 
 1. Confirm each 2026-10-16 direction above. Answered 2026-10-16 ("That is correct").
-2. Keep the `SF-` id scheme (this draft) instead of the `SPYC-` scheme of Draft 0.
-3. Who owns vibrational and Raman predictions: TORQ or another provider (R3-01)?
-4. Accept the semirigid panel of §8.3, including propyne, and reconcile it with D-SPYC-14.
-5. Pin SPFIT/SPCAT (D-SPYC-17), and decide whether DPFIT/DPCAT are part of the pin.
-6. Accept the four tolerance tiers of SF-CMP-008a and set their values.
-
----
+2. Keep the `SF-` id scheme (this draft) instead of the `SPYC-` scheme of Draft 0. Answered
+   2026-10-17 ("Sure, go ahead."): the `SF-` scheme is kept.
+3. Who owns vibrational and Raman predictions? Answered 2026-10-17: TORQ (D-SPYC-06).
+4. Accept the semirigid panel of §8.3. Answered 2026-10-17 (D-SPYC-14); reconciliation with the
+   earlier D-SPYC-14 set is open.
+5. Pin SPFIT/SPCAT. Source answered 2026-10-17: JPL (D-SPYC-17). DPFIT/DPCAT is open.
+6. Accept the four tolerance tiers of SF-CMP-008a and set their values. Open; the PI asked for
+   suggestions from publications of the last five years.
 
 ## Appendices
 

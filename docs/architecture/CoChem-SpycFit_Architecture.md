@@ -46,16 +46,16 @@ A single package `src/cochem_spycfit/`, pure Python, CPU first. Candidate subpac
 
 | Subpackage | Responsibility | Open decisions |
 | :--- | :--- | :--- |
-| `io/pickett` | Read and write `.par`, `.var`, `.int`, `.lin`, `.cat`, `.egy`, `.fit` with their roles; round-trip against the pinned binaries on scratch copies. | D-SPYC-17 (pin); whether `pyckett` is a runtime dependency or a test-only cross-check |
+| `io/pickett` | Read and write `.par`, `.var`, `.int`, `.lin`, `.cat`, `.egy`, `.fit` with their roles; round-trip against the pinned binaries on scratch copies. | D-SPYC-17 (JPL sources chosen; DPFIT/DPCAT and TORQ's pin open); whether `pyckett` is a runtime dependency or a test-only cross-check |
 | `io/experimental` | Spectrum and peak-list input; peak picking with an uncertainty model. | Instrument formats from the PI |
-| `contract` | TORQ bundle reader and schema-version negotiation (later); BASE handoff receiver; configuration model. | D-SPYC-19; joint contracts with TORQ and BASE |
+| `contract` | TORQ bundle reader and schema-version negotiation (later); BASE handoff receiver; direct-input reader for user-supplied ORCA and Pickett files; GEOM payload; configuration model. | D-SPYC-19 (ORCA quantities and parser); joint contracts with TORQ, BASE and GEOM |
 | `model` | Only if D-SPYC-18 is B or C: in-process Hamiltonian (Watson A/S, quadrupole hyperfine, multi-state) and eigenvalue labelling. Each term must reproduce SPCAT before its output is shown. | D-SPYC-07, 11, 16, 18 |
 | `diag` | κ, inertial defect and planar moments from any set of constants, checked against published values. | D-SPYC-12 |
 | `catalog` | Intensities with user spin weights and catalogs at T_rot, through the pinned SPCAT (or `model` where D-SPYC-18 allows). | D-SPYC-13, 16, 17, 20 |
 | `fit` | Driver for the pinned SPFIT as fit of record (subprocess, scratch directory, timeouts, parsers); in-process sensitivity and what-if support. | D-SPYC-01 |
 | `assign` | Prediction catalogs, search windows, candidate ranking, pattern tools, the human assignment loop, `.lin` generation from approved assignments only. | D-SPYC-13, 14 |
-| `campaign` | Isotopologues, conformers, and structure fits gated by fluxionality. | D-SPYC-10 |
-| `session` | One versioned project file per campaign; single writer; event log. | none |
+| `campaign` | Isotopologues and conformers; fitted constants per isotopologue for GEOM, which owns structure determination (D-SPYC-10). | GEOM payload schema |
+| `session` | One versioned project file per campaign; single writer; event log; session parameters (temperature, window, J_max) set before predictions and editable (D-SPYC-20). | D-SPYC-20 (presets) |
 | `ui` | One UI stack calling the same headless API. | D-SPYC-05 |
 | `export` | Complete Pickett set, publication tables, refinement request, BASE handoff back. | D-SPYC-03; a new BASE handoff artifact kind |
 | `compare` | The SPCAT/SPFIT comparison stages, comparability records, tolerance tiers and statuses (SRS v2 §5.6). | D-SPYC-14, 17, 18 |

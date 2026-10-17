@@ -27,7 +27,8 @@ Final content and requirement ids come from SRS v2. Each package's acceptance te
 tolerances are approved by the PI before its implementation PR. Packages whose scope depends on
 an open decision say so.
 
-1. **WP-PICK**: Pickett file I/O and round trip through the pinned SPFIT/SPCAT (D-SPYC-17).
+1. **WP-PICK**: Pickett file I/O and round trip through SPFIT/SPCAT built from the pinned JPL
+   sources (D-SPYC-17).
 2. **WP-EXP**: experimental spectrum and peak-list input; peak picking with an uncertainty model.
 3. **WP-HAM**: the in-process model, if any (D-SPYC-16, D-SPYC-18): Watson A/S in the chosen
    representations, Wang-block labelling, quadrupole hyperfine and multi-state structure,
@@ -38,11 +39,13 @@ an open decision say so.
    (D-SPYC-13, D-SPYC-16).
 6. **WP-DIAG**: inertial defect, planar moments and κ (D-SPYC-12).
 7. **WP-ASSIGN**: prediction windows, candidate ranking, pattern tools and the assignment loop.
-8. **WP-CAMPAIGN**: isotopologues, conformers and structure (D-SPYC-10).
+8. **WP-CAMPAIGN**: isotopologues and conformers, and the constants GEOM needs for structure
+   determination (D-SPYC-10: structure determination is GEOM's).
 9. **WP-LAM**: internal rotation and tunnelling (D-SPYC-04).
 10. **WP-UI**: the single UI stack (D-SPYC-05).
-11. **WP-IF**: BASE integration (D-SPYC-19), and the TORQ bundle consumer once TORQ's exporter
-    exists.
+11. **WP-IF**: BASE integration (D-SPYC-19: BASE is required), the direct-input path for
+    user-supplied ORCA and Pickett files, the GEOM payload, and the TORQ bundle consumer once
+    TORQ's exporter exists.
 12. **WP-OUT**: publication export and the refinement request (D-SPYC-03).
 13. **WP-CMP**: the native-versus-SPCAT/SPFIT comparison of amendment §3 (SRS v2 §5.6),
     starting with the semirigid profile.
