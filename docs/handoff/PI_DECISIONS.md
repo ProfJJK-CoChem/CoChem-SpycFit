@@ -41,7 +41,7 @@ Sources:
 | D-SPYC-17 | SPFIT/SPCAT source, pin and use rights | SRS §4.1; Phase 2 CI | A: one ecosystem pin shared with TORQ | ANSWERED in part 2026-10-17 (JPL sources; DPFIT/DPCAT included) |
 | D-SPYC-18 | In-process Hamiltonian model and its scope | SRS HAM; G1 | B: model limited to what SPCAT reproduces, used for windows and what-if | ANSWERED in part 2026-10-16 |
 | D-SPYC-19 | Dependency on the `cochem-base` package | SRS §4.4; Phase 2 | A: pinned dependency | ANSWERED in part 2026-10-17 (BASE required, TOPOS and TORQ through BASE; direct input) |
-| D-SPYC-20 | Domain defaults (T_rot, window, J_max) | SRS §2 | T_rot 1.5 K; 2-22 GHz; J_max from population | ANSWERED in part 2026-10-17 (set first, editable, pre-filled; values pending) |
+| D-SPYC-20 | Domain defaults (T_rot, window, J_max) | SRS §2 | T_rot 1.5 K; 2-22 GHz; J_max from population | ANSWERED 2026-10-17 (set first, editable, pre-filled: D20-TABLE, D20-JPOP) |
 
 ---
 
@@ -376,7 +376,7 @@ A native model therefore exists for compatible microwave models (option B or C).
 
 ## D-SPYC-20 Domain defaults
 
-**Needed before:** SRS §2. **Status:** ANSWERED in part 2026-10-17; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-20.md`
+**Needed before:** SRS §2. **Status:** ANSWERED 2026-10-17; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-20.md`
 
 Recommended defaults, all user-overridable and recorded with every catalog and fit:
 - T_rot = 1.5 K (allowed 0.5-20 K).
@@ -385,4 +385,4 @@ Recommended defaults, all user-overridable and recorded with every catalog and f
   at 30.
 - Line width from the instrument; the PI to supply typical CP-FTMW values.
 
-**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-20** default temperature, frequency window and J_max, now needed per technique (the old defaults were CP-FTMW only)". The PI replied: "10. These should be set at the beginning before the predictions start happening, and then they should be boxes that can be modified and changed by the user as need be." Record: `docs/decisions/D-SPYC-20.md`. The agent then asked whether the boxes start empty or pre-filled; the PI replied: "20 prefilled. Research default values from publications". Still open: the pre-filled values (research in progress).
+**PI answer** (conversation 2026-10-17). The agent asked: "**D-SPYC-20** default temperature, frequency window and J_max, now needed per technique (the old defaults were CP-FTMW only)". The PI replied: "10. These should be set at the beginning before the predictions start happening, and then they should be boxes that can be modified and changed by the user as need be." Record: `docs/decisions/D-SPYC-20.md`. The agent then asked whether the boxes start empty or pre-filled; the PI replied: "20 prefilled. Research default values from publications". The agent then sent the pre-fill brief (`docs/handoff/briefs/D-SPYC-20_prefills_2026-10-17.md`) and asked for "D-SPYC-20 pre-fills: D20-TABLE, D20-JPOP" or another choice; the PI replied: "D-SPYC-20 pre-fills: D20-TABLE, D20-JPOP". The per-technique table and the J_max rule are in the record.

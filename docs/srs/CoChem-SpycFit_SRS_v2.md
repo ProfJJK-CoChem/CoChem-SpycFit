@@ -307,8 +307,9 @@ From the pinned source (`calfit.c`) [R-6, R-7]:
   `cochem.constants.codata-2022-torq-compatible/1`. Blocked on D-SPYC-02.
 - Temperature, frequency window and J_max are session parameters. The user sets them before the
   first prediction and may change them at any time (D-SPYC-20, PI 2026-10-17; SF-SET-001 to
-  SF-SET-005). The fields are pre-filled per technique with values drawn from publications; the
-  values are pending, and each becomes a default only when D-SPYC-20 names it.
+  SF-SET-008). The fields are pre-filled per technique with the values D-SPYC-20 tabulates from
+  2021-2026 publications, and J_max follows the D-SPYC-20 population rule (D20-TABLE and D20-JPOP,
+  PI 2026-10-17).
 
 ---
 
@@ -809,8 +810,19 @@ Owner: `assign`, `session`, `ui`.
   *Source* D-SPYC-20; AGENTS.md (defaults recorded as defaults) · Core · T, V-SET-04 · proposed
 - **SF-SET-005** Pre-filled per technique. For each technique, the temperature, frequency window
   and J_max fields SHALL be pre-filled with the values D-SPYC-20 lists for that technique.
-  *Source* D-SPYC-20 (PI 2026-10-17: "prefilled") · Core · T, V-SET-05 · proposed; blocked on
-  D-SPYC-20 (values)
+  *Source* D-SPYC-20 (PI 2026-10-17: "prefilled"; "D20-TABLE") · Core · T, V-SET-05 · proposed
+- **SF-SET-006** J_max from populations. Unless the user sets it, J_max SHALL be the smallest J
+  above the population peak whose summed population P(J) = Σ g·exp(−E/kT), over the predicted
+  levels of rotational quantum number J (N for open-shell species), with g the degeneracy times
+  the nuclear-spin weight, falls below 10⁻⁴ of the largest P(J), with no fixed cap.
+  *Source* D-SPYC-20 (PI 2026-10-17: "D20-JPOP") · Core · T, V-SET-06 · proposed
+- **SF-SET-007** Out-of-range values warn. A temperature, window or J_max outside the published
+  range D-SPYC-20 lists for the technique SHALL produce a warning and SHALL NOT block the
+  prediction.
+  *Source* D-SPYC-20 (D20-TABLE) · Core · T, V-SET-07 · proposed
+- **SF-SET-008** Evidence grade shown. Each pre-filled value SHALL be displayed with the evidence
+  grade D-SPYC-20 gives it, a "Thin" grade being displayed as provisional.
+  *Source* D-SPYC-20 (D20-TABLE; brief recommendation) · Core · T and D, V-SET-08 · proposed
 
 The UI toolkit is open decision D-SPYC-05. These requirements hold for any toolkit.
 
@@ -1247,7 +1259,7 @@ with its tolerance committed before the implementation PR (SF-VER-004).
 | V-LS-01..03 | Line-shape declarations; agreement with HAPI and analytic limits; chunked equals unchunked | analytical |
 | V-VIB-01..04, V-NIR-01, V-ROVIB-01, V-PHASE-01, V-RAMAN-01..03, V-THZ-01 | Profile-specific checks listed in the capability matrix | per profile |
 | V-HITL-01..03, V-UI-01..03 | Acceptance only by expert action; non-drag paths; stale marking; no older overwrite; views | software, demonstration |
-| V-SET-01..05 | No prediction before temperature, window and J_max are set; editable in UI and API; edits mark results stale; values and their origin in provenance; pre-filled values equal the D-SPYC-20 table | software, demonstration |
+| V-SET-01..08 | No prediction before temperature, window and J_max are set; editable in UI and API; edits mark results stale; values and their origin in provenance; pre-filled values equal the D-SPYC-20 table; J_max reproduces the D-SPYC-20 test values (linear rotor B̄ = 0.1 cm⁻¹ at 296 K: 152; glycidaldehyde: 11, 19, 38, 149 at 1.5, 5, 20, 300 K); out-of-range values warn; thin rows labelled provisional | software, analytical, demonstration |
 | V-DATA-01..07 | Reference-record fields, redistribution class, fetch-and-verify, lineage partitions, extrapolation labels | software |
 | V-OUT-01..06 | Coherent records, units, absent tokens, rounding reproduction check, provenance graph, SPFIT-first ordering | software |
 | V-RUN-01..09, V-SEC-01 | Offline run, provenance, resource limits, outcomes, refinement versions, verified identity, use rights, builds only from manifest-verified JPL sources, subprocess safety | software |
@@ -1326,7 +1338,7 @@ answered further questions on 2026-10-17. The entries below are ANSWERED (record
 | D-SPYC-03 Feedback to TORQ | PES refinement required, possibly in another module | Hand-off route |
 | D-SPYC-17 SPFIT/SPCAT source | JPL sources; DPFIT/DPCAT included (2026-10-17) | TORQ's pin; storage of verified copies; `pyckett`; use rights |
 | D-SPYC-19 Dependencies | BASE is a hard requirement; TOPOS and TORQ come with BASE; ORCA and Pickett files are valid direct inputs (2026-10-17) | ORCA quantities and parser |
-| D-SPYC-20 Session parameters | Set before predictions; editable fields; pre-filled per technique from publications (2026-10-17) | The pre-filled values |
+| D-SPYC-20 Session parameters | Set before predictions; editable fields; pre-filled per technique (D20-TABLE) with J_max from populations (D20-JPOP) (2026-10-17) | None |
 | D-SPYC-10 Structure determination | Deferred to GEOM (2026-10-17) | GEOM payload schema |
 | D-01, D-02, D-03 | Divergence review at export; offline-capable core; semirigid first | Recorded as D-SPYC entries |
 
