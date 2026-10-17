@@ -20,6 +20,7 @@
 | :--- | :--- | :--- |
 | Draft 0 | 2026-10-11 | Skeleton (PR #1). |
 | Draft 1 | 2026-10-16 | Full proposed text. Restructures the consolidated SRS and amendment at `488dc87` into single-statement requirements, keeps every SF id, retires nine duplicate ids as aliases (§0.6), and adds requirements from the literature review. |
+| Draft 1, 2026-10-17 update | 2026-10-17 | Records the PI's pop-up answers of 2026-10-17 (`docs/handoff/pi_answers_2026-10-17_popups.md`; D-SPYC-02, 03, 04, 05, 06, 14, 16, 20, 21, 22): T1 51 Hz / 6 Hz; SF-CMP-021c withdrawn; paired bootstrap test in SF-CMP-021b; over-coverage bounded; OCS dropped from §8.3 pending a replacement; search-window defaults SF-WIN-001..003; masses and constants (§1.7.5, SF-IO-005); refinement route (SF-RUN-005a, SF-IF-009); hosting H2 and headless HPC (SF-UI-006, 007); P4 engines (SF-CMP-019); electronic-state field (SF-CMP-004e) and profile P15; module name SPYFY (§1.1). |
 
 ### 0.2 Modal verbs
 
@@ -116,12 +117,26 @@ Improvement over existing workflows is measured by correctly supported assignmen
 effort, predictive accuracy, calibrated uncertainty, run time and traceability, each against a
 declared workflow, data set, hardware and tolerance. No blanket claim of superiority over
 SPCAT/SPFIT is made (SRS §1). On 2026-10-17 the PI added: "Additionally ensure that SpycFit
-predictions are equal or closer than SPCAT and SPFIT." SF-CMP-021 states the agent's reading,
-still to confirm: on each benchmark the native path fits and predicts the measured data at least
-as closely as SPFIT and SPCAT do. A claim that it is closer needs a difference beyond the T2
-equivalence for fits and beyond the SF-CMP-021b margin for predictions, counts every benchmark,
-including those where the native path is farther or was not compared, and is an improvement
-claim under SF-VER-005.
+predictions are equal or closer than SPCAT and SPFIT." SF-CMP-021 states the reading the PI
+confirmed the same day ("Yes: fits and predictions"): on each benchmark the native path fits and
+predicts the measured data at least as closely as SPFIT and SPCAT do, judged by SF-CMP-021a for
+fits and by the paired bootstrap test of SF-CMP-021b for predictions, for identical models only
+(SF-CMP-021e). A shortfall is reported with the comparison and gates nothing (PI 2026-10-17: "No
+gate: report the comparison only"). A claim that it is closer needs a difference beyond the T2
+equivalence for fits and a significant difference under SF-CMP-021b for predictions, counts every
+benchmark, including those where the native path is farther or was not compared, and is an
+improvement claim under SF-VER-005.
+
+On 2026-10-17 the PI also stated the module's value and asked for research before its engine
+architecture is fixed: "The main value component of SPYFY is that it can utilize GPU to parallel,
+array, and make fitting and calculations dynamic recalculate on the fly. Honestly I don't see how
+we could be useful just copying SPFIT and SPCAT. I need more research and analysis for this on
+what would give the better end result and fit the vision for CoChem" (`docs/decisions/D-SPYC-04.md`).
+The native engine's architecture (D-SPYC-04, D-SPYC-11, D-SPYC-18) is blocked on that research.
+SPFIT and SPCAT remain the reference for conventions and formats (D-SPYC-01; AGENTS.md).
+
+The PI named the module SPYFY, pronounced "spiffy", on 2026-10-17 (D-SPYC-22). This document
+keeps "SpycFit" until the rename PR; the SF- requirement ids do not change.
 
 ### 1.2 Scope and capability profiles
 
@@ -157,7 +172,7 @@ into gas-phase and condensed-phase work, because the observables and models diff
 | P1 Semirigid rotational | Line frequencies; Watson A/S, linear and symmetric-top Hamiltonians | Pinned SPFIT/SPCAT; CDMS/JPL fit files for the §8.3 panel | First (D-03) |
 | P2 Hyperfine rotational | Resolved quadrupole and spin-rotation structure | SPFIT/SPCAT; PGOPHER [R-10] | After P1 |
 | P3 Excited and multi-state | Vibrational satellites; Coriolis and Fermi interactions | SPFIT/SPCAT; PGOPHER | After P1 |
-| P4 Large-amplitude motion | Internal rotation, inversion, tunnelling | XIAM, BELGI, RAM36 (observable level only) [R-11..R-13] | After P1 |
+| P4 Large-amplitude motion | Internal rotation, inversion, tunnelling | XIAM (XIAMALL.FOR reference build) first, ERHAM second; BELGI-Cs/C1, RAM36 and westerfit later (observable level only; D-SPYC-04, PI 2026-10-17) [R-11..R-13] | After P1 |
 | P5 Sub-mm and THz, gas | Rotational lines above 300 GHz | As P1-P4 | With P1-P4 |
 | P6 Resolved rovibrational, gas | Assigned IR lines; band origins and upper-state constants; joint MW+IR | SPFIT (IR flag), PGOPHER; HITRAN line lists [R-14] | After P1 |
 | P7 Band contour, gas | Partially resolved band envelopes from a rovibrational model | PGOPHER contour fits | After P6 |
@@ -168,10 +183,20 @@ into gas-phase and condensed-phase work, because the observables and models diff
 | P12 Near-IR overtones | Overtone and combination bands | HITRAN overtone lines; anharmonic providers [R-18] | After P6 |
 | P13 Computation-led assignment | Ranked hypotheses scored on held-out data | Blind-challenge data such as HyDRA [R-19] | After P1 |
 | P14 PES and force-field refinement | Inverse fits of provider models to observables | A provider module (SF-SCOPE-005) | Interface only |
+| P15 Electronic states in rotational spectroscopy (placeholder) | Rungs to be set from the D-SPYC-06 research: open-shell fine and hyperfine structure (Hund's cases), rotational spectra in excited electronic states, rotationally resolved electronic transitions | SPFIT/SPCAT spin operators; DPFIT/DPCAT (D-SPYC-17); others to be named | Blocked on D-SPYC-06 research |
 
 The order column is a proposal for the plan. Every profile stays in scope (PI 2026-10-16).
 TORQ produces the vibrational and Raman predictions these profiles use (D-SPYC-06, PI
-2026-10-17; SF-IF-006). UV-Vis is an open question (D-SPYC-06).
+2026-10-17; SF-IF-006). On 2026-10-17 the PI retracted the view that UV-Vis fitting shares little
+with rovibrational work and stated: "we will indeed need to incorporate the full electronic
+treatment for those specific microwave use cases. We still will handle UV-VIS spectra predictions
+and fitting for another module but will incorporate the full electronic microwave spectroscopy
+predictions and fitting." and "We are going to pivot and include this field and scope."
+(D-SPYC-06). P15 is therefore in scope with its rungs, engines and data blocked on the research
+the PI asked for ("The spectroscopy should be modularized and allow the user to go as far as they
+want with what predictions and evidence they have."); the boundary between SpycFit and the other
+module for UV-Vis spectra is open there. The state identity carries an electronic-state field
+from the first release (SF-CMP-004e).
 
 ### 1.3 Product perspective
 
@@ -184,8 +209,12 @@ TORQ produces the vibrational and Raman predictions these profiles use (D-SPYC-0
 | User-supplied files | Predicted ORCA output and Pickett files | Direct-input path that does not need TOPOS or TORQ (SF-IF-005; D-SPYC-19) |
 | SpycFit | Observation semantics, assignment interaction, fitting, engine comparison, reporting | This document |
 
-Where TORQ's predicted catalog ends and SpycFit's re-prediction from fitted or edited constants
-begins is open decision D-SPYC-16.
+Catalogs are split by producer (D-SPYC-16, PI 2026-10-17: "D — split by producer"): TORQ owns
+catalogs from its computed constants; SpycFit owns every catalog it makes, from any constants,
+labelled with their origin; consumed TORQ, BASE and user catalogs keep their producer label, and
+BASE's in-process runner output is never labelled SPCAT. One shared catalog-equivalence test and
+one parameter-code table (§1.7.2) guard both producers. Which catalog sets assignment windows when
+two exist for the same constants is stated in SF-WIN-001.
 
 ### 1.4 Users
 
@@ -308,9 +337,23 @@ From the pinned source (`calfit.c`) [R-6, R-7]:
 
 #### 1.7.5 Constants, masses and defaults
 
-- Isotope masses: AME2020 [R-31], with standard uncertainty and the estimated-value flag.
-  Isotopic abundances: CIAAW. Fundamental constants: CODATA 2022 through TORQ's profile
-  `cochem.constants.codata-2022-torq-compatible/1`. Blocked on D-SPYC-02.
+- Isotope masses and abundances (D-SPYC-02, PI 2026-10-17: "D — mendeleev pinned exactly, read
+  directly"): the Python package mendeleev at an exact pinned release, whose masses and
+  uncertainties match AME2020 [R-31] (checked 2026-10-17 for all 3,557 isotopes) and whose
+  abundances are CIAAW 2013 values via NUBASE2020; provenance records "AME2020 via mendeleev
+  X.Y.Z" and the SHA-256 of the extracted table, and CI checks the isotopes used against the
+  hash-pinned AME2020 file, which also supplies the estimated-value flag. Atomic masses are used
+  for isotopologue constants, including those in Pickett files; nuclear or effective masses only
+  as stated model inputs; values arriving with an input are recorded as received. When an input
+  names an element but not its isotope, the most abundant isotope is a PI-named default,
+  overridable and recorded as a default (PI 2026-10-17: "(i)"). Abundance for intensities is a
+  per-sample user value with mendeleev's value as the named default (PI 2026-10-17: "(c) ...
+  with (a)").
+- Fundamental constants: CODATA 2022 [R-31] frozen in SpycFit's constants profile, with SciPy's
+  value as a cross-check (PI 2026-10-17: "(f)"); derived factors such as h/(8π² u Å²) are computed
+  from the profile, never typed in; the edition changes only with TORQ's
+  `cochem.constants.codata-2022-torq-compatible/1`. SPCAT's built-in constants are recorded with
+  each SPCAT run. Nuclear spins and moments are a separate decision (PI 2026-10-17).
 - Temperature, frequency window and J_max are session parameters. The user sets them before the
   first prediction and may change them at any time (D-SPYC-20, PI 2026-10-17; SF-SET-001 to
   SF-SET-008). The fields are pre-filled per technique with the values D-SPYC-20 tabulates (from
@@ -491,8 +534,8 @@ Owner: `contract`.
   *Source* Amd SF-SCOPE-005 (PI 2026-10-16) · Profile P14 · T, V-PROV-03 · proposed
 - **SF-IF-001** TORQ bundle consumer. SpycFit SHALL read TORQ spectroscopy bundles
   (TORQ-EXP-004) only through a schema-version check that rejects unknown versions.
-  *Source* TORQ SRS §12, V-CONSUMER · Profile · T, V-IF-01 · proposed; blocked on D-SPYC-16 and on
-  TORQ's exporter, which does not exist yet
+  *Source* TORQ SRS §12, V-CONSUMER; D-SPYC-16 (PI 2026-10-17: split by producer) · Profile · T,
+  V-IF-01 · proposed; blocked on TORQ's exporter, which does not exist yet
 - **SF-IF-005a** Direct input of Pickett files. SpycFit SHALL accept user-supplied Pickett `.par`,
   `.var`, `.int`, `.lin` and `.cat` files as prediction inputs without TOPOS or TORQ.
   *Source* D-SPYC-19 (PI 2026-10-17) · Core · T, V-IF-05 · proposed
@@ -530,6 +573,14 @@ Owner: `contract`, `ui`.
   *Source* D-SPYC-19 (PI 2026-10-17: "CoChem-BASE though is a hard requirement") · Core · I, V-IF-07 · proposed
 - **SF-IF-007b** No vendored BASE. SpycFit SHALL NOT ship its own copy of BASE modules.
   *Source* D-SPYC-19 (PI 2026-10-17) · Core · I, V-IF-07 · proposed
+- **SF-IF-009** Refinement requests through BASE. A refinement request (SF-RUN-005a) SHALL be
+  handed to BASE as a `cochem.module-handoff` artifact of a request kind whose schema SpycFit
+  drafts and agrees with each receiver by consumer tests in both repositories, a TORQ-bound request
+  mapping to `cochem.torq.request/1` extended with assigned observables, their uncertainties and
+  `data_usage`.
+  *Source* D-SPYC-03 (PI 2026-10-17: "A, schema (i), staged") · Profile P14 · T, V-IF-09 ·
+  proposed; blocked on BASE adding the handoff kind and on a receiver (cross-repository items for
+  the PI)
 
 ### 4.5 Command-line and Python API
 
@@ -569,10 +620,19 @@ Owner: `bench` (benchmark registry).
   database SHALL be reproduced by lookup in the hash-pinned record, and unmatched values SHALL be
   labelled synthetic.
   *Source* R4-11 · Core · T, V-DATA-03 · proposed
-- **SF-IO-005** Masses and constants offline. Isotope masses and constants SHALL come from the
-  versioned snapshot of §1.7.5, recorded with source, version and SHA-256, without network
-  queries at run time.
-  *Source* SRS SF-IO-005; R4-10 · Core · T, V-DATA-04 · proposed; blocked on D-SPYC-02
+- **SF-IO-005** Masses and constants offline. Isotope masses, abundances and constants SHALL come
+  from the pinned mendeleev release and the frozen CODATA 2022 profile of §1.7.5, recorded with
+  source, version and SHA-256, without network queries at run time.
+  *Source* SRS SF-IO-005; R4-10; D-SPYC-02 (PI 2026-10-17) · Core · T, V-DATA-04 · proposed
+- **SF-IO-005a** Mass table checked against AME2020. CI SHALL compare every isotope mass and
+  uncertainty SpycFit uses against the hash-pinned AME2020 file fetched under SF-DATA-001e, and
+  SHALL fail, not skip, on any difference or on a missing estimated-value flag.
+  *Source* D-SPYC-02 (PI 2026-10-17: "D") · Core · T, V-DATA-04 · proposed
+- **SF-IO-005b** Isotope default recorded. A prediction or fit that uses the most-abundant isotope
+  for an atom whose input named no isotope SHALL record that default in provenance and flag the
+  result, and the user SHALL be able to override it per atom.
+  *Source* D-SPYC-02 (PI 2026-10-17: "(i)"); AGENTS.md (named defaults) · Core · T, V-DATA-04 ·
+  proposed
 - **SF-IO-007a** Shared-source evidence. Records that share a source SHALL count as one unit of
   evidence: a spectrum, its peaks and constants fitted to those peaks are not independent.
   *Source* SRS SF-IO-007; Amd SF-DATA-001 · Core · T, V-DATA-05 · proposed
@@ -834,7 +894,21 @@ Owner: `assign`, `session`, `ui`.
   that row's values with the PI's own data.
   *Source* D-SPYC-20 (D20-TABLE; brief recommendation) · Core · T and D, V-SET-08 · proposed
 
-The UI toolkit is open decision D-SPYC-05. These requirements hold for any toolkit.
+- **SF-UI-006** Hosting in BASE. The SpycFit UI SHALL run as a notebook that BASE's Voila renders
+  in a SpycFit-environment kernel on BASE's single forwarded port.
+  *Source* D-SPYC-05 (PI 2026-10-17: "H2: BASE's Voila renders a SpycFit notebook in a
+  SpycFit-environment kernel; one port") · Core · D, V-UI-04 · proposed; blocked on BASE
+  registering the notebook path and kernelspec (PI request to BASE); cross-environment widget
+  front ends under Voila are unverified, with H1 and H3 as fallbacks
+- **SF-UI-007** HPC is headless. On an HPC target the first release SHALL provide the Python API
+  and the CLI and SHALL NOT require a UI journey.
+  *Source* D-SPYC-05 (PI 2026-10-17: "No: HPC is headless (API and CLI) in the first release") ·
+  Core · I, V-UI-05 · proposed
+
+The UI toolkit is open under D-SPYC-05: on 2026-10-17 the PI asked for research on "a low
+friction and best usability option". These requirements hold for any toolkit; the PI's statement
+that fitting should "recalculate on the fly" (§1.1) makes the widget-to-fitter latency a design
+constraint for the choice.
 
 ### 5.4 Fitting and inference
 
@@ -964,6 +1038,28 @@ Owner: `assign`.
   validated against measured frequencies or constants before it is used as a prior.
   *Source* SRS SF-ML-002, SF-ML-003; R2-15 · Profile P13 · T, V-ML-03 · proposed
 
+Search windows around computed constants. Owner: `assign`.
+
+- **SF-WIN-001** Window form. A search window around a computed constant B_pred SHALL be
+  [B_pred/(1+q), B_pred/(1−q)] with q its relative half-width, labelled `calibrated` only when q is
+  a calibrated score supplied by the provider (TORQ contract §3.2) and `uncalibrated` otherwise,
+  and SHALL NOT be used as an acceptance tolerance; the window is drawn from the catalog SpycFit
+  makes from the constants being assigned (D-SPYC-16).
+  *Source* D-SPYC-21 (PI 2026-10-17); errata row 4; TORQ contract §3.2 · Core · T, V-WIN-01 ·
+  proposed
+- **SF-WIN-002** Default q per method class. Unless the provider supplies a calibrated q or the
+  user sets one, q SHALL default to the D-SPYC-21 value for the method class of the constants
+  (twice the relative RMSD of that class: B3LYP-D3(BJ)/def2-TZVP 4.5 %, PBE0-D3(BJ)/def2-TZVP
+  5.1 %, r2SCAN-3c 5.4 %, B3LYP-D3(BJ)/def2-SVP 5.5 %, PBEh-3c 6.2 %, MP2 2.1 %, double hybrid
+  1.5 % or 2 % with ΔB_vib, composite or CCSD(T) with ΔB_vib 1 %, weakly bound complexes 7.5 %,
+  multi-water clusters 16 %), recorded in provenance as a default with its evidence grade.
+  *Source* D-SPYC-21 (PI 2026-10-17: "Per-method-class defaults, q = 2×RMSD") · Core · T,
+  V-WIN-02 · proposed
+- **SF-WIN-003** Distortion-constant windows. Unless set otherwise, the window for a quartic
+  distortion constant D SHALL be [D/2, 2D], or [D/4, 4D] when |D| is below one tenth of its largest
+  sibling, and for a sextic constant one order of magnitude either side.
+  *Source* D-SPYC-21 (PI 2026-10-17) · Core · T, V-WIN-02 · proposed
+
 ### 5.6 SPCAT/SPFIT comparison
 
 Owner: `compare`. The comparison stages are those of amendment §3.2: forward prediction,
@@ -1003,6 +1099,10 @@ informed-fit extension.
 - **SF-CMP-004a** Matching by state identity. Transitions SHALL be matched by state identity, J,
   symmetry block and energy rank within the block, never by frequency alone.
   *Source* Amd SF-CMP-004; R1-08 · Core · T, V-CMP-05 · proposed
+- **SF-CMP-004e** Electronic-state field. The state identity of every level and transition SHALL
+  carry an electronic-state field, set to the ground electronic state for P1-P14 records.
+  *Source* D-SPYC-06 (PI 2026-10-17: "We are going to pivot and include this field and scope.") ·
+  Core · T, V-CMP-05 · proposed
 - **SF-CMP-004b** Labelling rule recorded. Each engine's labelling rule (for SPFIT/SPCAT the DIAG
   value) SHALL be recorded with the comparison.
   *Source* Amd SF-CMP-004; R1-08 · Core · T, V-CMP-05 · proposed
@@ -1038,29 +1138,30 @@ informed-fit extension.
   *Source* Amd SF-CMP-008; R1-09 · Core · I and T, V-CMP-09 · proposed; values in SF-CMP-008b to
   008i (D-SPYC-14, PI 2026-10-17)
 - **SF-CMP-008b** T1 forward agreement. Native values and those of the pinned SPCAT (`.cat`,
-  `.egy`) or SPFIT (`.fit`) for the same transition SHALL agree within half the last printed digit
-  of the compared file plus 1 Hz, which the summary the PI answered gives as 50 Hz for `.cat` and
-  5 Hz for `.fit`.
-  *Source* D-SPYC-14 (PI 2026-10-17: "A for T1-T3"); whether the 1 Hz is inside the 50 Hz and 5 Hz
-  or added to them (51 Hz, 6 Hz) is to confirm · Core · T, V-CMP-09 · proposed; values blocked on
-  D-SPYC-14
-  The full brief also proposes, as detail to confirm: matching by state identity; 500 Hz for `.cat`
-  above 99,999,999 MHz and 5×10⁻⁷ cm⁻¹ in IR mode; 5×10⁻⁸ cm⁻¹ for IR lines in `.fit`;
-  5×10⁻⁷ cm⁻¹ for `.egy` energies.
+  `.egy`) or SPFIT (`.fit`) for the same transition, matched by state identity (SF-CMP-004a),
+  SHALL agree within half the last printed digit of the compared file plus 1 Hz (3.34×10⁻¹¹ cm⁻¹
+  for wavenumber-valued files): 51 Hz for `.cat` frequencies up to 99,999,999 MHz and 501 Hz
+  above; 6 Hz for microwave lines in `.fit`; and half-quanta of 5×10⁻⁷ cm⁻¹ for `.cat` in IR mode
+  and for `.egy` energies and 5×10⁻⁸ cm⁻¹ for IR lines in `.fit`.
+  *Source* D-SPYC-14 (PI 2026-10-17: "A for T1-T3"; follow-up 1: "51 Hz (.cat) / 6 Hz (.fit)";
+  follow-up 9 confirmed the IR and high-frequency print quanta and state-identity matching) ·
+  Core · T, V-CMP-09 · proposed
 - **SF-CMP-008c** T2 parameter agreement. When model, data and weights are identical, a T2
   comparison SHALL report WITHIN_TOLERANCE only if every free native parameter lies within 0.1
   standard uncertainty of SPFIT's, and otherwise DIVERGENT with its cause (SF-CMP-010), as a
   numerical check and not a statistical test.
   *Source* D-SPYC-14 (PI 2026-10-17: "A for T1-T3") · Core · T, V-CMP-09 · proposed
-  The full brief also proposes, as detail to confirm: blend weighting, priors, ERRTST rejections and
-  FRAC identical too; comparison with SPFIT's `.var` values and unscaled uncertainties; the label
-  `approximation` (SF-CMP-009); rms(Δν/u) reported beside Δp/u.
+  rms(Δν/u) is reported beside Δp/u (PI 2026-10-17, follow-up 9). Still to confirm from the full
+  brief: blend weighting, priors, ERRTST rejections and FRAC identical too; comparison with SPFIT's
+  `.var` values and unscaled uncertainties; the label `approximation` (SF-CMP-009).
 - **SF-CMP-008d** T2 needs converged fits. A T2 comparison SHALL be made only when SPFIT's last
-  printed |Δp|/u and the native fit's convergence measures are below TBD (D-SPYC-14), a comparison
-  that cannot meet this reporting INCOMPLETE.
-  *Source* D-SPYC-14 (full brief proposes |Δp|/u ≤ 0.01 for SPFIT, and a relative σ_f change below
-  10⁻⁷ with max |Δp|/u below 10⁻³ for the native fit; detail to confirm) · Core · T, V-CMP-09 ·
-  proposed; values blocked on D-SPYC-14
+  printed |Δp|/u is at most 0.01, SPFIT being rerun with a larger NITR when it stopped at its
+  iteration limit, and the native fit has stopped on a relative change in σ_f below 10⁻⁷ with
+  max |Δp|/u below 10⁻³, a comparison that cannot meet this reporting INCOMPLETE.
+  *Source* D-SPYC-14 (PI 2026-10-17, follow-up 9: stopping rules confirmed) · Core · T, V-CMP-09 ·
+  proposed
+  Still to confirm: rerunning SPFIT from its rewritten `.par` only when no parameter has a finite
+  a priori error, because a rerun re-centres finite priors on the rewritten values.
 - **SF-CMP-008e** T3 fit flags. A fit whose σ_f lies outside the central 95 % interval of
   √(χ²_ν/ν) for ν = N − M (0.86–1.14 at ν = 100), and each line with |r|/u > 3, SHALL be flagged
   without being excluded.
@@ -1068,52 +1169,61 @@ informed-fit extension.
 - **SF-CMP-008j** T3 data-set flags. A data set (source × instrument class) whose
   √(Σ_{i∈k}(r_i/u_i)²/ν_k) lies outside the SF-CMP-008e interval for ν_k = N_k − Σ_{i∈k} h_ii, with
   h_ii the leverages of the weighted Jacobian, SHALL be flagged without being excluded.
-  *Source* D-SPYC-14 (full brief, detail to confirm; leverage-corrected ν_k added after review) ·
-  Core · T, V-CMP-09 · proposed; blocked on D-SPYC-14
+  *Source* D-SPYC-14 (PI 2026-10-17, follow-up 9: per-data-set statistic with leverage-corrected
+  ν_k confirmed) · Core · T, V-CMP-09 · proposed
 - **SF-CMP-008f** T3 residual exclusions. A line SHALL be excluded from a fit on the basis of its
   residual only when |r|/u > 5 and the user confirms, the exclusion being recorded under
   SF-FIT-017.
-  *Source* D-SPYC-14 (PI 2026-10-17: "A for T1-T3"); for SPFIT runs, applying the exclusion in a
-  recorded scratch copy of the `.lin` is full-brief detail to confirm · Core · T, V-CMP-09 ·
-  proposed
+  *Source* D-SPYC-14 (PI 2026-10-17: "A for T1-T3"); for SPFIT runs the exclusion is applied in
+  the scratch copy of the `.lin` that SF-IO-008 requires · Core · T, V-CMP-09 · proposed
   Held-out partitions (SF-INF-003), lines without a usable uncertainty (SF-CMP-008l), declared
-  model-scope exclusions (§8.3) and exclusions an expert records for a physical reason, such as a
-  blend with another species (to confirm), are not residual-based and are recorded under
-  SF-FIT-017.
+  model-scope exclusions (§8.3) and the expert exclusions of SF-CMP-008m are not residual-based
+  and are recorded under SF-FIT-017.
+- **SF-CMP-008m** Expert exclusions below 5u. An expert MAY exclude a line with |r|/u ≤ 5 for a
+  recorded physical reason (for example a blend with another species or a known instrument
+  artefact), and such an exclusion SHALL be recorded under SF-FIT-017 with the reason, the actor
+  and the time and listed in the comparison report.
+  *Source* D-SPYC-14 (PI 2026-10-17, follow-up 7: "Yes, with a recorded reason") · Core · T,
+  V-CMP-09 · proposed
 - **SF-CMP-008g** T3 default uncertainties. A line with neither a source nor a user uncertainty
   SHALL be weighted in fits and T3 evaluations by the D-SPYC-14 default for its technique (cavity
   FTMW 2 kHz; CP-FTMW 10 kHz; mm/sub-mm 50 kHz; synchrotron FTIR 2×10⁻⁴ cm⁻¹), its observation
   record keeping the uncertainty absent (SF-ING-002c).
   *Source* D-SPYC-14 (PI 2026-10-17: "A for T1-T3"); weights-only use is the agent's reconciliation
   with SF-ING-002c, to confirm; AGENTS.md (named defaults) · Core · T, V-CMP-09 · proposed
-  The full brief also proposes, as detail to confirm: 4 kHz for cavity FTMW with unresolved
-  hyperfine, 25 kHz for Ka-band CP-FTMW and 10⁻³ cm⁻¹ for wavemeter IR.
+  Each default is Type B with k = 1 and ranks after a source or user value (follow-up 9). The
+  further defaults the full brief proposed (4 kHz for cavity FTMW with unresolved hyperfine, 25 kHz
+  for Ka-band CP-FTMW, 10⁻³ cm⁻¹ for wavemeter IR) are TBD (D-SPYC-14): on 2026-10-17 the PI
+  confirmed the other full-brief detail "except the T3 extra defaults (those stay TBD)".
 - **SF-CMP-008k** Defaults flagged. Every result that uses an SF-CMP-008g default SHALL be flagged
   with the default it used.
-  *Source* D-SPYC-14 (PI 2026-10-17: "Results using a default are flagged"); recording each default
-  as Type B with k = 1 is full-brief detail to confirm · Core · T, V-CMP-09 · proposed
+  *Source* D-SPYC-14 (PI 2026-10-17: "Results using a default are flagged"; follow-up 9: each
+  default recorded as Type B with k = 1) · Core · T, V-CMP-09 · proposed
 - **SF-CMP-008l** No default, no weight. A line with neither a source nor a user uncertainty whose
   technique has no SF-CMP-008g default SHALL be left out of fits and held-out evaluations and
   recorded under SF-FIT-017 with the reason.
   *Source* D-SPYC-14 (full brief: no default for other techniques); leaving such lines out, never
   silently, is an agent proposal following SRS SF-IO-002, to confirm · Core · T, V-CMP-09 ·
   proposed; blocked on D-SPYC-14
-- **SF-CMP-008h** T4 floors committed first. Each benchmark SHALL commit, before its run, the
-  minimum acceptable T4 coverage at k = 1, 2, 3, with the numbers set for that benchmark from its
-  CDMS fit file.
-  *Source* D-SPYC-14 (PI 2026-10-17: "B for T4"); SF-VER-004 · Core · I, V-CMP-09 · proposed;
-  method blocked on D-SPYC-14
-  How the numbers are set is to confirm. The full brief proposed binomial bounds at a declared
-  false-alarm rate and a mean-z limit. Review found that binomial bounds ignore the correlation of
-  predictions made from one parameter set, so the agent now proposes floors and a mean-z limit set
-  at a declared false-alarm rate from the distribution of z simulated under the joint predictive
-  covariance of the held-out lines, using the reference fit's line list, uncertainties and model
-  but no residual of a held-out line. Whether over-coverage should also be bounded is open.
-- **SF-CMP-008i** T4 small samples. A T4 evaluation on fewer than TBD (D-SPYC-14) held-out lines
-  SHALL report INCOMPLETE, or DIVERGENT (SF-CMP-012c) when its coverage already falls below the
-  floor committed for that number of lines.
-  *Source* D-SPYC-14 (full brief proposes 30 lines; detail to confirm) · Core · T, V-CMP-09 ·
-  proposed; value blocked on D-SPYC-14
+- **SF-CMP-008h** T4 bounds committed first. Each benchmark SHALL commit, before its run, the
+  minimum and the maximum acceptable T4 coverage at k = 1, 2, 3 and a mean-z limit, each set for
+  that benchmark at a declared false-alarm rate from the distribution of z simulated under the
+  joint predictive covariance of its held-out lines, using the reference fit's line list,
+  uncertainties and model from its CDMS fit file and no residual of a held-out line.
+  *Source* D-SPYC-14 (PI 2026-10-17: "B for T4"; follow-up 8: "Yes: bound both under- and
+  over-coverage"; follow-up 9: floors simulated under the joint predictive covariance confirmed);
+  SF-VER-004 · Core · I, V-CMP-09 · proposed
+  Binomial bounds were not adopted because they ignore the correlation of predictions made from
+  one parameter set. The upper bound closes the loophole by which inflated uncertainties cover
+  every line; with about 30 lines it catches only gross inflation.
+- **SF-CMP-008i** T4 small samples. A T4 evaluation on fewer than 30 held-out lines SHALL report
+  INCOMPLETE, or DIVERGENT (SF-CMP-012c) when its coverage already falls below the floor committed
+  for that number of lines.
+  *Source* D-SPYC-14 (PI 2026-10-17, follow-up 9: 30 lines confirmed) · Core · T, V-CMP-09 ·
+  proposed
+- **SF-CMP-008n** Extrapolated lines reported only. A held-out line labelled extrapolated under
+  SF-IO-007c SHALL be reported with its z but SHALL NOT enter the T4 coverage statistics.
+  *Source* D-SPYC-14 (PI 2026-10-17, follow-up 9) · Core · T, V-CMP-09 · proposed
 - **SF-CMP-009** Shared-data covariance. An uncertainty-normalised comparison of fits to the same
   observations SHALL state its treatment of shared-data covariance or carry the label
   `approximation`.
@@ -1185,6 +1295,12 @@ informed-fit extension.
   and their Hamiltonian methods and state whether comparison is valid at parameter or only at
   observable level.
   *Source* R1-13; [R-10..R-13] · Profile · I, V-CMP-17 · proposed
+  For P4 the PI named on 2026-10-17 (D-SPYC-04): XIAM first, its reference build being the
+  XIAMALL.FOR source (the source XIAM5 is built from); ERHAM second; BELGI-Cs/C1, RAM36 and
+  westerfit as later engines; only provisioned and accepted engines appear as available. BASE's
+  build mechanism builds XIAM, and ERHAM when its terms allow. Whether P4 is served by wrapped
+  engines, a native model or both is blocked on the research the PI requested under D-SPYC-04
+  (§1.1). XIAM's and ERHAM's rights records (SF-RUN-008) are open.
 - **SF-CMP-020** Fitting comparisons follow the PI's model scope. Fitting-stage and
   cross-prediction comparisons SHALL run only for model terms that the native path implements
   under D-SPYC-18, and other terms SHALL carry NOT_RUN with the reason.
@@ -1194,9 +1310,10 @@ informed-fit extension.
   evaluated at the native fit's parameters SHALL be no larger than the same objective evaluated at
   the parameters of SPFIT's `.var`, a native fit within T2 of SPFIT (SF-CMP-008c, SF-CMP-008d)
   counting as equal.
-  *Source* agent reading of the PI's 2026-10-17 instruction "Additionally ensure that SpycFit
-  predictions are equal or closer than SPCAT and SPFIT" (D-SPYC-14); extending it from predictions
-  to fits is to confirm · Core · T, V-CMP-18 · proposed; blocked on D-SPYC-14
+  *Source* the PI's 2026-10-17 instruction "Additionally ensure that SpycFit predictions are equal
+  or closer than SPCAT and SPFIT" (D-SPYC-14), read as covering fits and predictions, which the PI
+  confirmed on 2026-10-17 (follow-up 2: "Yes: fits and predictions") · Core · T, V-CMP-18 ·
+  proposed
 - **SF-CMP-021d** SPFIT objective reproduced. The native objective evaluated at the parameters of
   SPFIT's `.var` SHALL equal nf·RMS², with nf SPFIT's number of fitted lines and RMS its last
   printed RMS ERROR, within the rounding of that printed value.
@@ -1204,26 +1321,28 @@ informed-fit extension.
   terms) · Core · T, V-CMP-18 · proposed
 - **SF-CMP-021b** Native predictions no farther from held-out data than SPCAT. Under the identical
   conditions of SF-CMP-008c, on the held-out lines of SF-INF-003 fixed before the run (SF-VER-004)
-  that carry a source or user uncertainty, the rms of (ν_obs − ν_pred)/u_obs for native predictions
-  from the native fit to the remaining lines SHALL exceed that for the pinned SPCAT's predictions
-  from SPFIT's fit to the same remaining lines by no more than TBD (D-SPYC-14).
-  *Source* agent reading of the PI's 2026-10-17 instruction (D-SPYC-14, as SF-CMP-021a). A
-  simulation in review found that with no margin the comparison fails in about half of runs from
-  measurement noise alone, even when the two fits agree within T2, so a margin or a paired,
-  lineage-grouped bootstrap test at a declared level is needed · Core · T, V-CMP-19 · proposed;
-  blocked on D-SPYC-14
-- **SF-CMP-021c** Native fitting offered only after SF-CMP-021. Native fits SHALL be offered as
-  results for a profile only when SF-CMP-021a and SF-CMP-021b have been evaluated and met on at
-  least one benchmark of that profile and on every benchmark of it that has fit inputs and enough
-  held-out lines (SF-CMP-008i), a benchmark that fails either being DIVERGENT with its cause
-  (SF-CMP-010), one that cannot be evaluated keeping its §0.4 status, and comparison runs under
-  SF-CMP-001a continuing meanwhile.
-  *Source* agent proposal following SF-CMP-021a and 021b; not in the PI's words, and it departs
-  from amendment D-01 ("Divergence remains visible. Exploration continues, but publication export
-  requires explicit expert review"), so it is to confirm; SF-HAM-001 · Core · T, V-CMP-20 ·
-  proposed; blocked on D-SPYC-14
+  that carry a source or user uncertainty, the native predictions from the native fit to the
+  remaining lines SHALL NOT be significantly farther from the held-out lines than the pinned
+  SPCAT's predictions from SPFIT's fit to the same remaining lines, judged by a paired bootstrap
+  test at the 5 % level of the mean of |z_native| − |z_SPCAT|, z = (ν_obs − ν_pred)/u_obs,
+  resampling by line family (lineage key, SF-IO-007b), the test reporting INCOMPLETE below the
+  SF-CMP-008i sample size.
+  *Source* D-SPYC-14 (PI 2026-10-17, follow-up 3: "Paired bootstrap test, 5% level"). A simulation
+  in review found that a strict no-margin comparison fails in about half of runs from measurement
+  noise alone, even when the two fits agree within T2 · Core · T, V-CMP-19 · proposed
+- **SF-CMP-021c** Withdrawn. This id carried an agent-proposed gate under which native fits would
+  have been offered for a profile only after SF-CMP-021a and 021b were met on its benchmarks. On
+  2026-10-17 the PI chose "No gate: report the comparison only" (D-SPYC-14, follow-up 4). The id is
+  retired and never reused. Native fits stay available under amendment D-01 ("Divergence remains
+  visible. Exploration continues, but publication export requires explicit expert review";
+  SF-CMP-015b), and SF-CMP-021a and 021b results are shown with the comparison (SF-CMP-014a).
   Forward prediction from given parameters (windows and what-if views, D-SPYC-18) is gated by
   SF-HAM-001 alone.
+- **SF-CMP-021e** Same-model cases only. SF-CMP-021a and SF-CMP-021b SHALL be evaluated only when
+  the native and SPFIT models are identical under SF-CMP-002, and a comparison between different
+  models SHALL be reported under SF-CMP-005c and SF-CMP-006 without an SF-CMP-021 status.
+  *Source* D-SPYC-14 (PI 2026-10-17, follow-up 6: "Compare and report only; the rule applies to
+  same-model cases") · Core · T, V-CMP-18 · proposed
 
 ### 5.7 Outputs and publication
 
@@ -1316,8 +1435,11 @@ Owner: all components.
 - **SF-RUN-005a** Refinement request contents. A refinement request SHALL contain the diagnostic
   evidence, alternatives, intended observables, model revision, requested calculations and the
   user-approved resource policy, and list the SF-FIT-004 and SF-INF-003 diagnostics already run.
-  *Source* SRS SF-RUN-005; R2 (unverifiable wording) · Profile P14 · T, V-RUN-05 · proposed;
-  blocked on D-SPYC-03
+  *Source* SRS SF-RUN-005; R2 (unverifiable wording); D-SPYC-03 (PI 2026-10-17: "A, schema (i),
+  staged") · Profile P14 · T, V-RUN-05 · proposed
+  The request's schema is drafted by SpycFit and agreed with each receiver by consumer tests in
+  both repositories; its route to the receiver is SF-IF-009. Observables sent for calibration
+  SHALL NOT later validate the returned model (TORQ-SCI-001) is carried by SF-ML-003a's partitions.
 - **SF-RUN-005b** New versions only. A returned refinement SHALL create a new version and leave
   accepted results unchanged.
   *Source* SRS SF-RUN-005 · Profile P14 · T, V-RUN-05 · proposed
@@ -1327,7 +1449,12 @@ Owner: all components.
   *Source* R5 §5; Phase 0 inventory (a cleanup routine killed the test runner's own process
   group) · Core · T, V-SEC-01 · proposed
 
-The toolchain (Python version, numerical libraries, JAX or CuPy) is open decision D-SPYC-11.
+The toolchain (Python version, numerical libraries, JAX or CuPy) is open decision D-SPYC-11. On
+2026-10-17 the PI stated that GPU-parallel, array-based fitting that recalculates on the fly is
+the module's main value and asked for research before the engine architecture is fixed (§1.1;
+`docs/decisions/D-SPYC-04.md`); D-SPYC-11 waits for that research. SF-RUN-002a (a validated CPU
+path for every native capability) and SF-RUN-002c (accelerator output matches the CPU path) hold
+for any outcome.
 
 ---
 
@@ -1381,12 +1508,13 @@ with its tolerance committed before the implementation PR (SF-VER-004).
 | V-HAM-01..05 | Native terms match SPCAT within T1; label swaps halt; frame and constant-type rules | external-engine, analytical |
 | V-LS-01..03 | Line-shape declarations; agreement with HAPI and analytic limits; chunked equals unchunked | analytical |
 | V-VIB-01..04, V-NIR-01, V-ROVIB-01, V-PHASE-01, V-RAMAN-01..03, V-THZ-01 | Profile-specific checks listed in the capability matrix | per profile |
-| V-HITL-01..03, V-UI-01..03 | Acceptance only by expert action; non-drag paths; stale marking; no older overwrite; views | software, demonstration |
+| V-HITL-01..03, V-UI-01..05 | Acceptance only by expert action; non-drag paths; stale marking; no older overwrite; views; the UI notebook renders under BASE's Voila in a SpycFit-environment kernel on one port; HPC provides API and CLI only | software, demonstration |
+| V-WIN-01..02 | Window form [B/(1+q), B/(1−q)], labels and no use as tolerance; default q per method class and the distortion-constant rule equal the D-SPYC-21 table; a provider's calibrated q and a user value take precedence and are recorded | software, analytical |
 | V-SET-01..08 | No prediction before temperature, window and J_max are set; editable in UI and API; edits mark results stale; values and their origin in provenance; pre-filled values equal the D-SPYC-20 table; J_max reproduces the D-SPYC-20 test values (linear rotor B̄ = 0.1 cm⁻¹ at 296 K: 152; glycidaldehyde with CDMS parameters through an SPCAT build that reproduces the CDMS catalog byte for byte: 11, 19, 38, 149 at 1.5, 5, 20, 300 K); out-of-range values warn; each pre-filled value shown with its evidence grade, thin rows labelled provisional | software, analytical, external-engine, demonstration |
 | V-DATA-01..07 | Reference-record fields, redistribution class, fetch-and-verify, lineage partitions, extrapolation labels | software |
 | V-OUT-01..06 | Coherent records, units, absent tokens, rounding reproduction check, provenance graph, SPFIT-first ordering | software |
 | V-RUN-01..09, V-SEC-01 | Offline run, provenance, resource limits, outcomes, refinement versions, verified identity, use rights, builds only from manifest-verified JPL sources, subprocess safety | software |
-| V-IF-01..08, V-API-01, V-PROV-01..03, V-ML-01..03 | Interfaces and providers, including direct input of ORCA and Pickett files, BASE as a required dependency and the GEOM payload | software |
+| V-IF-01..09, V-API-01, V-PROV-01..03, V-ML-01..03 | Interfaces and providers, including direct input of ORCA and Pickett files, BASE as a required dependency, the GEOM payload and the refinement request as a BASE handoff kind mapped to `cochem.torq.request/1` | software |
 | V-DEMO-1..5 | End-to-end demonstrations of the four workflows and of each capability-matrix row | demonstration, experimental |
 | V-VER-01..05, V-PERF-01 | Evidence-class tags, no substitution, non-empty coverage, criteria committed first, improvement claims; performance workloads | inspection |
 
@@ -1395,12 +1523,15 @@ with its tolerance committed before the implementation PR (SF-VER-004).
 The first semirigid panel needs at least one linear, one symmetric-top and one asymmetric-top
 closed-shell case, each compared only on transitions whose reference model has no hyperfine,
 electron-spin, internal-rotation, inversion or interstate-coupling terms (R4-02). The PI accepted
-this panel on 2026-10-17 (D-SPYC-14: "Yes, proceed."):
+this panel on 2026-10-17 (D-SPYC-14: "Yes, proceed.") and, later that day, dropped OCS because it
+has no public fit inputs ("Drop OCS from the panel; replace it with a molecule that has fit
+inputs"). Every panel member must have public SPFIT fit inputs; the replacement is TBD
+(D-SPYC-14) until a candidate is verified and the PI accepts it.
 
 | Case | Rotor type | Reference records | Notes |
 | :--- | :--- | :--- | :--- |
 | CO | linear | CDMS 028503 and fit files; JPL 28001 | No hyperfine |
-| OCS | linear | CDMS 060503; JPL 60001 | No published fit inputs: forward prediction only until a line list is compiled |
+| Replacement for OCS (TBD, D-SPYC-14) | linear preferred | A species with public `.par`/`.lin` (or `.var`/`.lin`) fit inputs at CDMS, JPL or in a cited supplement | OCS (CDMS 060503; JPL 60001) was dropped on 2026-10-17: catalog only, no public fit inputs |
 | SO₂ | asymmetric top | CDMS 064502 with A- and S-reduction fit files on the same data | Best reduction test |
 | H₂CO | asymmetric top | CDMS 030501 and fit files; JPL 30004 | Exclude hyperfine-resolved lines |
 | CH₃CCH (propyne) | symmetric top | CDMS 040502; ground-state fit files | The only semirigid symmetric top without hyperfine found |
@@ -1415,7 +1546,8 @@ redistribution class is "not redistributable" or "unknown" (SF-DATA-001d).
 ### 8.4 Release scenarios
 
 Preregistered benchmark run; SPFIT/SPCAT provisioning acceptance (V-PICK-05); clean-wheel
-install; UI journey on a reference case per deployment target.
+install; UI journey on a reference case per deployment target except HPC, which is headless in the
+first release (D-SPYC-05, PI 2026-10-17; SF-UI-007).
 
 ---
 
@@ -1454,15 +1586,20 @@ answered further questions on 2026-10-17. The entries below are ANSWERED (record
 | Entry | PI answer | Remaining question |
 | :--- | :--- | :--- |
 | D-SPYC-01 Product identity, fitter of record | Broad assignment-and-fitting pipeline; native SpycFit and genuine SPCAT/SPFIT side by side; publication tables show SPFIT first (2026-10-16) | None |
-| D-SPYC-06 IR/Raman/UV-Vis | IR, Raman, THz, near-IR and microwave first-class (2026-10-16); TORQ produces vibrational and Raman predictions (2026-10-17) | UV-Vis |
-| D-SPYC-18 In-process model | A native model exists for compatible microwave models | Which terms, in which order |
-| D-SPYC-04 Internal rotation | In scope after semirigid acceptance | Engines and order |
-| D-SPYC-14 Benchmarks | Semirigid first (D-03); §8.3 panel accepted; tolerances A for T1-T3, B for T4; PI added "ensure that SpycFit predictions are equal or closer than SPCAT and SPFIT" (2026-10-17) | T1 50 or 51 Hz; full-brief tolerance detail; the T4 method; the reading of "equal or closer", its margin and the SF-CMP-021c gate; search-window widths; tolerances outside the tiers (SF-PHYS-008c/e, SF-FIT-008a, SF-RUN-002c); one registry with the earlier set (R4-12) |
-| D-SPYC-03 Feedback to TORQ | PES refinement required, possibly in another module | Hand-off route |
+| D-SPYC-06 IR/Raman/UV-Vis | IR, Raman, THz, near-IR and microwave first-class (2026-10-16); TORQ produces vibrational and Raman predictions (2026-10-17); UV-Vis view retracted, electronic treatment for the microwave use cases in scope, electronic-state field included (2026-10-17) | The electronic ladder (P15 rungs, engines, data) and the SpycFit/"another module" boundary for UV-Vis spectra: research the PI asked for (R3) |
+| D-SPYC-18 In-process model | A native model exists for compatible microwave models | Which terms, in which order; the engine architecture after the GPU research (R1) |
+| D-SPYC-04 Internal rotation | In scope after semirigid acceptance; engines XIAM (XIAMALL.FOR build) and ERHAM, later BELGI-Cs/C1, RAM36, westerfit; BASE builds them (2026-10-17) | Wrap versus native: research the PI asked for (R1); XIAM and ERHAM rights records |
+| D-SPYC-14 Benchmarks | Semirigid first (D-03); §8.3 panel accepted, OCS dropped (2026-10-17); tolerances A for T1-T3, B for T4; "equal or closer" confirmed for fits and predictions, paired bootstrap at 5 %, same-model cases only, no gate; T1 51 Hz / 6 Hz; over-coverage bounded; expert exclusions below 5u with a recorded reason; full-brief detail confirmed except the extra T3 defaults (2026-10-17) | Replacement for OCS (R4); the three extra T3 default values; full-brief detail not shown in the pop-up (record); tolerances outside the tiers (SF-PHYS-008c/e, SF-FIT-008a, SF-RUN-002c); one registry with the earlier set (R4-12) |
+| D-SPYC-03 Feedback to TORQ | PES refinement required, possibly in another module; route A, schema (i), staged: a BASE handoff kind with a SpycFit-drafted schema (2026-10-17) | BASE adding the kind; a receiver |
 | D-SPYC-17 SPFIT/SPCAT source | JPL sources; DPFIT/DPCAT included (2026-10-17) | TORQ's pin; storage of verified copies; `pyckett`; use rights |
 | D-SPYC-19 Dependencies | BASE is a hard requirement; TOPOS and TORQ come with BASE; ORCA and Pickett files are valid direct inputs (2026-10-17) | ORCA quantities and parser |
-| D-SPYC-20 Session parameters | Set before predictions; editable fields; pre-filled per technique (D20-TABLE) with J_max from populations (D20-JPOP) (2026-10-17) | Confirmation of full-brief detail not shown in the summary (record §"Detail in the full brief"); XIAM/BELGI/RAM36 mapping of T and J_max |
+| D-SPYC-20 Session parameters | Set before predictions; editable fields; pre-filled per technique (D20-TABLE) with J_max from populations (D20-JPOP); full-brief detail confirmed (2026-10-17) | XIAM/ERHAM/BELGI/RAM36 mapping of T and J_max |
 | D-SPYC-10 Structure determination | Deferred to GEOM (2026-10-17) | GEOM payload schema |
+| D-SPYC-16 Catalog boundary | Split by producer: TORQ owns catalogs from its computed constants; SpycFit owns every catalog it makes, labelled with origin; one shared test (2026-10-17) | TORQ maintainer's reading of D12; which catalog sets windows (SF-WIN-001) |
+| D-SPYC-02 Masses and constants | mendeleev pinned exactly; most-abundant isotope as a recorded default; per-sample abundance with mendeleev default; CODATA 2022 frozen with SciPy cross-check; spins a separate decision (2026-10-17) | The spins decision; the BASE-TORQ package overlap (cross-repository) |
+| D-SPYC-05 UI and hosting | Hosting H2 (BASE's Voila renders a SpycFit notebook in a SpycFit kernel, one port); HPC headless in the first release (2026-10-17) | The toolkit: research the PI asked for (R2) |
+| D-SPYC-21 Search windows | Per-method-class defaults, q = 2 × RMSD, uncalibrated, never acceptance tolerances (2026-10-17) | None |
+| D-SPYC-22 Module name | SPYFY, pronounced "spiffy" (2026-10-17) | The rename PR; the BASE registry entry |
 | D-01, D-02, D-03 | Divergence review at export; offline-capable core; semirigid first | Recorded as D-SPYC entries |
 
 Questions raised by this draft:
@@ -1475,8 +1612,20 @@ Questions raised by this draft:
    earlier D-SPYC-14 set is open.
 5. Pin SPFIT/SPCAT. Answered 2026-10-17: JPL sources, with DPFIT/DPCAT included (D-SPYC-17).
 6. Accept the four tolerance tiers of SF-CMP-008a and set their values. Answered 2026-10-17:
-   A for T1-T3, B for T4 (D-SPYC-14). SF-CMP-021 records the agent's reading of the PI's added
-   instruction, still to confirm.
+   A for T1-T3, B for T4 (D-SPYC-14). SF-CMP-021 records the reading of the PI's added
+   instruction, confirmed by the nine follow-ups of 2026-10-17.
+7. Settle the catalog boundary with TORQ. Answered 2026-10-17: split by producer (D-SPYC-16).
+8. Settle masses, abundances and constants. Answered 2026-10-17 (D-SPYC-02).
+9. Settle the refinement-request route. Answered 2026-10-17: A, schema (i), staged (D-SPYC-03).
+10. Name the P4 engines and the reference build. Answered 2026-10-17 (D-SPYC-04); wrap versus
+    native awaits the PI's research request (R1).
+11. Settle UI hosting and the HPC journey. Answered 2026-10-17: H2; HPC headless (D-SPYC-05); the
+    toolkit awaits the PI's research request (R2).
+12. Settle UV-Vis. Answered 2026-10-17 by a pivot: electronic treatment for the microwave use
+    cases in scope, electronic-state field included (D-SPYC-06); the ladder and the module boundary
+    await the PI's research request (R3).
+13. Set the search-window defaults. Answered 2026-10-17 (D-SPYC-21).
+14. Name the module. Answered 2026-10-17: SPYFY (D-SPYC-22).
 
 ## Appendices
 

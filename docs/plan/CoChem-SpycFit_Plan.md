@@ -15,7 +15,7 @@
 | 1. Specification | SRS v2, architecture and this plan completed with the PI, one chapter per PR, with an acceptance catalog, a benchmark manifest with frozen tolerances, and a disposition of every review finding. Benchmark sources are recorded (DOI or URL, SHA-256) without committing data files. Decisions needed before G1 are listed in `docs/handoff/PI_DECISIONS.md`. | G0 | **G1**: PI approves and tags `srs-v2.0`. No code PR before that tag exists on origin, created by the PI. |
 | 2. Hygiene | One PR under the PI's D-SPYC-15 choice: <ul><li>a single package tree;</li><li>foreign code and committed junk removed, limited to paths listed in the Phase 0 inventory and approved by the PI;</li><li>every deleted test file listed with its reason, and no test deleted, skipped or xfailed to make CI green;</li><li>`pytest.ini` runs the whole suite, registers the `req` marker and enables `--strict-markers`;</li><li>CI runs the tests and builds the pinned SPFIT/SPCAT (D-SPYC-17), and the `air_gap_enforcement` `find` step, which fails on any `.lin`, `.fit`, `.h5`, `.parquet` or `.lock` file outside a `test_fixtures` directory, is removed;</li><li>`.gitignore` ignores run outputs by directory and allows `tests/fixtures/` and `tests/benchmarks/`;</li><li>the linter is reduced per D-SPYC-08 and D-SPYC-09;</li><li>the README is rewritten from SRS v2.</li></ul> | G1 | **G2**: PI approves the PR (in a PR comment, per `AGENTS.md`) with CI green, or with a substitute the PI recorded in `docs/decisions/` if GitHub Actions cannot run. |
 | 3. Work packages | One PR each, in the order below. | G2 | **G3** per package: PI reads `docs/evidence/WP-<NAME>.md` and approves the PR in a PR comment. |
-| 4. Release | Preregistered benchmark run; SPFIT/SPCAT round trip; clean-wheel install; UI journey on a reference complex per deployment target. | All G3 | **G4**: PI signs the release tag. |
+| 4. Release | Preregistered benchmark run; SPFIT/SPCAT round trip; clean-wheel install; UI journey on a reference complex per deployment target except HPC, which is headless in the first release (D-SPYC-05). | All G3 | **G4**: PI signs the release tag. |
 
 State on 2026-10-16: the Phase 0 inventory exists (`docs/evidence/phase0_inventory.md`); the
 baseline tag has not been created; the amendment §5 defects were corrected at the PI's request
@@ -38,19 +38,26 @@ an open decision say so.
 5. **WP-INT**: intensities with user spin weights, selection rules and catalogs at T_rot
    (D-SPYC-13, D-SPYC-16).
 6. **WP-DIAG**: inertial defect, planar moments and κ (D-SPYC-12).
-7. **WP-ASSIGN**: prediction windows, candidate ranking, pattern tools and the assignment loop.
+7. **WP-ASSIGN**: prediction windows with the D-SPYC-21 per-method-class defaults, candidate
+   ranking, pattern tools and the assignment loop.
 8. **WP-CAMPAIGN**: isotopologues and conformers, and the constants GEOM needs for structure
    determination (D-SPYC-10: structure determination is GEOM's).
-9. **WP-LAM**: internal rotation and tunnelling (D-SPYC-04).
-10. **WP-UI**: the single UI stack (D-SPYC-05).
+9. **WP-LAM**: internal rotation and tunnelling (D-SPYC-04: engines XIAM with the XIAMALL.FOR
+   reference build and ERHAM, later BELGI-Cs/C1, RAM36 and westerfit, built by BASE's mechanism;
+   wrap versus native waits for the research the PI requested on 2026-10-17).
+10. **WP-UI**: the single UI stack (D-SPYC-05: a notebook rendered by BASE's Voila in a
+    SpycFit-environment kernel, H2; HPC headless in the first release; the toolkit follows the
+    usability research the PI requested on 2026-10-17).
 11. **WP-IF**: BASE integration (D-SPYC-19: BASE is required), the direct-input path for
     user-supplied ORCA and Pickett files, the GEOM payload, and the TORQ bundle consumer once
     TORQ's exporter exists.
-12. **WP-OUT**: publication export and the refinement request (D-SPYC-03).
+12. **WP-OUT**: publication export and the refinement request (D-SPYC-03: a BASE handoff kind
+    with a SpycFit-drafted schema, staged; the BASE requirement waits on BASE and a receiver).
 13. **WP-CMP**: the native-versus-SPCAT/SPFIT comparison of amendment §3 (SRS v2 §5.6),
-    starting with the semirigid profile. If the PI confirms the proposed SRS v2 SF-CMP-021c gate,
-    its benchmark runs, with WP-BENCH's registry and held-out partitions, decide whether native
-    fits are offered for a profile; forward prediction stays gated by SF-HAM-001 alone.
+    starting with the semirigid profile. The PI chose no gate on 2026-10-17 (D-SPYC-14, follow-up
+    4: "No gate: report the comparison only"): SF-CMP-021a and 021b results are reported with
+    WP-BENCH's registry and held-out partitions; forward prediction stays gated by SF-HAM-001
+    alone.
 14. **WP-BENCH**: the benchmark registry: reference records, redistribution classes,
     fetch-and-verify fixtures, lineage partitions (SRS v2 §4.6, §8.3; D-SPYC-14).
 15. **WP-VIB**: the vibrational, rovibrational, Raman, THz and near-IR profiles of SRS v2 §1.2,

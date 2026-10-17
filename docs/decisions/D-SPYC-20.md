@@ -2,10 +2,10 @@
 
 | Field | Value |
 | :--- | :--- |
-| Status | ANSWERED in part (agent). DECIDED only after the PI approves the PR that contains this record. |
-| Answered | 2026-10-17 (three replies) |
+| Status | ANSWERED (agent). DECIDED only after the PI approves the PR that contains this record. |
+| Answered | 2026-10-17 (four replies) |
 | Answered by | PI (Dr. Joshua John Klaassen) |
-| Source | conversation 2026-10-17 (agent question and PI reply quoted below) |
+| Source | conversation 2026-10-17 (agent question and PI reply quoted below); the detail confirmation by pop-up, `docs/handoff/pi_answers_2026-10-17_popups.md` |
 
 ## Decision
 
@@ -51,7 +51,17 @@ value from a paper.
 | Condensed IR / Raman / NIR | 298 K | IR 400–4000*, Raman 100–2000, NIR 4000–10000 cm⁻¹ | band width 10 cm⁻¹ (no J_max) | Thin |
 | THz-TDS, condensed | 295 K (78 K if cryogenic) | 20–120 cm⁻¹ | band width 5 cm⁻¹ | Thin |
 
-### Detail in the full brief that the summary did not show (needs PI confirmation)
+### Detail in the full brief that the summary did not show (confirmed by the PI on 2026-10-17)
+
+The agent put this detail to the PI as a pop-up ("D-SPYC-20 detail confirmation"), listing the
+P13/P14 row, the uniform-flow entry, the optional NIR intensity cutoff of 1×10⁻²⁵ cm/molecule at
+296 K (off by default), the published ranges and key DOIs, and the line-width definitions (HWHM
+for condensed IR/Raman/NIR, FWHM for THz-TDS and band contours), with the options "Confirm all as
+listed (Recommended)", "Confirm all, but state every width as FWHM (condensed IR/Raman/NIR becomes
+20 cm⁻¹)", "Confirm all except the P13/P14 row (computation-led profiles get no pre-fill)" and
+"Confirm nothing yet; I will read the record first". The PI selected: "Confirm all as listed
+(Recommended)". Each width box is labelled with its definition (HWHM or FWHM) so that nothing is
+converted by hand.
 
 The full brief's table, reproduced below, adds: a row for computation-led work and PES refinement
 (P13, P14: "Row of the data fitted"); a uniform-flow entry in the mm-wave row; an optional NIR
@@ -103,8 +113,12 @@ differ in definition by a factor of two.
 - J_max is computed by the D20-JPOP rule above, without a cap. Condensed-phase rows, where J_max
   does not apply, record J_max as "not applicable" and use the table's third-box entry (a
   Lorentzian line width; for condensed NIR, also "up to 2 quanta").
-- Still open: the PI's confirmation of the full-brief detail listed above; how temperature and
-  J_max map onto XIAM, BELGI and RAM36 inputs (not researched).
+- The full-brief detail listed above is confirmed (2026-10-17): the P13/P14 row takes its
+  pre-fills from the row of the data being fitted; a uniform flow runs at its own measured
+  temperature; the NIR intensity cutoff is optional and off by default; each box shows its
+  published range and the width definition it uses.
+- Still open: how temperature and J_max map onto XIAM, ERHAM, BELGI and RAM36 inputs (not
+  researched).
 - The 300 K reference for microwave cells and 296 K for IR and NIR cells is an agent choice,
   following the JPL/CDMS (300 K) and HITRAN (296 K) conventions.
 
@@ -113,4 +127,5 @@ differ in definition by a factor of two.
 The fixed CP-FTMW defaults proposed in `docs/handoff/PI_DECISIONS.md` (T_rot 1.5 K, 2-22 GHz,
 J_max from population, capped at 30) were not adopted. D20-FAMILY (one preset per technique
 family), D20-JLINE (line-intensity J_max) and D20-JFIX (fixed J_max per technique) were not
-chosen.
+chosen. At the detail confirmation, stating every width as FWHM, dropping the P13/P14 pre-fill
+row, and deferring confirmation were not chosen.

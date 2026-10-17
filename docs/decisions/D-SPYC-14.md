@@ -2,10 +2,10 @@
 
 | Field | Value |
 | :--- | :--- |
-| Status | ANSWERED in part (agent). DECIDED only after the PI approves the PR that contains this record. |
-| Answered | 2026-10-16 (direction); 2026-10-17 (panel; tolerances) |
+| Status | ANSWERED in part (agent): the T3 extra default values and the replacement for OCS remain open. DECIDED only after the PI approves the PR that contains this record. |
+| Answered | 2026-10-16 (direction); 2026-10-17 (panel; tolerances); 2026-10-17 (nine follow-ups by pop-up) |
 | Answered by | PI (Dr. Joshua John Klaassen) |
-| Source | conversations 2026-10-16 and 2026-10-17 (agent questions and PI replies quoted below); confirmed direction first recorded in `docs/HANDOFF.md` and amendment §7 on `main` at `488dc87` |
+| Source | conversations 2026-10-16 and 2026-10-17 (agent questions and PI replies quoted below); pop-up answers of 2026-10-17 in `docs/handoff/pi_answers_2026-10-17_popups.md`; confirmed direction first recorded in `docs/HANDOFF.md` and amendment §7 on `main` at `488dc87` |
 
 ## Decision
 
@@ -51,7 +51,7 @@ set for each benchmark from its CDMS fit file. The summary ended: "**To answer:*
 The PI replied: "D-SPYC-14 (tolerances): A for T1-T3, B for T4
 Additionally ensure that SpycFit predictions are equal or closer than SPCAT and SPFIT."
 
-#### Detail in the full brief that the summary did not show (needs PI confirmation)
+#### Detail in the full brief that the summary did not show (confirmed in part on 2026-10-17; see "Follow-up answers" below)
 
 - T1: whether "plus 1 Hz" is inside the 50 Hz and 5 Hz the summary gave or added to them (51 Hz,
   6 Hz); the IR and high-frequency print quanta (`.cat` 500 Hz above 99,999,999 MHz and
@@ -82,47 +82,100 @@ Additionally ensure that SpycFit predictions are equal or closer than SPCAT and 
   should also be bounded; n < 30 gives INCOMPLETE unless coverage is already below its floor;
   extrapolated lines reported only.
 
+#### Follow-up answers (2026-10-17, nine pop-up questions)
+
+The agent put nine follow-up questions to the PI as pop-ups, each with the agent's recommendation
+first (`docs/handoff/pi_answers_2026-10-17_popups.md` lists every option offered). The PI selected:
+
+1. T1 limit: "51 Hz (.cat) / 6 Hz (.fit) (Recommended)".
+2. "Equal or closer" covers fits as well as predictions: "Yes: fits and predictions (Recommended)".
+3. How to judge "equal or closer" on held-out predictions: "Paired bootstrap test, 5% level
+   (Recommended)", resampling by line family.
+4. What happens when SpycFit falls short: "No gate: report the comparison only". This was not the
+   agent's recommendation; the agent's proposed gate SF-CMP-021c is withdrawn.
+5. Benchmarks without fit inputs: "Drop OCS from the panel; replace it with a molecule that has fit
+   inputs". This was not the agent's recommendation; the replacement needs a literature check and
+   the PI's acceptance.
+6. Different models: "Compare and report only; the rule applies to same-model cases (Recommended)".
+7. Expert exclusion of lines below 5u for a recorded physical reason: "Yes, with a recorded reason
+   (Recommended)".
+8. Over-coverage: "Yes: bound both under- and over-coverage (Recommended)".
+9. Remaining full-brief detail: "Confirm all except the T3 extra defaults (those stay TBD)". The
+   pop-up listed, and the PI thereby confirmed: the T1 infrared and high-frequency print quanta and
+   matching by state identity; the T2 stopping rules (SPFIT rerun with a larger NITR if it stopped at
+   its iteration limit; the native fit stops when σ_f changes by less than 10⁻⁷ relative and
+   max |Δp|/u < 10⁻³) and rms(Δν/u) reported beside Δp/u; defaults as Type B with k = 1, ranking
+   after source and user values and flagging every result that uses them; the per-data-set
+   statistic with leverage-corrected degrees of freedom; n < 30 held-out lines gives INCOMPLETE;
+   floors simulated under the joint predictive covariance; extrapolated lines reported only. The
+   three extra default values (4 kHz cavity with unresolved hyperfine, 25 kHz Ka-band CP-FTMW,
+   10⁻³ cm⁻¹ wavemeter IR) stay TBD. Full-brief detail the pop-up did not list stays to confirm:
+   the complete list of conditions that must be identical for T2 (blend weighting, priors, ERRTST
+   rejections, FRAC), comparison against SPFIT's `.var` values with unscaled u and the label
+   `approximation`, rerunning SPFIT from its rewritten `.par` only when no parameter has a finite
+   a priori error, the weights-only use of defaults (SF-CMP-008g) and leaving a line with no
+   uncertainty and no default out of the fit (SF-CMP-008l).
+
 #### The PI's additional instruction
 
 "Additionally ensure that SpycFit predictions are equal or closer than SPCAT and SPFIT." The
-agent reads this as: on every benchmark, SpycFit's native fit and predictions must be at least
-as close to the measured data as SPFIT's fit and SPCAT's predictions from the same inputs, with
-fits that agree within T2 counting as equal. This reading, including its extension from
-predictions to fits, needs the PI's confirmation. Review found that a strict "no farther" test on
-held-out lines fails in about half of runs from measurement noise alone, so the prediction test
-needs a margin or a significance rule, which the PI has to set; and whether the instruction also
-covers native models that differ from SPFIT's is open.
-
-The agent also proposed (SRS v2 SF-CMP-021c) that native fits be offered for a profile only after
-its benchmarks meet this test. That gate is not in the PI's words. It departs from the
-2026-10-16 decision "Divergence remains visible. Exploration continues, but publication export
-requires explicit expert review" (`docs/HANDOFF.md`; amendment D-01) and needs the PI's
-confirmation.
+agent read this as: on every benchmark, SpycFit's native fit and predictions must be at least as
+close to the measured data as SPFIT's fit and SPCAT's predictions from the same inputs, with fits
+that agree within T2 counting as equal. The PI confirmed the reading, including its extension from
+predictions to fits, on 2026-10-17 (follow-up 2). The prediction half is judged by a paired
+bootstrap test at the 5 % level with resampling by line family (follow-up 3), because a strict "no
+farther" test fails in about half of runs from measurement noise alone. The rule applies only when
+the native and SPFIT models are identical; different models are compared and reported, never
+judged under it (follow-up 6). A shortfall is reported with the comparison and has no gate
+(follow-up 4); native fits stay available under the 2026-10-16 decision "Divergence remains
+visible. Exploration continues, but publication export requires explicit expert review"
+(`docs/HANDOFF.md`; amendment D-01).
 
 ## Consequences
 
-- The first SPCAT/SPFIT comparison panel is semirigid: CO, OCS, SO₂, H₂CO and propyne
-  (CH₃CCH), as listed in SRS v2 §8.3.
+- The first SPCAT/SPFIT comparison panel is semirigid: CO, SO₂, H₂CO and propyne (CH₃CCH), as
+  listed in SRS v2 §8.3, plus a replacement for OCS. On 2026-10-17 the PI dropped OCS, which has a
+  CDMS catalog but no public `.par`/`.lin` fit inputs, and asked for a molecule that has fit inputs
+  (follow-up 5). The replacement is TBD until a candidate with public SPFIT fit inputs is verified
+  and the PI accepts it; every panel member must have public fit inputs.
 - The earlier D-SPYC-14 set (propylene oxide, Ar-oxazole, H₂CO-HCl, HCO) and this panel still
   need one reconciled registry (literature review R4-12); HCO stays an I/O and provisioning
   regression (V-PICK-05).
-- Tolerances: T1, T2 and T3 take the values of option A as stated in the summary; T4 takes option
-  B's rule, with the minimum coverage at k = 1, 2, 3 committed for each benchmark from its CDMS fit
-  file before the benchmark runs (SF-VER-004). SRS v2 SF-CMP-008b to 008l carry them; values the
-  PI did not see are marked to confirm or TBD there.
+- Tolerances: T1 is half the last printed digit of the compared file plus 1 Hz, which is 51 Hz
+  for `.cat` and 6 Hz for `.fit` (follow-up 1), with the IR and high-frequency print quanta
+  confirmed (follow-up 9); T2 and T3 take the values of option A as stated in the summary; T4
+  takes option B's rule, with the minimum and maximum coverage at k = 1, 2, 3 (follow-up 8) and
+  the mean-z limit committed for each benchmark before it runs (SF-VER-004), set from the
+  distribution of z simulated under the joint predictive covariance of its held-out lines
+  (follow-up 9). SRS v2 SF-CMP-008b to 008n carry them; the three extra T3 default values stay
+  TBD there.
 - The T3 default uncertainties of the summary are named defaults under AGENTS.md: they apply only
-  when neither the source nor the user gives a line uncertainty and flag every result that uses
-  them. SF-ING-002c is scoped to the observation record, consistent with the baseline (missing
-  uncertainty "never converted into zero"; SRS SF-IO-002: not "an invisible drop").
-- The PI's additional instruction is drafted, on the agent's reading, as SRS v2 SF-CMP-021a, 021b
-  and 021d, with the agent's proposed gate SF-CMP-021c; all four are blocked on the PI's
-  confirmation. A claim that SpycFit is closer is an improvement claim under SF-VER-005.
-- Still open: confirmation of the full-brief detail above, of the reading of the additional
-  instruction, of the prediction margin and of the gate; the search-window widths for computed constants (raised in the brief; they
-  conflict with Method Matrix §3.1 and need their own decision); the numerical tolerances outside
-  the four tiers (SF-PHYS-008c, SF-PHYS-008e, SF-FIT-008a, SF-RUN-002c).
+  when neither the source nor the user gives a line uncertainty, are Type B with k = 1, rank after
+  source and user values and flag every result that uses them (follow-up 9). SF-ING-002c is scoped
+  to the observation record, consistent with the baseline (missing uncertainty "never converted
+  into zero"; SRS SF-IO-002: not "an invisible drop"). An expert may exclude a line below 5u for a
+  recorded physical reason (follow-up 7; SRS v2 SF-CMP-008m).
+- The PI's additional instruction is carried by SRS v2 SF-CMP-021a (fits), 021b (predictions,
+  paired bootstrap at 5 %), 021d (objective reproduced) and 021e (same-model cases only). The
+  agent's proposed gate SF-CMP-021c is withdrawn and its id retired (follow-up 4). A claim that
+  SpycFit is closer is an improvement claim under SF-VER-005.
+- The search-window widths for computed constants were decided separately on 2026-10-17 as
+  D-SPYC-21 (per-method-class defaults, q = 2 × RMSD).
+- Still open: the replacement for OCS; the three extra T3 default values; the full-brief detail
+  listed under follow-up 9 as not shown in the pop-up; the numerical tolerances outside the four
+  tiers (SF-PHYS-008c, SF-PHYS-008e, SF-FIT-008a, SF-RUN-002c).
 
 ## Alternatives not chosen
 
 For tolerances: option B for T1-T3, option A for T4 (minimum coverage fixed per benchmark but not
 set from its CDMS fit file), and the stricter or looser variants of option C were not chosen.
+
+For the 2026-10-17 follow-ups, the options offered and not selected were: T1 at 50 Hz / 5 Hz, or
+comparison against `.fit` only; "equal or closer" for predictions only or for fits only; a fixed
+margin, a strict never-farther rule or report-only for held-out predictions; for a shortfall, the
+agent's recommended labelled exploration with export blocked, or the strict gate; for OCS,
+reporting the fit comparison as not evaluable (the agent's recommendation) or counting it as a
+shortfall; applying the rule to different models or refusing such comparisons; excluding only
+above 5u, or keeping a line at ten times its uncertainty instead of excluding it; floors only, or
+reporting over-coverage without a bound; confirming all full-brief detail including the extra T3
+defaults, or confirming nothing yet.
