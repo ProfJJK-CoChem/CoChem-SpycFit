@@ -253,6 +253,15 @@ Selected: **"D-SPYC-03: A, schema (i), staged (Recommended)"**.
    "Drop item 2: the tag becomes optional under D-SPYC-15"; "Drop the B-split of item 4: one G2 PR
    only").
 
+## G0 amendments 1 and 2: the waiver record and the baseline tag (two questions in one pop-up; answered 2026-10-18 UTC)
+
+1. The waiver sentence for `e87f6f4` (options: "I waive the Phase 0 no-code clause and the
+   srs-v2.0 code gate for e87f6f4 only (Recommended)"; "I waive the Phase 0 no-code clause for
+   e87f6f4 only"; "No waiver: record e87f6f4 as a gate crossing without waiver"). The PI typed:
+   **"Remove both completely we are far enough along that they are not needed anymore."**
+2. The baseline tag `legacy-swarm-2026-10` on `7e42507` (options: the PI creates it as a signed tag
+   (Recommended); make it optional under D-SPYC-15). The PI typed: **"Make the key for me"**.
+
 ## Research the PI asked for in these answers
 
 - R1 (D-SPYC-04, D-SPYC-18, SRS §1.1): GPU-parallel, array-based, on-the-fly native fitting

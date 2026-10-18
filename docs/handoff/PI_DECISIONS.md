@@ -46,6 +46,7 @@ Sources:
 | D-SPYC-22 | Module name | rename PR; BASE registry | SPAFT (agent); SPYFY (PI) | ANSWERED 2026-10-17 (SPYFY, pronounced "spiffy") |
 | D-SPYC-23 | BASE's declared boundaries (SF-IF-004) and the direct-input route | SRS §4.4; G1 | C: provide none of the three names; route ii (BASE ingests Pickett and ORCA files) | ANSWERED 2026-10-18 |
 | D-SPYC-24 | Use cases and order of the first release (UC-SEL) | SRS §3; plan G0 | B: two tracks, staged | ANSWERED in part 2026-10-18 (B; UC-2 in release 2; demonstration cases await research R6) |
+| D-SPYC-25 | Removal of the Phase 0 no-code clause and the `srs-v2.0` code gate | plan; AGENTS.md (governance PR) | a waiver for `e87f6f4` only (agent) | ANSWERED 2026-10-18 ("Remove both completely"); governance PR pending the PI's branch permission |
 
 ---
 
@@ -457,4 +458,12 @@ SRS v2 §3 left the selection and order of UC-1 to UC-9 for the first release to
 
 The brief `docs/handoff/briefs/G0_2026-10-17.md` offered A (approve as written), B (approve with six amendments: the Phase 0 exception for `e87f6f4` under a waiver record; the signed baseline tag or an optional tag under D-SPYC-15; a governance PR after G1 removing the code-gate wording; G2 running the suite and the four-program build, with a B-split into G2a and G2b; Phase 4 evidence for every profile and two releases; the state note) and C (defer).
 
-**PI answer** (pop-up, 2026-10-18 UTC; `docs/handoff/pi_answers_2026-10-17_popups.md`). The PI selected: "G0: B — approve with the six amendments, written into PR #1 before your comment (Recommended, with the B-split variant of item 4)" and "Keep all six (Recommended)". The amendments are written into `docs/plan/CoChem-SpycFit_Plan.md` (phase table and state note). Pending: the PI's wording of the waiver (record D-SPYC-25) and the tag choice.
+**PI answer** (pop-up, 2026-10-18 UTC; `docs/handoff/pi_answers_2026-10-17_popups.md`). The PI selected: "G0: B — approve with the six amendments, written into PR #1 before your comment (Recommended, with the B-split variant of item 4)" and "Keep all six (Recommended)". The amendments are written into `docs/plan/CoChem-SpycFit_Plan.md` (phase table and state note).
+
+**PI answer on amendments 1 and 2** (pop-up, 2026-10-18 UTC). Asked for the waiver sentence for `e87f6f4`, the PI typed: "Remove both completely we are far enough along that they are not needed anymore." Record: `docs/decisions/D-SPYC-25.md`; the plan's Phase 0 and Phase 1 rows are changed; the `AGENTS.md` and `docs/handoff/AGENT_HANDOFF.md` wording follows in a dedicated governance PR once the PI confirms the branch. Asked about the baseline tag, the PI typed: "Make the key for me". Agents never create tags or credentials (`AGENTS.md`); a signing key an agent generates in a cloud container would not establish the PI's identity, so the agent offers the PI the web-UI, annotated-tag and signed-tag routes instead.
+
+## D-SPYC-25 Removal of the Phase 0 no-code clause and the `srs-v2.0` code gate
+
+**Needed before:** code work; the governance PR. **Status:** ANSWERED 2026-10-18; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-25.md`; the governance-file change is its own PR
+
+**PI answer** (pop-up, 2026-10-18 UTC; `docs/handoff/pi_answers_2026-10-17_popups.md`): "Remove both completely we are far enough along that they are not needed anymore." Record: `docs/decisions/D-SPYC-25.md`. Still in force because the PI did not name them: the `srs-v2.0` approval mechanism, "the approved SRS wins" and "a code PR names the approved SRS v2 requirement ids it implements"; the agent asks the PI how code PRs cite requirements before the tag exists.
