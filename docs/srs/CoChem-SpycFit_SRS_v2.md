@@ -433,7 +433,15 @@ These requirements bound every claim SpycFit makes. Owner: all components.
 | UC-8 | Start from user-supplied ORCA or Pickett prediction files, without TOPOS or TORQ | SF-IF-005 |
 | UC-9 | Send fitted isotopologue constants to GEOM for structure determination | SF-IF-008 |
 
-The PI selects and orders the use cases for the first release.
+On 2026-10-18 the PI selected the staging and order (D-SPYC-24: "UC-SEL: B — two tracks, staged").
+Release 1, in this order: UC-7; UC-8 with Pickett files through BASE's input kinds (SF-IF-002a); the
+WP-PICK round trip through the pinned SPFIT/SPCAT; UC-1 with SPFIT as the fit of record (D-SPYC-01);
+UC-9 once GEOM agrees the payload schema (SF-IF-008); UC-5 once the engine research (§1.1) lands and
+native terms meet SF-HAM-001; UC-4 as P8 condensed-phase envelopes only, P7 being UNAVAILABLE until
+PGOPHER or native P6 terms exist. Release 2: UC-2, UC-3, UC-6, profiles P2-P4, P7 and P15. The
+molecules for the release-1 demonstrations follow the research the PI asked for (R6: for each
+engine component, a published case with a main-isotopologue and a second-isotopologue line list
+from a reputable database); the PI supplies the measured spectra.
 
 ---
 
@@ -551,8 +559,10 @@ Owner: `contract`.
   *Source* TORQ SRS §12, V-CONSUMER; D-SPYC-16 (PI 2026-10-17: split by producer) · Profile · T,
   V-IF-01 · proposed; blocked on TORQ's exporter, which does not exist yet
 - **SF-IF-005a** Direct input of Pickett files. SpycFit SHALL accept user-supplied Pickett `.par`,
-  `.var`, `.int`, `.lin` and `.cat` files as prediction inputs without TOPOS or TORQ.
-  *Source* D-SPYC-19 (PI 2026-10-17) · Core · T, V-IF-05 · proposed
+  `.var`, `.int`, `.lin` and `.cat` files as prediction inputs without TOPOS or TORQ, the files
+  arriving through BASE's input kinds (SF-IF-002a).
+  *Source* D-SPYC-19 (PI 2026-10-17); D-SPYC-23 (route ii) · Core · T, V-IF-05 · proposed; blocked
+  on BASE's input kinds
 - **SF-IF-005b** Direct input of ORCA output. SpycFit SHALL accept user-supplied ORCA output files
   as prediction inputs without TOPOS or TORQ, reading the quantities listed in a published
   coverage table.
@@ -574,14 +584,30 @@ Owner: `contract`, `ui`.
 
 - **SF-IF-002** Module registration. SpycFit SHALL register through the `cochem.modules` entry
   point and receive work only through `cochem.module-handoff/1` manifests.
-  *Source* BASE; architecture §1; D-SPYC-19 · Core · T, V-IF-02 · proposed
+  *Source* BASE; architecture §1; D-SPYC-19; D-SPYC-23 (PI 2026-10-18: the "only" clause stays) ·
+  Core · T, V-IF-02 · proposed
+- **SF-IF-002a** Input kinds in BASE. Pickett files (`.par`, `.var`, `.lin`, `.int`, `.cat`, as a
+  multi-file set) and ORCA output SHALL reach SpycFit as `cochem.module-handoff` artifacts of
+  input kinds that BASE ingests, so that every SF-IF-005a and SF-IF-005b input carries BASE's
+  lineage record.
+  *Source* D-SPYC-23 (PI 2026-10-18: "Route ii: BASE ingests Pickett files and ORCA output with new
+  multi-file handoff kinds; SF-IF-002 keeps its 'only' clause"); D-SPYC-19 · Core · T, V-IF-02 ·
+  proposed; blocked on BASE adding the kinds and a multi-file handoff (PI request to BASE)
 - **SF-IF-003** Roots from BASE. SpycFit SHALL write run outputs only under the artifact and
   scratch roots BASE supplies, and SHALL NOT write the source tree at run time.
   *Source* architecture §3 · Core · T, V-IF-03 · proposed
-- **SF-IF-004** Declared BASE boundaries. For each SpycFit boundary BASE already declares
-  (`pickett_export`, `pgopher_export`, `spectroscopy_snapshot`), the SRS SHALL state whether it is
-  accepted, renamed or retired before G1.
-  *Source* architecture §1 · Core · I, V-IF-04 · proposed
+- **SF-IF-004** Declared BASE boundaries not provided. SpycFit SHALL NOT provide the operations
+  `pickett_export`, `pgopher_export` or `spectroscopy_snapshot` that BASE declares for it, and SHALL
+  publish its own operations through the `cochem.modules` entry point, with a test that the
+  published operations exclude those three names.
+  *Source* D-SPYC-23 (PI 2026-10-18: "C — provide none of the three names; SPYFY declares its own
+  operations through cochem.modules"); architecture §1 · Core · T, V-IF-04 · proposed
+  Disposition: `pickett_export` is not provided because Pickett files are inputs under SF-IF-002a
+  and outputs under SF-IO-004a; `pgopher_export` is not provided because no requirement writes
+  PGOPHER files and D-SPYC-01 did not choose a PGOPHER front end; `spectroscopy_snapshot` is not
+  provided because publication packages are SF-PUB-001 and the legacy snapshot exporter's fate is
+  D-SPYC-15. Removing BASE's three shells, their test parameters and one documentation line is a
+  separate BASE cleanup for the PI to request.
 - **SF-IF-007a** BASE is required. The SpycFit package SHALL declare `cochem-base` as a required
   dependency.
   *Source* D-SPYC-19 (PI 2026-10-17: "CoChem-BASE though is a hard requirement") · Core · I, V-IF-07 · proposed
@@ -1705,6 +1731,8 @@ answered further questions on 2026-10-17. The entries below are ANSWERED (record
 | D-SPYC-07 Label swaps | Flag, continue, record in provenance, export needs an expert-review record; post-run SPFIT/DPFIT check on by default; 0.5/0.9 provisional and user-changeable; energy-rank labelling kept (2026-10-17) | The stepping test (PT-01, PT-02 in `docs/evidence/pending_tests.md`) |
 | D-SPYC-12 Inertial defect | Typed, uncertainty-aware flag at k = 2, never rejection; export review record; Δ window off by default with logged drops; ranking never removes; recorded corrections allowed (2026-10-18) | The Method Matrix §6.4 lines as a BASE correction; the legacy module and seven tests in Phase 2 |
 | D-SPYC-13 Dark components | A recorded view with three label states and a relative intensity floor, never deletion; pruning by recorded expert opt-in; unevaluated lines at normal rank (2026-10-18) | The preset: a published detection value to research and pre-fill (R5); the Method Matrix §6.1 line and BASE's dark-branch filter as BASE items |
+| D-SPYC-23 BASE boundaries and input route | None of `pickett_export`, `pgopher_export`, `spectroscopy_snapshot` is provided; SpycFit publishes its own operations; Pickett and ORCA inputs arrive through BASE input kinds, SF-IF-002 keeps "only" (2026-10-18) | BASE adding the input kinds, a multi-file handoff, an adapter and manifest entries; the shell cleanup |
+| D-SPYC-24 Use cases of the first release | Two tracks, staged: release 1 = UC-7, UC-8 (Pickett), WP-PICK round trip, UC-1 with SPFIT as fit of record, UC-9 on the GEOM schema, UC-5 after the engine research, UC-4 as P8 only; release 2 = UC-2, UC-3, UC-6, P2-P4, P7, P15 (2026-10-18) | Demonstration cases per engine component with two isotopologues from reputable databases (R6); the plan amendment at G0 |
 | D-01, D-02, D-03 | Divergence review at export; offline-capable core; semirigid first | Recorded as D-SPYC entries |
 
 Questions raised by this draft:
@@ -1731,6 +1759,12 @@ Questions raised by this draft:
     await the PI's research request (R3).
 13. Set the search-window defaults. Answered 2026-10-17 (D-SPYC-21).
 14. Name the module. Answered 2026-10-17: SPYFY (D-SPYC-22).
+15. Dispose of BASE's declared boundaries and settle the direct-input route. Answered 2026-10-18:
+    none provided; route ii (D-SPYC-23).
+16. Label swaps, the inertial-defect sign rule and dark components. Answered 2026-10-17 and
+    2026-10-18 (D-SPYC-07, 12, 13); the dark-component preset awaits research R5.
+17. Select and order the use cases of the first release. Answered 2026-10-18: two tracks, staged
+    (D-SPYC-24); the demonstration cases await research R6.
 
 ## Appendices
 

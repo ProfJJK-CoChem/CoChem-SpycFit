@@ -34,7 +34,9 @@ Proposed context, consistent with the TORQ SRS ownership statement (§1.2):
   BASE also declares `pickett_export`, `pgopher_export` and `spectroscopy_snapshot` boundaries
   for SpycFit (`CoChem-BASE/src/cochem_base/interfaces/cochem_pyckett_bridge.py`,
   `cochem_pgopher_bridge.py`, `cochem_vibspyc_snap.py`; not the vendored copy in this
-  repository), which SRS v2 §4.4 must accept, rename or retire.
+  repository). SRS v2 SF-IF-004 provides none of them (D-SPYC-23, PI 2026-10-18): SpycFit publishes
+  its own operations through `cochem.modules`, and Pickett and ORCA inputs arrive through BASE
+  input kinds that BASE must add (SF-IF-002a, route ii; a PI request to BASE).
 - **The user** supplies the experimental spectrum or peak list, nuclear-spin weights and
   assignment decisions.
 - **SpycFit** supports assignment and fits through the pinned SPFIT/SPCAT and its native path. It

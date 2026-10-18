@@ -215,6 +215,33 @@ Selected: **"D-SPYC-03: A, schema (i), staged (Recommended)"**.
 4. Rank of lines whose label cannot be computed. Selected: **"Normal rank, shown 'not evaluated'
    with the reason (Recommended)"** (not chosen: "Lowest rank").
 
+## SF-IF-004 BASE boundaries and the direct-input route (two questions in one pop-up; answered 2026-10-18 UTC; brief `SF-IF-004_2026-10-17.md`; recorded as D-SPYC-23)
+
+1. Which of BASE's three declared operation names (`pickett_export`, `pgopher_export`,
+   `spectroscopy_snapshot`) SPYFY provides (C none, own operations through `cochem.modules` / B
+   rename two, retire one / A accept all three / D drop the requirement). Selected: **"SF-IF-004:
+   C — provide none of the three names; SPYFY declares its own operations through cochem.modules
+   (Recommended)"**.
+2. The route for SF-IF-005a files given that the BASE manifest rejects Pickett suffixes.
+   Selected: **"Route ii: BASE ingests Pickett files and ORCA output with new multi-file handoff
+   kinds; SF-IF-002 keeps its 'only' clause (Recommended)"** (not chosen: "Route i: under hosting
+   H2 the user supplies files inside the SPYFY notebook; SF-IF-002's 'only' clause is relaxed").
+
+## UC-SEL use cases of the first release (three questions in one pop-up; answered 2026-10-18 UTC; brief `UC-SEL_2026-10-17.md`; recorded as D-SPYC-24)
+
+1. Which use cases enter the first release and in what order (B two tracks staged / A rotational
+   core staged / C one release / D vibrational first). Selected: **"UC-SEL: B — two tracks, staged:
+   release 1 = UC-7, UC-8 (Pickett), WP-PICK round trip, UC-1 with SPFIT as fit of record, UC-9 when
+   GEOM agrees a schema, UC-5 when R1 lands, plus UC-4 as P8 envelopes only; release 2 = UC-2, UC-3,
+   UC-6, P2–P4, P7, P15 (Recommended)"**.
+2. The molecule for the release-1 rotational demonstration V-DEMO-1 (options: SO₂ from the §8.3
+   panel; H₂CO or CH₃CCH; a quadrupolar molecule the PI names). The PI typed: **"Search and find a
+   case to compare for each of the possible engine components that has the main isotope log and
+   another isotope log that we can compare. Look for databases that we can pull these from that
+   have been from published reputable sources."**
+3. UC-2 (joint rotational and rovibrational fit) in release 1. Selected: **"No: UC-2 in release 2
+   (Recommended)"**.
+
 ## Research the PI asked for in these answers
 
 - R1 (D-SPYC-04, D-SPYC-18, SRS §1.1): GPU-parallel, array-based, on-the-fly native fitting
@@ -226,3 +253,7 @@ Selected: **"D-SPYC-03: A, schema (i), staged (Recommended)"**.
 - R4 (D-SPYC-14 follow-up 5): a replacement for OCS with public SPFIT fit inputs.
 - R5 (D-SPYC-13, 2026-10-18): a published detection value for the weak-component preset, to be
   researched and then pre-filled.
+- R6 (D-SPYC-24, 2026-10-18): for each engine component (SPFIT/SPCAT, DPFIT/DPCAT, XIAM, ERHAM,
+  later BELGI-Cs/C1, RAM36, westerfit), a published case with a main-isotopologue line list and a
+  second-isotopologue line list that can be compared, drawn from reputable databases of published
+  data, with sources and redistribution class recorded.

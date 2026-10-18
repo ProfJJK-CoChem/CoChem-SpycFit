@@ -44,6 +44,8 @@ Sources:
 | D-SPYC-20 | Domain defaults (T_rot, window, J_max) | SRS §2 | T_rot 1.5 K; 2-22 GHz; J_max from population | ANSWERED 2026-10-17 (set first, editable, pre-filled: D20-TABLE, D20-JPOP; detail confirmed) |
 | D-SPYC-21 | Search windows for computed constants | SRS ASSIGN (SF-WIN) | Per-method-class defaults, q = 2 × RMSD, uncalibrated, never acceptance tolerances | ANSWERED 2026-10-17 |
 | D-SPYC-22 | Module name | rename PR; BASE registry | SPAFT (agent); SPYFY (PI) | ANSWERED 2026-10-17 (SPYFY, pronounced "spiffy") |
+| D-SPYC-23 | BASE's declared boundaries (SF-IF-004) and the direct-input route | SRS §4.4; G1 | C: provide none of the three names; route ii (BASE ingests Pickett and ORCA files) | ANSWERED 2026-10-18 |
+| D-SPYC-24 | Use cases and order of the first release (UC-SEL) | SRS §3; plan G0 | B: two tracks, staged | ANSWERED in part 2026-10-18 (B; UC-2 in release 2; demonstration cases await research R6) |
 
 ---
 
@@ -418,3 +420,33 @@ The tolerance brief (`docs/handoff/briefs/D-SPYC-14_tolerances_2026-10-17.md`, "
 The PI asked for a new four- or five-letter all-capitals name. The brief `docs/handoff/briefs/module_name_2026-10-17.md` checked eight candidates against PyPI, GitHub and the spectroscopy literature and ranked SPAFT first.
 
 **PI answer** (conversation 2026-10-17, pop-up; `docs/handoff/pi_answers_2026-10-17_popups.md`). Offered SPAFT (recommended), SPYAF, SPEFY and SPEKT, the PI typed: "Derivative of SPEFY but instead spelled SPYFY, pronounced Spiffy". After the agent's availability check of SPYFY (PyPI free; four unrelated GitHub repositories; a privacy-hardware company Spy-Fy and an iOS app "Hidden Camera Detector - SpyFy"; trademark registries not searched), the PI selected: "Confirm SPYFY (Recommended)". Record: `docs/decisions/D-SPYC-22.md`. The rename itself is a separate PR; the BASE registry change needs the PI's request to BASE.
+
+## D-SPYC-23 BASE's declared boundaries (SF-IF-004) and the direct-input route
+
+**Needed before:** SRS §4.4; G1. **Status:** ANSWERED 2026-10-18; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-23.md`
+
+BASE declares three operation names for SpycFit (`pickett_export`, `pgopher_export`, `spectroscopy_snapshot`) as 17-line compatibility shells that no production code calls; its handoff manifest rejects every Pickett suffix, which conflicts with SF-IF-002's "only through manifests" clause and SF-IF-005a's direct input (brief `docs/handoff/briefs/SF-IF-004_2026-10-17.md`).
+
+| Option | Consequence |
+| :--- | :--- |
+| A. Accept all three names. | BASE adds three export kinds; `pgopher_export` has no requirement. |
+| B. Rename two, retire one. | Presumes D-SPYC-15 settles the snapshot successor. |
+| **C (recommended).** Provide none; SPYFY declares its own operations through `cochem.modules`. | No export kinds; the SRS lists the operations; a BASE cleanup is a separate request. |
+| D. Drop SF-IF-004. | The disposition is undocumented. |
+
+**PI answer** (pop-up, 2026-10-18 UTC; `docs/handoff/pi_answers_2026-10-17_popups.md`). The PI selected: "SF-IF-004: C — provide none of the three names; SPYFY declares its own operations through cochem.modules (Recommended)" and, for the input route, "Route ii: BASE ingests Pickett files and ORCA output with new multi-file handoff kinds; SF-IF-002 keeps its 'only' clause (Recommended)". Record: `docs/decisions/D-SPYC-23.md`; SRS v2 SF-IF-004 and SF-IF-002a. BASE items for the PI: input kinds, a multi-file handoff, an adapter and manifest entries, and the shell cleanup.
+
+## D-SPYC-24 Use cases and order of the first release (UC-SEL)
+
+**Needed before:** SRS §3; the plan at G0. **Status:** ANSWERED in part 2026-10-18; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-24.md`
+
+SRS v2 §3 left the selection and order of UC-1 to UC-9 for the first release to the PI (brief `docs/handoff/briefs/UC-SEL_2026-10-17.md`).
+
+| Option | Consequence |
+| :--- | :--- |
+| A. Rotational core, staged. | Smallest; sets aside the band priority. |
+| **B (recommended).** Two tracks, staged: release 1 = UC-7, UC-8 (Pickett), WP-PICK round trip, UC-1 with SPFIT as fit of record, UC-9 when GEOM agrees a schema, UC-5 when R1 lands, UC-4 as P8 envelopes only; release 2 = UC-2, UC-3, UC-6, P2-P4, P7, P15. | Two releases and two G4 sign-offs; V-DEMO-4 partial in release 1. |
+| C. One release, order only. | Nothing usable until every dependency lands. |
+| D. Vibrational first, staged. | Against "semirigid comparison first". |
+
+**PI answer** (pop-up, 2026-10-18 UTC; `docs/handoff/pi_answers_2026-10-17_popups.md`). The PI selected: "UC-SEL: B — two tracks, staged: release 1 = UC-7, UC-8 (Pickett), WP-PICK round trip, UC-1 with SPFIT as fit of record, UC-9 when GEOM agrees a schema, UC-5 when R1 lands, plus UC-4 as P8 envelopes only; release 2 = UC-2, UC-3, UC-6, P2–P4, P7, P15 (Recommended)". For the V-DEMO-1 molecule the PI typed: "Search and find a case to compare for each of the possible engine components that has the main isotope log and another isotope log that we can compare. Look for databases that we can pull these from that have been from published reputable sources." For UC-2 the PI selected: "No: UC-2 in release 2 (Recommended)". Record: `docs/decisions/D-SPYC-24.md`. Still open: the demonstration cases (research R6).

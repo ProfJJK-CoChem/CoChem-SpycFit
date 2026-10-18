@@ -21,6 +21,14 @@ State on 2026-10-16: the Phase 0 inventory exists (`docs/evidence/phase0_invento
 baseline tag has not been created; the amendment §5 defects were corrected at the PI's request
 before G1 (PR #1); SRS v2 Draft 1 exists for Phase 1 review.
 
+Release staging (D-SPYC-24, PI 2026-10-18; a plan amendment for the PI's G0 approval): Phase 4
+runs twice, each release with its own G4. Release 1, in this order: UC-7; UC-8 with Pickett files;
+the WP-PICK round trip; UC-1 with SPFIT as the fit of record; UC-9 when GEOM agrees the payload
+schema; UC-5 when the engine research lands and native terms meet SF-HAM-001; UC-4 as P8
+condensed-phase envelopes only. Release 2: UC-2, UC-3, UC-6, profiles P2-P4, P7 and P15. The
+demonstration molecules follow research R6 (per engine component, two isotopologues from reputable
+databases); the PI supplies the measured spectra.
+
 ## Proposed work packages
 
 Final content and requirement ids come from SRS v2. Each package's acceptance tests and
@@ -52,9 +60,10 @@ an open decision say so.
 10. **WP-UI**: the single UI stack (D-SPYC-05: a notebook rendered by BASE's Voila in a
     SpycFit-environment kernel, H2; HPC headless in the first release; the toolkit follows the
     usability research the PI requested on 2026-10-17).
-11. **WP-IF**: BASE integration (D-SPYC-19: BASE is required), the direct-input path for
-    user-supplied ORCA and Pickett files, the GEOM payload, and the TORQ bundle consumer once
-    TORQ's exporter exists.
+11. **WP-IF**: BASE integration (D-SPYC-19: BASE is required; D-SPYC-23: SpycFit publishes its own
+    operations and provides none of BASE's three declared names), the direct-input path for
+    user-supplied ORCA and Pickett files through BASE input kinds (route ii, blocked on BASE), the
+    GEOM payload, and the TORQ bundle consumer once TORQ's exporter exists.
 12. **WP-OUT**: publication export and the refinement request (D-SPYC-03: a BASE handoff kind
     with a SpycFit-drafted schema, staged; the BASE requirement waits on BASE and a receiver).
 13. **WP-CMP**: the native-versus-SPCAT/SPFIT comparison of amendment §3 (SRS v2 §5.6),
