@@ -242,6 +242,17 @@ Selected: **"D-SPYC-03: A, schema (i), staged (Recommended)"**.
 3. UC-2 (joint rotational and rovibrational fit) in release 1. Selected: **"No: UC-2 in release 2
    (Recommended)"**.
 
+## G0 plan phases and gates (two questions in one pop-up; answered 2026-10-18 UTC; brief `G0_2026-10-17.md`)
+
+1. Approve the plan's phases and gates as written (A), with six amendments (B), or defer (C).
+   Selected: **"G0: B — approve with the six amendments, written into PR #1 before your comment
+   (Recommended, with the B-split variant of item 4)"**. The pop-up stated that this answer is
+   direction and that G0 closes only when D-SPYC-01 becomes DECIDED by the PI's comment on PR #1
+   naming the gate and the commit.
+2. Keep all six amendments or drop some. Selected: **"Keep all six (Recommended)"** (not chosen:
+   "Drop item 2: the tag becomes optional under D-SPYC-15"; "Drop the B-split of item 4: one G2 PR
+   only").
+
 ## Research the PI asked for in these answers
 
 - R1 (D-SPYC-04, D-SPYC-18, SRS §1.1): GPU-parallel, array-based, on-the-fly native fitting

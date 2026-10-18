@@ -450,3 +450,11 @@ SRS v2 §3 left the selection and order of UC-1 to UC-9 for the first release to
 | D. Vibrational first, staged. | Against "semirigid comparison first". |
 
 **PI answer** (pop-up, 2026-10-18 UTC; `docs/handoff/pi_answers_2026-10-17_popups.md`). The PI selected: "UC-SEL: B — two tracks, staged: release 1 = UC-7, UC-8 (Pickett), WP-PICK round trip, UC-1 with SPFIT as fit of record, UC-9 when GEOM agrees a schema, UC-5 when R1 lands, plus UC-4 as P8 envelopes only; release 2 = UC-2, UC-3, UC-6, P2–P4, P7, P15 (Recommended)". For the V-DEMO-1 molecule the PI typed: "Search and find a case to compare for each of the possible engine components that has the main isotope log and another isotope log that we can compare. Look for databases that we can pull these from that have been from published reputable sources." For UC-2 the PI selected: "No: UC-2 in release 2 (Recommended)". Record: `docs/decisions/D-SPYC-24.md`. Still open: the demonstration cases (research R6).
+
+## G0 Plan phases and gates (direction)
+
+**Needed before:** Phase 1 formally; the plan's G0. **Status:** direction given 2026-10-18; G0 closes when D-SPYC-01 is DECIDED by the PI's PR #1 comment naming the gate and the commit
+
+The brief `docs/handoff/briefs/G0_2026-10-17.md` offered A (approve as written), B (approve with six amendments: the Phase 0 exception for `e87f6f4` under a waiver record; the signed baseline tag or an optional tag under D-SPYC-15; a governance PR after G1 removing the code-gate wording; G2 running the suite and the four-program build, with a B-split into G2a and G2b; Phase 4 evidence for every profile and two releases; the state note) and C (defer).
+
+**PI answer** (pop-up, 2026-10-18 UTC; `docs/handoff/pi_answers_2026-10-17_popups.md`). The PI selected: "G0: B — approve with the six amendments, written into PR #1 before your comment (Recommended, with the B-split variant of item 4)" and "Keep all six (Recommended)". The amendments are written into `docs/plan/CoChem-SpycFit_Plan.md` (phase table and state note). Pending: the PI's wording of the waiver (record D-SPYC-25) and the tag choice.

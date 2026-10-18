@@ -1682,7 +1682,7 @@ first release (D-SPYC-05, PI 2026-10-17; SF-UI-007).
 ## 9. Work packages
 
 `docs/plan/CoChem-SpycFit_Plan.md` is authoritative for phases and work packages. Requirement
-areas map to packages as follows: SF-IO-004, SF-PICK, SF-RUN-006..008 → WP-PICK; SF-ING, SF-IO-003,
+areas map to packages as follows: SF-IO-004, SF-PICK, SF-RUN-006..009 → WP-PICK; SF-ING, SF-IO-003,
 SF-THZ, SF-RAMAN-001 → WP-EXP; SF-HAM, SF-PHYS-002..004 → WP-HAM; SF-DIAG → WP-DIAG; SF-FIT, SF-INF → WP-FIT;
 SF-INT, SF-PHYS-007/008 → WP-INT; SF-CMP → WP-CMP (new); SF-HITL, SF-UI → WP-ASSIGN and WP-UI;
 SF-IF → WP-IF; SF-SET → WP-UI; SF-OUT, SF-PUB → WP-OUT; SF-DATA, SF-IO-007 → WP-BENCH (new); vibrational profiles
