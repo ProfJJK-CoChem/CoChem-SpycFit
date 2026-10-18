@@ -4,8 +4,9 @@ Start with [the agent handoff](docs/handoff/AGENT_HANDOFF.md). It records the cu
 documents to read, the decisions the PI still has to make, and the first steps. Then read
 [PI decisions](docs/handoff/PI_DECISIONS.md) and [review errata](docs/handoff/REVIEW_ERRATA.md).
 
-The objective is to write the SpycFit SRS v2, architecture and plan **with the PI**, and only
-after the PI approves them (the PI's tag `srs-v2.0`) to build the code against them. The PI's
+The objective is to write the SpycFit SRS v2, architecture and plan **with the PI** and to build
+the code against them. The PI approves the SRS v2 with the tag `srs-v2.0`. The former gate "no code
+PR before that tag" was removed by the PI on 2026-10-18 (`docs/decisions/D-SPYC-25.md`). The PI's
 current requirements baseline is the consolidated SRS and amendment in `docs/wiki/` at `488dc87`,
 with the PI's 2026-10-16 decisions in `docs/HANDOFF.md`; `docs/srs/CoChem-SpycFit_SRS_v2.md` is
 the proposed revision. The archived `docs/archive/CoChem-SpycFit_Comprehensive_SRS_7e42507.md`,
@@ -65,10 +66,11 @@ interfaces to BASE and TORQ explicit and versioned. Never write another module's
 
 ## Code, tests and configuration
 
-- Change code by small diffs in reviewable PRs. A code PR names the approved SRS v2
-  requirement ids it implements and the tests it makes pass. A docs PR names the SRS section or
-  decision it addresses. The Phase 2 hygiene PR, and any removal PR the PI requests, name the
-  decisions or the quoted PI request they carry out.
+- Change code by small diffs in reviewable PRs. A code PR names the SRS v2 requirement ids it
+  implements and the tests it makes pass; until the tag `srs-v2.0` exists it may cite proposed
+  SRS v2 ids and says that they are proposed (PI, 2026-10-18, `docs/decisions/D-SPYC-25.md`). A
+  docs PR names the SRS section or decision it addresses. The Phase 2 hygiene PR, and any removal
+  PR the PI requests, name the decisions or the quoted PI request they carry out.
 - All tests live under `tests/`. A test elsewhere is not run by the suite and never satisfies a
   requirement or a definition of done.
 - When the approved SRS v2 (the PI's `srs-v2.0` tag plus later PI-approved amendments) and the

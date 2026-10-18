@@ -131,8 +131,8 @@ The PI is the only authority on scope, conventions, tolerances and acceptance.
 | Phase | State | Exit gate |
 | :--- | :--- | :--- |
 | 0. Baseline | Inventory done (`docs/evidence/phase0_inventory.md`). The PI's tag `legacy-swarm-2026-10` on `7e42507` is not yet created. | **G0**: the PI approves the plan's phases and gates and confirms D-SPYC-01 by id. |
-| PI-requested fixes | Amendment §5 defects corrected in `e87f6f4` at the PI's 2026-10-16 request. This conflicts with the `srs-v2.0` code gate in `AGENTS.md`; the PI's request was followed and the conflict is stated in PR #1. | The PI approves PR #1 in a PR comment. |
-| 1. Specification | SRS v2 Draft 1 written; architecture and plan to be aligned with it. | **G1**: the PI tags `srs-v2.0`. |
+| PI-requested fixes | Amendment §5 defects corrected in `e87f6f4` at the PI's 2026-10-16 request, before the PI removed the `srs-v2.0` code gate on 2026-10-18 (`docs/decisions/D-SPYC-25.md`). | The PI approves PR #1 in a PR comment. |
+| 1. Specification | SRS v2 Draft 1 written; architecture and plan to be aligned with it. | **G1**: the PI tags `srs-v2.0`. Code PRs do not wait for the tag (D-SPYC-25). |
 | 2. Hygiene | Not started. Inventory §7 lists the inputs. | **G2** |
 | 3. Work packages | Not started. | **G3** per package |
 | 4. Release | Not started. | **G4** |
@@ -144,8 +144,9 @@ The PI is the only authority on scope, conventions, tolerances and acceptance.
    §11, and to answer SRS v2 §11 questions 2-6.
 3. Review SRS v2 Draft 1 with the PI chapter by chapter. Align the architecture (component names
    `compare` and `bench` are new) and the plan (new WP-CMP, WP-BENCH, WP-VIB) with it.
-4. Code only for what the PI requests by name before `srs-v2.0`. Candidates from the inventory
-   §7, smallest first:
+4. Code PRs may open before `srs-v2.0` (the PI removed the code gate on 2026-10-18,
+   `docs/decisions/D-SPYC-25.md`); each cites the proposed SRS v2 ids it implements and says that
+   they are proposed. Candidates from the inventory §7, smallest first:
    - the bridge's `parse_pickett_fit` and its test still use the invented `.fit` layout;
    - the export's legacy `.var` is not a Pickett `.var`;
    - a dictionary-to-`.par`/`.int` builder with explicit option lines (needs SF-PICK-001 and
