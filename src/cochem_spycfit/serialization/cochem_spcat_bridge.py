@@ -1217,7 +1217,12 @@ def sweep_orphan_process(process_or_pid: Union[subprocess.Popen, int]) -> None:
             import signal
             try:
                 pgid = os.getpgid(pid)
-                os.killpg(pgid, signal.SIGKILL)
+                if pgid == os.getpgrp():
+                    # The process shares the caller's group (it was not started with
+                    # start_new_session); killing the group would kill the caller.
+                    os.kill(pid, signal.SIGKILL)
+                else:
+                    os.killpg(pgid, signal.SIGKILL)
             except (ProcessLookupError, PermissionError):
                 os.kill(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError) as exc:

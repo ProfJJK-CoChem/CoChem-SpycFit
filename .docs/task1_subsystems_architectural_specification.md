@@ -1,3 +1,5 @@
+> **Not a SpycFit document.** This is CoChem-BASE's Task 1 (ingestion plane) specification, copied into this repository by the agent swarm. It is not SpycFit's architecture and does not bind any work here. See `docs/architecture/CoChem-SpycFit_Architecture.md` and `docs/handoff/AGENT_HANDOFF.md`.
+
 # Functional Subsystems Architectural Specification: Task 1 (VR-01)
 ## Ingestion Plane & Physical Invariant Foundation
 
