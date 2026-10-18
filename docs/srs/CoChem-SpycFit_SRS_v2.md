@@ -402,6 +402,20 @@ These requirements bound every claim SpycFit makes. Owner: all components.
 - **SF-VER-005** Improvement claims count failures. A claim that SpycFit improves on a workflow
   SHALL count failed, abstained and expert-corrected assignments in its statistics.
   *Source* SRS §11 · Optional · A, V-VER-05 · proposed
+- **SF-VER-006** Pending-evidence register. Every provisional default, tolerance or threshold in
+  use that awaits a test SHALL be listed in `docs/evidence/pending_tests.md` with the value in use,
+  the test to run and the decision it serves, and an entry SHALL NOT be removed without the test's
+  recorded result.
+  *Source* D-SPYC-07 (PI 2026-10-17: "Ensure a testing to be completed and published is flagged in
+  a file.") · Core · I, V-VER-06 · proposed
+- **SF-VER-007** Publication demonstration cases. Before a release, SpycFit SHALL publish a
+  document listing the cases to run for the publications that demonstrate the module (species,
+  data sources, engines, acceptance ids), and the release record SHALL state which of them have
+  been run.
+  *Source* D-SPYC-07 (PI 2026-10-17: "When CoChem is coded to a release state we should have
+  documents for what cases need to be run for the publications to demonstrate CoChem modules.") ·
+  Core · I, V-VER-07 · proposed; the same instruction applies to the other CoChem modules
+  (cross-repository item for the PI)
 
 ---
 
@@ -721,6 +735,34 @@ Owner: `model` (observation schema), `ui`.
 - **SF-INT-001c** Unmappable conversions. A conversion between intensity conventions that cannot
   be mapped SHALL raise a typed error.
   *Source* R3-06 · Core · T, V-INT-02 · proposed
+- **SF-INT-002a** Component labels. Every predicted line SHALL carry one transition-moment label
+  from {forbidden by symmetry, weak (below the user's component setting), missing (with reason),
+  evaluated}, computed per species, conformer, axis system and producer with the frame and axis
+  convention recorded (SF-PHYS-001a, SF-CMP-002) and the signed component kept (SF-CMP-003a).
+  *Source* D-SPYC-13 (PI 2026-10-18: "C"); TORQ contract §3.4; errata row 2 · Core · T, V-INT-04 ·
+  proposed
+- **SF-INT-002b** Relative intensity floor. A line whose predicted intensity, per summed rotational
+  line with hyperfine components added (SF-SET-006), falls below a user-set fraction of the
+  strongest predicted line of the same catalog SHALL also be labelled weak, the floor being
+  relative so that no intensity calibration is needed (SF-PHYS-007b).
+  *Source* D-SPYC-13 (PI 2026-10-18: "C") · Core · T, V-INT-04 · proposed
+- **SF-INT-002c** Labels never delete. Labels SHALL sit beside the catalog as a recorded view that
+  re-ranks candidates only, and no label, mask or view filter SHALL remove a line from a catalog or
+  a comparison, change an `.int` dipole, or remove a conformer that lies below the setting on every
+  axis (SF-PHYS-003b).
+  *Source* D-SPYC-13 (PI 2026-10-18: "C"); TORQ contract §3.4 · Core · T, V-INT-04 · proposed
+- **SF-INT-002d** Pruning in automated searches. Labelled-weak lines SHALL be pruned from an
+  automated search only by a recorded expert opt-in, with the pruned set recorded so that the
+  search can be rerun without pruning.
+  *Source* D-SPYC-13 (PI 2026-10-18: "Expert opt-in, recorded, rerunnable") · Core · T, V-INT-04 ·
+  proposed
+- **SF-INT-002e** Unevaluated lines. A line whose label cannot be computed (missing dipole,
+  partition function or spin weight) SHALL rank normally and show "not evaluated" with the reason.
+  *Source* D-SPYC-13 (PI 2026-10-18: "Normal rank, shown 'not evaluated' with the reason") · Core ·
+  T, V-INT-04 · proposed
+  The preset for the weak-component setting is TBD (D-SPYC-13; PI 2026-10-18: "Research a published
+  detection value now, then pre-fill it"); until it is set the field starts empty and only the
+  forbidden and missing labels appear. The Method Matrix's 0.1 D is not pre-filled.
 
 ### 5.2 Spectroscopic models
 
@@ -735,10 +777,35 @@ Owner: `model`, `catalog`.
   tolerance of SF-CMP-008a, before it is enabled.
   *Source* PI 2026-10-16 (native beside SPCAT); D-SPYC-18 · Core · T, V-HAM-02 · proposed; scope
   of terms blocked on D-SPYC-18
-- **SF-HAM-002** Label swaps are visible. When eigenvector labelling changes a transition's
-  quantum-number assignment between iterations or parameter updates, SpycFit SHALL halt the
-  update and show the swap to the expert.
-  *Source* D-SPYC-07 · Core · T, V-HAM-03 · proposed; blocked on D-SPYC-07
+- **SF-HAM-002** Label swaps are flagged, never silent. When a parameter change moves an assigned
+  transition's label onto a different eigenstate, or changes the eigenvector behind a kept label
+  beyond the SF-HAM-002b test, SpycFit SHALL continue the computation and flag the swap on the
+  transition with a provenance record (largest overlap, parameter step, old and new labels,
+  reviewer action and time), and SHALL NOT halt the update or relabel silently.
+  *Source* D-SPYC-07 (PI 2026-10-17: "D — flag every swap, continue, record it in provenance;
+  export needs an expert-review record") · Core · T, V-HAM-03 · proposed
+- **SF-HAM-002a** Post-run check of SPFIT and DPFIT. For each SPFIT or DPFIT run SpycFit SHALL
+  compare the SPCAT or DPCAT eigenvectors (EGYFLG 3) at the run's start and final parameters and
+  flag swaps under SF-HAM-002b, on by default and switchable off per run with the choice recorded,
+  reporting INCOMPLETE when a `.lin` state lies outside FBGN, FEND or MAXV or the basis changed.
+  *Source* D-SPYC-07 (PI 2026-10-17, 07b: "On by default, user-overridable, recorded") · Core · T,
+  V-HAM-03 · proposed
+- **SF-HAM-002b** Swap test and near-tie margin. A swap SHALL be declared when the largest-overlap
+  map |⟨old_i|new_j⟩|² is not the identity for a state an assigned line uses, with 0.5 as the
+  provisional two-state crossover and 0.9 as the provisional near-tie margin, both changeable by
+  advanced users with the change recorded and both registered in `docs/evidence/pending_tests.md`
+  until the stepping test sets them.
+  *Source* D-SPYC-07 (PI 2026-10-17, 07c: "use 1 as a provisional value that should be adjusted
+  with further evidence. Allow these numbers to be changed by advanced users.") · Core · T,
+  V-HAM-03 · proposed; values provisional (PT-01, PT-02)
+- **SF-HAM-002c** Review before export. A result carrying a flagged swap without an expert-review
+  record SHALL NOT be exported, and its comparisons SHALL be INCOMPLETE until the record exists.
+  *Source* D-SPYC-07 (PI 2026-10-17); amendment D-01; SF-CMP-015b · Core · T, V-HAM-03 · proposed
+- **SF-HAM-003** Labelling rule. The native model SHALL label states by energy rank within a
+  symmetry block, as SPFIT's DIAG 0 does, and SHALL NOT relabel by eigenvector continuity across
+  parameter steps.
+  *Source* D-SPYC-07 (PI 2026-10-17: "Not now: keep SPFIT-style energy-rank labelling as the native
+  rule") · Core · T, V-HAM-03 · proposed
 - **SF-PHYS-003a** Constant types. Constants SHALL be typed as equilibrium (B_e), state-averaged
   (B_v) or fitted effective, and a comparison between unlike types without a recorded correction
   SHALL be refused.
@@ -768,6 +835,40 @@ Owner: `model`, `catalog`.
 - **SF-PHYS-004c** Isotopic reweighting approximations. Isotopic reweighting within a shared
   electronic model SHALL record its approximations.
   *Source* SRS SF-PHYS-004 · Core · T, V-HAM-05 · proposed
+
+Diagnostics from constants. Owner: `diag`.
+
+- **SF-DIAG-001** Typed inertial defect and planar moments. For every constant set SpycFit SHALL
+  compute Δ = I_c − I_a − I_b and the planar moments P_aa, P_bb, P_cc with propagated
+  uncertainties, labelled with the set's type (SF-PHYS-003a), reduction, representation and
+  evidence label, and SHALL report a P_aa ≥ P_bb ≥ P_cc violation as a mislabelled input.
+  *Source* D-SPYC-12 (PI 2026-10-18: "C"); TORQ contract §3.1; review SPYC-DIAG · Core · T,
+  V-DIAG-01 · proposed
+- **SF-DIAG-002** Sign difference is a flag, never a rejection. A same-type pair of inertial
+  defects of opposite sign with |Δ| > 2·u(Δ) for both values SHALL be flagged with both values,
+  their types and uncertainties shown, and no candidate SHALL be rejected, pruned or changed in
+  acceptance by it.
+  *Source* D-SPYC-12 (PI 2026-10-18: "C"; "k = 2"); TORQ contract §3.1; errata row 1 · Core · T,
+  V-DIAG-01 · proposed
+- **SF-DIAG-003** Review before export. A result carrying an SF-DIAG-002 flag SHALL NOT be exported
+  without an expert-review record that names both values.
+  *Source* D-SPYC-12 (PI 2026-10-18: "C"); amendment D-01; SF-CMP-015b · Core · T, V-DIAG-02 ·
+  proposed
+- **SF-DIAG-004** Recorded corrections. A computed Δ_e MAY be compared with a measured Δ₀ only
+  through a labelled, recorded correction (a VPT2 Δ₀ where TORQ supplies B₀, or Oka's relation
+  from the lowest out-of-plane frequency) whose model and uncertainty are shown, and an uncorrected
+  unlike-type pair SHALL be displayed unflagged.
+  *Source* D-SPYC-12 (PI 2026-10-18: "Yes, recorded correction allowed; k = 2") · Core · T,
+  V-DIAG-01 · proposed
+- **SF-DIAG-005** Δ window in automated searches. An |Δ| window in an automated triples search
+  SHALL be off by default and enabled only by a recorded expert action, and every candidate it
+  drops SHALL be logged.
+  *Source* D-SPYC-12 (PI 2026-10-18: "Yes: off by default, expert-enabled, dropped triples
+  logged") · Core · T, V-DIAG-03 · proposed
+- **SF-DIAG-006** Δ agreement ranks, never removes. Same-type Δ agreement MAY rank conformer
+  candidates with the ranking formula and reason shown, and SHALL NOT remove any candidate.
+  *Source* D-SPYC-12 (PI 2026-10-18: "Yes: rank only, never remove, reasons shown"); SF-PHYS-003b ·
+  Core · T, V-DIAG-03 · proposed
 - **SF-PHYS-006** Many-to-many vibrational assignments. Vibrational assignments SHALL allow
   combinations, overtones, resonance mixing, ambiguous mode correspondence and several
   contributors to one feature.
@@ -1504,8 +1605,9 @@ with its tolerance committed before the implementation PR (SF-VER-004).
 | V-FIT-08 | Linear additive and Ishigami indices reproduced within three bootstrap standard errors | analytical |
 | V-CAL-01 | Coverage at k = 1, 2, 3 on lineage-held-out lines, with thresholds committed in advance | statistical, experimental |
 | V-UNC-01..03, V-INV-01..02 | Uncertainty categories, absent states and claim rules enforced | software |
-| V-ING-01..04, V-OBS-01..03, V-INT-01..03 | Observation schema, calibration flags, intensity registry and conversions (JPL ↔ HITRAN round trip for one species) | software, analytical |
-| V-HAM-01..05 | Native terms match SPCAT within T1; label swaps halt; frame and constant-type rules | external-engine, analytical |
+| V-ING-01..04, V-OBS-01..03, V-INT-01..04 | Observation schema, calibration flags, intensity registry and conversions (JPL ↔ HITRAN round trip for one species); component labels and the relative floor as a recorded view, and a test that no label, mask or view filter removes a catalog or comparison line or changes an `.int` dipole, on `.cat` files made at test time from hash-verified scratch copies | software, analytical, external-engine |
+| V-HAM-01..05 | Native terms match SPCAT within T1; label swaps are flagged and recorded, never silent, with the provisional 0.5/0.9 test, the post-run SPFIT/DPFIT eigenvector check and the export review record; energy-rank labelling; frame and constant-type rules | external-engine, analytical |
+| V-DIAG-01..03 | Typed Δ and planar moments with propagated uncertainties against published constants (Oka 1995; Zhou et al. 2019, with the stated discrepancy); flag at k = 2 and never reject; export review record; recorded corrections labelled; Δ window off by default with logged drops; ranking never removes; axis-ordering check | analytical, software |
 | V-LS-01..03 | Line-shape declarations; agreement with HAPI and analytic limits; chunked equals unchunked | analytical |
 | V-VIB-01..04, V-NIR-01, V-ROVIB-01, V-PHASE-01, V-RAMAN-01..03, V-THZ-01 | Profile-specific checks listed in the capability matrix | per profile |
 | V-HITL-01..03, V-UI-01..05 | Acceptance only by expert action; non-drag paths; stale marking; no older overwrite; views; the UI notebook renders under BASE's Voila in a SpycFit-environment kernel on one port; HPC provides API and CLI only | software, demonstration |
@@ -1516,7 +1618,7 @@ with its tolerance committed before the implementation PR (SF-VER-004).
 | V-RUN-01..09, V-SEC-01 | Offline run, provenance, resource limits, outcomes, refinement versions, verified identity, use rights, builds only from manifest-verified JPL sources, subprocess safety | software |
 | V-IF-01..09, V-API-01, V-PROV-01..03, V-ML-01..03 | Interfaces and providers, including direct input of ORCA and Pickett files, BASE as a required dependency, the GEOM payload and the refinement request as a BASE handoff kind mapped to `cochem.torq.request/1` | software |
 | V-DEMO-1..5 | End-to-end demonstrations of the four workflows and of each capability-matrix row | demonstration, experimental |
-| V-VER-01..05, V-PERF-01 | Evidence-class tags, no substitution, non-empty coverage, criteria committed first, improvement claims; performance workloads | inspection |
+| V-VER-01..07, V-PERF-01 | Evidence-class tags, no substitution, non-empty coverage, criteria committed first, improvement claims, the pending-evidence register, the publication demonstration-cases document; performance workloads | inspection |
 
 ### 8.3 Benchmark manifest (panel accepted 2026-10-17; D-SPYC-14)
 
@@ -1555,7 +1657,7 @@ first release (D-SPYC-05, PI 2026-10-17; SF-UI-007).
 
 `docs/plan/CoChem-SpycFit_Plan.md` is authoritative for phases and work packages. Requirement
 areas map to packages as follows: SF-IO-004, SF-PICK, SF-RUN-006..008 → WP-PICK; SF-ING, SF-IO-003,
-SF-THZ, SF-RAMAN-001 → WP-EXP; SF-HAM, SF-PHYS-002..004 → WP-HAM; SF-FIT, SF-INF → WP-FIT;
+SF-THZ, SF-RAMAN-001 → WP-EXP; SF-HAM, SF-PHYS-002..004 → WP-HAM; SF-DIAG → WP-DIAG; SF-FIT, SF-INF → WP-FIT;
 SF-INT, SF-PHYS-007/008 → WP-INT; SF-CMP → WP-CMP (new); SF-HITL, SF-UI → WP-ASSIGN and WP-UI;
 SF-IF → WP-IF; SF-SET → WP-UI; SF-OUT, SF-PUB → WP-OUT; SF-DATA, SF-IO-007 → WP-BENCH (new); vibrational profiles
 → WP-VIB (new).
@@ -1600,6 +1702,9 @@ answered further questions on 2026-10-17. The entries below are ANSWERED (record
 | D-SPYC-05 UI and hosting | Hosting H2 (BASE's Voila renders a SpycFit notebook in a SpycFit kernel, one port); HPC headless in the first release (2026-10-17) | The toolkit: research the PI asked for (R2) |
 | D-SPYC-21 Search windows | Per-method-class defaults, q = 2 × RMSD, uncalibrated, never acceptance tolerances (2026-10-17) | None |
 | D-SPYC-22 Module name | SPYFY, pronounced "spiffy" (2026-10-17) | The rename PR; the BASE registry entry |
+| D-SPYC-07 Label swaps | Flag, continue, record in provenance, export needs an expert-review record; post-run SPFIT/DPFIT check on by default; 0.5/0.9 provisional and user-changeable; energy-rank labelling kept (2026-10-17) | The stepping test (PT-01, PT-02 in `docs/evidence/pending_tests.md`) |
+| D-SPYC-12 Inertial defect | Typed, uncertainty-aware flag at k = 2, never rejection; export review record; Δ window off by default with logged drops; ranking never removes; recorded corrections allowed (2026-10-18) | The Method Matrix §6.4 lines as a BASE correction; the legacy module and seven tests in Phase 2 |
+| D-SPYC-13 Dark components | A recorded view with three label states and a relative intensity floor, never deletion; pruning by recorded expert opt-in; unevaluated lines at normal rank (2026-10-18) | The preset: a published detection value to research and pre-fill (R5); the Method Matrix §6.1 line and BASE's dark-branch filter as BASE items |
 | D-01, D-02, D-03 | Divergence review at export; offline-capable core; semirigid first | Recorded as D-SPYC entries |
 
 Questions raised by this draft:

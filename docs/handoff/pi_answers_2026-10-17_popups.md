@@ -167,6 +167,54 @@ Selected: **"D-SPYC-03: A, schema (i), staged (Recommended)"**.
 3. Reserve an electronic-state field in the state identity (yes / no). The PI typed: **"We are
    going to pivot and include this field and scope."**
 
+## D-SPYC-07 eigenvalue label swaps (four questions in one pop-up; brief `D-SPYC-07_2026-10-17.md`)
+
+1. What the native model does on a swap (D flag and continue with provenance and an export review
+   record / A halt and show / B warn and continue / C halt stored fits, previews continue).
+   Selected: **"D-SPYC-07: D — flag every swap, continue, record it in provenance; export needs an
+   expert-review record (Recommended)"**.
+2. 07b, a post-run eigenvector check of finished SPFIT and DPFIT runs. Selected: **"On by default,
+   user-overridable, recorded (Recommended)"** (not chosen: "Off by default, available on
+   request"; "No such check").
+3. 07c, the swap test and near-tie margin (options: "0.5 swap / 0.9 near-tie (Recommended)";
+   "Defer the numbers until the stepping test has run"; "Other values"). The PI typed: **"2 but use
+   1 as a provisional value that should be adjusted with further evidence. Allow these numbers to
+   be changed by advanced users. Once further testing has been completed we will revise these
+   defaults. Ensure a testing to be completed and published is flagged in a file. When CoChem is
+   coded to a release state we should have documents for what cases need to be run for the
+   publications to demonstrate CoChem modules."**
+4. E, overlap-continuity labelling with proposed relabel. Selected: **"Not now: keep SPFIT-style
+   energy-rank labelling as the native rule (Recommended)"**.
+
+## D-SPYC-12 inertial-defect sign rule (four questions in one pop-up; answered 2026-10-18 UTC; brief `D-SPYC-12_2026-10-17.md`)
+
+1. What SPYFY does on a sign difference (C flag with export review record / A diagnostic only /
+   B binding rejection / D display only, comparison in GEOM). Selected: **"D-SPYC-12: C — typed,
+   uncertainty-aware display and flag, never automatic rejection, plus an expert-review record
+   before export of a flagged same-type sign difference (Recommended)"**.
+2. An off-by-default |Δ| window in automated triples searches. Selected: **"Yes: off by default,
+   expert-enabled, dropped triples logged (Recommended)"** (not chosen: "No window at all").
+3. Same-type Δ agreement ranking candidates. Selected: **"Yes: rank only, never remove, reasons
+   shown (Recommended)"** (not chosen: "No: display only, no ranking").
+4. A labelled, recorded correction so that Δ_e compares with Δ₀, and the flag threshold k.
+   Selected: **"Yes, recorded correction allowed; k = 2 (Recommended)"** (not chosen: "No
+   correction: unlike-type pairs are displayed unflagged").
+
+## D-SPYC-13 dark dipole components (four questions in one pop-up; answered 2026-10-18 UTC; brief `D-SPYC-13_2026-10-17.md`)
+
+1. Treatment of lines with a small predicted dipole or transition-moment component (C recorded
+   view with three label states and a relative intensity floor / A component label, three states /
+   B exclude weak branches). Selected: **"D-SPYC-13: C — visibility as a recorded view: three label
+   states plus an intensity floor relative to the strongest predicted line; labels sit beside the
+   catalog and re-rank only (Recommended)"**.
+2. Pruning labelled-weak lines from automated searches. Selected: **"Expert opt-in, recorded,
+   rerunnable (Recommended)"** (not chosen: "Never prune"; "On by default").
+3. The preset for the weak-component setting. Selected: **"Research a published detection value
+   now, then pre-fill it"** (not chosen: "No preset until a published detection value is researched
+   (Recommended)"; "0.1 D, the Method Matrix value").
+4. Rank of lines whose label cannot be computed. Selected: **"Normal rank, shown 'not evaluated'
+   with the reason (Recommended)"** (not chosen: "Lowest rank").
+
 ## Research the PI asked for in these answers
 
 - R1 (D-SPYC-04, D-SPYC-18, SRS §1.1): GPU-parallel, array-based, on-the-fly native fitting
@@ -176,3 +224,5 @@ Selected: **"D-SPYC-03: A, schema (i), staged (Recommended)"**.
 - R3 (D-SPYC-06): incorporating electronic and UV-Vis spectroscopy as a modular ladder, and the
   boundary between SPYFY and "another module".
 - R4 (D-SPYC-14 follow-up 5): a replacement for OCS with public SPFIT fit inputs.
+- R5 (D-SPYC-13, 2026-10-18): a published detection value for the weak-component preset, to be
+  researched and then pre-filled.

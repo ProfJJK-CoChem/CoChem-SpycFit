@@ -29,13 +29,13 @@ Sources:
 | D-SPYC-04 | Internal rotation and tunnelling | SRS LAM; G1 | C: defer to after the first release, then A or B | ANSWERED in part 2026-10-16 and 2026-10-17 (engines XIAM, ERHAM, later BELGI/RAM36/westerfit; XIAMALL.FOR build; BASE builds them; wrap versus native awaits the research the PI requested) |
 | D-SPYC-05 | UI stack and hosting | SRS UI; G1 | ipywidgets + Plotly under Voila as a BASE tab, plus CLI | ANSWERED in part 2026-10-17 (hosting H2; HPC headless; toolkit awaits the research the PI requested) |
 | D-SPYC-06 | IR / Raman / UV-Vis in SpycFit | SRS §1.2 | None in SpycFit | ANSWERED in part 2026-10-16 and 2026-10-17 (TORQ predicts; UV-Vis view retracted 2026-10-17: electronic treatment for the microwave use cases in scope, electronic-state field included, research requested on UV-Vis) |
-| D-SPYC-07 | Eigenvalue label swaps during a fit | SRS HAM/FIT (only if D-SPYC-18 includes a model) | Halt and show the swap | OPEN |
+| D-SPYC-07 | Eigenvalue label swaps during a fit | SRS HAM/FIT (only if D-SPYC-18 includes a model) | Halt and show the swap | ANSWERED 2026-10-17 (D: flag, continue, record in provenance, export needs an expert-review record; 07b on by default; 07c 0.5/0.9 provisional, user-changeable, pending test registered; energy-rank labelling kept) |
 | D-SPYC-08 | Anti-gaming checks | G2 (hygiene PR) | Keep narrow hygiene checks; gate on literature tests, SPFIT/SPCAT round trip, whole-suite CI, PI review | OPEN |
 | D-SPYC-09 | Parallel-execution import ban | G2 | Lift the ban | OPEN |
 | D-SPYC-10 | Structure determination in v2 | SRS STR; G1 | In scope, gated by fluxionality | ANSWERED 2026-10-17 (defer to GEOM) |
 | D-SPYC-11 | Toolchain baseline | G1 (for SRS §6), Phase 2 code | A: Python 3.12, NumPy/SciPy, no JAX/CuPy, CPU only | OPEN |
-| D-SPYC-12 | Inertial-defect sign rule | SRS DIAG | Diagnostic flag, never automatic rejection | OPEN |
-| D-SPYC-13 | Dark dipole components | SRS INT/ASSIGN | De-prioritise in search; keep in archival catalogs | OPEN |
+| D-SPYC-12 | Inertial-defect sign rule | SRS DIAG | Diagnostic flag, never automatic rejection | ANSWERED 2026-10-18 (C: typed flag at k = 2, never rejection, export review record; off-by-default search window; ranking only; recorded corrections allowed) |
+| D-SPYC-13 | Dark dipole components | SRS INT/ASSIGN | De-prioritise in search; keep in archival catalogs | ANSWERED in part 2026-10-18 (C: recorded view, three label states plus a relative intensity floor, never deletion; pruning expert opt-in; unevaluated lines at normal rank; preset awaits a researched detection value) |
 | D-SPYC-14 | Benchmark set, data supply and tolerances | G1 | A: minimum set (see entry) | ANSWERED in part 2026-10-16 and 2026-10-17 (panel, OCS to be replaced; tolerances A for T1-T3, B for T4; "equal or closer" confirmed for fits and predictions, paired bootstrap, no gate; nine follow-ups answered; three extra T3 defaults TBD) |
 | D-SPYC-15 | Repository strategy | Phase 2 | A: tag legacy, build fresh in `src/cochem_spycfit/`, port proven modules | OPEN |
 | D-SPYC-17 | SPFIT/SPCAT source, pin and use rights | SRS §4.1; Phase 2 CI | A: one ecosystem pin shared with TORQ | ANSWERED in part 2026-10-17 (JPL sources; DPFIT/DPCAT included) |
@@ -183,7 +183,7 @@ This is option B or wider, against the recommendation.
 ## D-SPYC-07 Eigenvalue label swaps during a fit
 
 **Needed before:** HAM/FIT requirements, and only if D-SPYC-18 includes an in-process model.
-**Status:** OPEN
+**Status:** ANSWERED 2026-10-17; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-07.md`
 
 When a parameter change reorders levels so that a transition's (J, Ka, Kc) label maps to a
 different eigenvalue, what should happen?
@@ -193,7 +193,7 @@ different eigenvalue, what should happen?
 | **A (recommended).** Halt the fit and show the swap. | Silent relabelling corrupts residuals; halting forces a human decision. |
 | B. Warn and continue. | Faster iteration; risk of unnoticed corruption. |
 
-**PI answer:** _none yet_
+**PI answer** (conversation 2026-10-17, pop-up; `docs/handoff/pi_answers_2026-10-17_popups.md`). The agent offered, from the brief `docs/handoff/briefs/D-SPYC-07_2026-10-17.md`, D (flag every swap, continue, record in provenance, export needs an expert-review record), A (sheet), B (sheet) and C (halt stored fits, previews continue). The PI selected: "D-SPYC-07: D — flag every swap, continue, record it in provenance; export needs an expert-review record (Recommended)". For 07b (post-run eigenvector check of SPFIT and DPFIT runs) the PI selected: "On by default, user-overridable, recorded (Recommended)". For 07c (swap test and near-tie margin) the PI typed: "2 but use 1 as a provisional value that should be adjusted with further evidence. Allow these numbers to be changed by advanced users. Once further testing has been completed we will revise these defaults. Ensure a testing to be completed and published is flagged in a file. When CoChem is coded to a release state we should have documents for what cases need to be run for the publications to demonstrate CoChem modules." For E (overlap-continuity labelling) the PI selected: "Not now: keep SPFIT-style energy-rank labelling as the native rule (Recommended)". Record: `docs/decisions/D-SPYC-07.md`; the pending test is registered in `docs/evidence/pending_tests.md`.
 
 ## D-SPYC-08 Anti-gaming checks
 
@@ -247,7 +247,7 @@ Parsl elsewhere.
 
 ## D-SPYC-12 Inertial-defect sign rule
 
-**Needed before:** SRS DIAG requirements. **Status:** OPEN
+**Needed before:** SRS DIAG requirements. **Status:** ANSWERED 2026-10-18; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-12.md`
 
 MM §6.4 makes a sign disagreement between computed and experimental inertial defects a **binding
 rejection**. The accepted TORQ contract §3.1 says "a sign discrepancy is a diagnostic, not
@@ -259,11 +259,11 @@ contributions.
 | **A (recommended).** Follow the TORQ contract. Always compute and show Δ and the planar moments, flag a sign disagreement prominently, and never reject automatically. | Consistent with TORQ; avoids rejecting correct structures of floppy complexes. |
 | B. Follow MM §6.4 literally: automatic rejection. | Conflicts with the accepted TORQ contract. |
 
-**PI answer:** _none yet_
+**PI answer** (pop-up, 2026-10-18 UTC; `docs/handoff/pi_answers_2026-10-17_popups.md`). The agent offered, from the brief `docs/handoff/briefs/D-SPYC-12_2026-10-17.md`, C (A plus an export review record), A (diagnostic only, typed), B (binding rejection) and D (comparison in GEOM). The PI selected: "D-SPYC-12: C — typed, uncertainty-aware display and flag, never automatic rejection, plus an expert-review record before export of a flagged same-type sign difference (Recommended)"; "Yes: off by default, expert-enabled, dropped triples logged (Recommended)"; "Yes: rank only, never remove, reasons shown (Recommended)"; "Yes, recorded correction allowed; k = 2 (Recommended)". Record: `docs/decisions/D-SPYC-12.md`; SRS v2 SF-DIAG-001..006. The Method Matrix §6.4 lines become a BASE correction for the PI to request.
 
 ## D-SPYC-13 Dark dipole components
 
-**Needed before:** SRS INT and ASSIGN requirements. **Status:** OPEN
+**Needed before:** SRS INT and ASSIGN requirements. **Status:** ANSWERED in part 2026-10-18; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-13.md`
 
 MM §6.1 flags |μ_g| < 0.1 D as "dark". The TORQ contract §3.4 says "a 0.1 D display/detection
 threshold cannot delete nonzero archival transitions".
@@ -273,7 +273,7 @@ threshold cannot delete nonzero archival transitions".
 | **A (recommended).** Dark branches are de-prioritised and labelled in search windows, and kept in every archival catalog. The threshold is a user setting. | Consistent with TORQ; no transitions lost. |
 | B. Exclude dark branches from predicted catalogs. | Conflicts with the TORQ contract. |
 
-**PI answer:** _none yet_
+**PI answer** (pop-up, 2026-10-18 UTC; `docs/handoff/pi_answers_2026-10-17_popups.md`). The agent offered, from the brief `docs/handoff/briefs/D-SPYC-13_2026-10-17.md`, C (visibility as a recorded view: three label states plus a relative intensity floor), A (component label, three states) and B (exclude weak branches). The PI selected: "D-SPYC-13: C — visibility as a recorded view: three label states plus an intensity floor relative to the strongest predicted line; labels sit beside the catalog and re-rank only (Recommended)"; pruning: "Expert opt-in, recorded, rerunnable (Recommended)"; preset: "Research a published detection value now, then pre-fill it"; unevaluated lines: "Normal rank, shown 'not evaluated' with the reason (Recommended)". Record: `docs/decisions/D-SPYC-13.md`; SRS v2 SF-INT-002a..e. Still open: the preset value (research R5).
 
 ## D-SPYC-14 Benchmark set, data supply and tolerances
 

@@ -36,8 +36,12 @@ an open decision say so.
 4. **WP-FIT**: the SPFIT driver as fit of record (D-SPYC-01): parameter state (fitted, fixed,
    constrained), uncertainties, correlation matrix and residual tables.
 5. **WP-INT**: intensities with user spin weights, selection rules and catalogs at T_rot
-   (D-SPYC-13, D-SPYC-16).
-6. **WP-DIAG**: inertial defect, planar moments and κ (D-SPYC-12).
+   (D-SPYC-13: three-state component labels and a relative intensity floor as a recorded view
+   that never deletes, preset after research; D-SPYC-16: catalogs split by producer).
+6. **WP-DIAG**: inertial defect, planar moments and κ (D-SPYC-12: typed, uncertainty-aware flag
+   at k = 2 and never rejection; export review record; off-by-default search window with logged
+   drops; ranking only; recorded corrections; the legacy module's seven rejection tests are
+   rewritten in Phase 2 with the PI's approval).
 7. **WP-ASSIGN**: prediction windows with the D-SPYC-21 per-method-class defaults, candidate
    ranking, pattern tools and the assignment loop.
 8. **WP-CAMPAIGN**: isotopologues and conformers, and the constants GEOM needs for structure
