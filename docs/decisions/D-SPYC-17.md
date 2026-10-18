@@ -36,7 +36,9 @@ change in TORQ itself, the PI replied: "Yes, change TORQ".
   (SF-RUN-008).
 - The CoChem-BASE build mechanism the PI asked for (conversation 2026-10-16: "We need to build
   sp_cat and sp_fit and add a mechanism that can build sp_cat and sp_fit into [CoChem-BASE] so
-  that it can install properly") uses these sources.
+  that it can install properly") uses these sources. The PI confirmed this recorded wording and
+  chose the mechanism's design on 2026-10-18 (D-SPYC-26: BASE owns the provisioner and the pin;
+  automatic in the Codespaces setup script; fallback removed; `hcotst.par` route accepted).
 - Conflict with TORQ, stated as AGENTS.md requires: TORQ pins the laserkelvin/Pickett mirror at
   `f5af2ff0f1acb1eb11ecffe7ef3b55d457801f7b`, and its validator rejects any other upstream URL
   (`CoChem-TORQ/src/cochem_torq/spectroscopy/pickett_backend.py`, `SUPPORTED_COMMIT` and the

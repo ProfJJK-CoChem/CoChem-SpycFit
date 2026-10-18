@@ -289,6 +289,27 @@ Selected: **"D-SPYC-03: A, schema (i), staged (Recommended)"**.
    7e42507 && git push origin legacy-swarm-2026-10"**. The PI runs these commands on their own
    machine; the agent creates no key and no tag.
 
+## BASE-BUILD: the SPFIT/SPCAT/DPFIT/DPCAT build mechanism in CoChem-BASE (four questions in one pop-up; answered 2026-10-18 UTC; brief `BASE-BUILD_2026-10-17.md`; recorded as D-SPYC-26)
+
+The pop-up stated that this is the PI's task 11, recorded by an agent from the 2026-10-16
+conversation as "We need to build sp_cat and sp_fit and add a mechanism that can build sp_cat and
+sp_fit into [CoChem-BASE] so that it can install properly" (D-SPYC-17), and that choosing any
+option of question 1 confirms that wording (Other to correct it). The PI chose an option, so the
+wording is confirmed.
+
+1. Placement of the provisioner (A BASE owns it / B TORQ's existing script / C per-module
+   provisioners). Selected: **"A: BASE owns the provisioner (Recommended)"**.
+2. When the build runs on a student or workstation image (H2 opt-in command (Recommended) / H1
+   automatic in the Codespaces setup script / H3 off, CI only). Selected: **"H1: automatic in the
+   Codespaces setup script"** (not the agent's recommendation; the pop-up stated the conflict with
+   TORQ's accepted text that automatic student-image provisioning stays blocked until use and
+   distribution rights are recorded).
+3. BASE's in-process SPCAT fallback (F1 remove in the same BASE PR / F2 separate PR / F3 leave,
+   record as never-SPCAT). Selected: **"F1: remove it in the same BASE PR (Recommended)"**.
+4. Whether the hcotst.par route satisfies the HCO acceptance check while JPL's hco.var is
+   unavailable (Y recorded as a listed difference / N wait). Selected: **"Y: yes, recorded as a
+   listed difference (Recommended)"**.
+
 ## Research the PI asked for in these answers
 
 - R1 (D-SPYC-04, D-SPYC-18, SRS §1.1): GPU-parallel, array-based, on-the-fly native fitting

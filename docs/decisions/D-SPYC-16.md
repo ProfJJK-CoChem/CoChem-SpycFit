@@ -36,7 +36,8 @@ parameter-ID/sign table.
 - BASE's `spcat_runner` (in-process diagonaliser fallback at J_max = 5; d1/d2 mapping that differs
   from TORQ's) is a third producer whose output is never labelled SPCAT; this is a cross-repository
   item carried by the BASE build design.
-- Option E (one shared runner and receipt) is to be revisited once BASE's build mechanism exists.
+- Option E (one shared runner and receipt) is to be revisited once BASE's build mechanism exists
+  (designed in D-SPYC-26, PI 2026-10-18; receipt `cochem.pickett-installation/1`).
 
 ## Alternatives not chosen
 

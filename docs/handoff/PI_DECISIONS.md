@@ -47,6 +47,7 @@ Sources:
 | D-SPYC-23 | BASE's declared boundaries (SF-IF-004) and the direct-input route | SRS §4.4; G1 | C: provide none of the three names; route ii (BASE ingests Pickett and ORCA files) | ANSWERED 2026-10-18 |
 | D-SPYC-24 | Use cases and order of the first release (UC-SEL) | SRS §3; plan G0 | B: two tracks, staged | ANSWERED in part 2026-10-18 (B; UC-2 in release 2; demonstration cases await research R6) |
 | D-SPYC-25 | Removal of the Phase 0 no-code clause and the `srs-v2.0` code gate | plan; AGENTS.md (governance PR) | a waiver for `e87f6f4` only (agent) | ANSWERED 2026-10-18 ("Remove both completely"); governance PR from `ccr-c1697164-ao6hz4-governance` permitted by the PI with the interim rule that code PRs may cite proposed ids until `srs-v2.0` |
+| D-SPYC-26 | BASE build mechanism for SPFIT, SPCAT, DPFIT and DPCAT (task 11, BASE-BUILD) | SRS SF-RUN-007..009a; plan WP-PICK; the BASE PR | A, H2, F1, Y (agent) | ANSWERED 2026-10-18 (A, H1, F1, Y; task-11 wording confirmed; the use-rights sentence open) |
 
 ---
 
@@ -467,3 +468,11 @@ The brief `docs/handoff/briefs/G0_2026-10-17.md` offered A (approve as written),
 **Needed before:** code work; the governance PR. **Status:** ANSWERED 2026-10-18; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-25.md`; the governance-file change is its own PR
 
 **PI answer** (pop-up, 2026-10-18 UTC; `docs/handoff/pi_answers_2026-10-17_popups.md`): "Remove both completely we are far enough along that they are not needed anymore." Record: `docs/decisions/D-SPYC-25.md`. Still in force because the PI did not name them: the `srs-v2.0` approval mechanism and "the approved SRS wins". On the citation rule the PI selected, in the same 2026-10-18 pop-up: "Open the dedicated PR from branch ccr-c1697164-ao6hz4-governance; in it, code PRs may cite proposed SRS v2 ids until srs-v2.0 exists, each such PR saying so (Recommended)" (not chosen: keep "code PRs name approved ids" unchanged; hold the AGENTS.md change until `srs-v2.0`). The governance PR edits only `AGENTS.md` and `docs/handoff/AGENT_HANDOFF.md`.
+
+## D-SPYC-26 The BASE build mechanism for SPFIT, SPCAT, DPFIT and DPCAT (task 11, BASE-BUILD)
+
+**Needed before:** WP-PICK; the Phase 2 CI build; the BASE pull request. **Status:** ANSWERED 2026-10-18; DECIDED when the PI approves the PR containing `docs/decisions/D-SPYC-26.md`; the BASE change is a CoChem-BASE pull request the PI requests
+
+The brief `docs/handoff/briefs/BASE-BUILD_2026-10-17.md` offered placements A (BASE owns the provisioner), B (TORQ's script) and C (per-module provisioners); hooks H1 (automatic in the Codespaces setup script), H2 (opt-in command) and H3 (CI only); fallback options F1-F3 for BASE's in-process SPCAT path; and Y/N on the `hcotst.par` route for the HCO acceptance check. The agent recommended A, H2, F1, Y.
+
+**PI answer** (pop-up, 2026-10-18 UTC; `docs/handoff/pi_answers_2026-10-17_popups.md`). The PI selected "A: BASE owns the provisioner (Recommended)", "H1: automatic in the Codespaces setup script", "F1: remove it in the same BASE PR (Recommended)" and "Y: yes, recorded as a listed difference (Recommended)", and confirmed the recorded task-11 wording by choosing an option. Record: `docs/decisions/D-SPYC-26.md`. H1 conflicts with TORQ's accepted sentence that automatic student-image provisioning stays blocked until the laboratory records use rights (`CoChem-TORQ/docs/development/pickett_backend.md`); the PI's choice is followed, the conflict is stated in the record and SF-RUN-009a, and the PI's own use-rights sentence for SF-RUN-008 is still to be given. Cross-repository items for the PI to request: the BASE PR (provisioner, manifest, receipt `cochem.pickett-installation/1`, `cochem-cli pickett`, CI workflow, setup-script hook, fallback removal, hash-ring and `pytest.ini` refresh); TORQ's inventory and receipt change and its documentation sentence; the XIAM/ERHAM second PR with gfortran.

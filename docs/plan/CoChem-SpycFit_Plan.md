@@ -43,8 +43,12 @@ tolerances are approved by the PI before its implementation PR. Packages whose s
 an open decision say so.
 
 1. **WP-PICK**: Pickett file I/O and round trip through SPFIT, SPCAT, DPFIT and DPCAT built from
-   the pinned JPL sources (D-SPYC-17; SF-RUN-006..009), provisioned by the BASE build mechanism
-   the PI asked for (task 11; `docs/handoff/briefs/BASE-BUILD_2026-10-17.md`).
+   the pinned JPL sources (D-SPYC-17; SF-RUN-006..009a), provisioned by the BASE build mechanism
+   the PI asked for (task 11; D-SPYC-26, PI 2026-10-18: BASE owns the provisioner and the pin, the
+   build runs automatically in BASE's Codespaces setup script, BASE's in-process SPCAT fallback is
+   removed in the same BASE PR, and the `hcotst.par` route satisfies V-PICK-05 while `hco.var` is
+   unavailable; `docs/handoff/briefs/BASE-BUILD_2026-10-17.md`). SpycFit reads the receipt
+   (SF-RUN-009a); the BASE PR is the PI's request to the BASE maintainer.
 2. **WP-EXP**: experimental spectrum and peak-list input; peak picking with an uncertainty model.
 3. **WP-HAM**: the in-process model, if any (D-SPYC-16, D-SPYC-18): Watson A/S in the chosen
    representations, Wang-block labelling, quadrupole hyperfine and multi-state structure,

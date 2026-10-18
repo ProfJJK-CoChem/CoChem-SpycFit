@@ -21,6 +21,7 @@
 | Draft 0 | 2026-10-11 | Skeleton (PR #1). |
 | Draft 1 | 2026-10-16 | Full proposed text. Restructures the consolidated SRS and amendment at `488dc87` into single-statement requirements, keeps every SF id, retires nine duplicate ids as aliases (§0.6), and adds requirements from the literature review. |
 | Draft 1, 2026-10-17 update | 2026-10-17 | Records the PI's pop-up answers of 2026-10-17 (`docs/handoff/pi_answers_2026-10-17_popups.md`; D-SPYC-02, 03, 04, 05, 06, 14, 16, 20, 21, 22): T1 51 Hz / 6 Hz; SF-CMP-021c withdrawn; paired bootstrap test in SF-CMP-021b; over-coverage bounded; OCS dropped from §8.3 pending a replacement; search-window defaults SF-WIN-001..003; masses and constants (§1.7.5, SF-IO-005); refinement route (SF-RUN-005a, SF-IF-009); hosting H2 and headless HPC (SF-UI-006, 007); P4 engines (SF-CMP-019); electronic-state field (SF-CMP-004e) and profile P15; module name SPYFY (§1.1). |
+| Draft 1, 2026-10-18 update | 2026-10-18 | Records the PI's pop-up answers of 2026-10-18 (D-SPYC-07, 12, 13, 23, 24, 25, 26; G0 amendments): SF-HAM-002 rewritten with 002a-c and SF-HAM-003; SF-DIAG-001..006; SF-INT-002a..e; SF-IF-004 rewritten, SF-IF-002a, SF-IF-009; SF-VER-006 (pending-evidence register) and SF-VER-007 (publication demonstration cases); §3 release staging; SF-RUN-007 `hcotst.par` route and SF-RUN-009a provisioning receipt (BASE build mechanism, D-SPYC-26); §11 register rows and questions 15-18. |
 
 ### 0.2 Modal verbs
 
@@ -485,16 +486,37 @@ Owner: `io/pickett`, `fit`, `catalog`.
 - **SF-RUN-007** Provisioning acceptance per library. Each pinned Pickett build SHALL pass an
   acceptance run on scratch copies of the example shipped for its library (SPINV: HCO with SPFIT
   and SPCAT; DPI: NO with DPFIT and DPCAT), recording byte equality or the listed differences.
-  *Source* R1-02, R4-07; D-SPYC-17 (PI 2026-10-17: "include DPFIT/DPCAT") · Core · T, V-PICK-05 ·
-  proposed
+  While the shipped `hco.var` is unavailable at JPL (HTTP 500 on 2026-10-17), the HCO run SHALL
+  start SPFIT from `hcotst.par` with `hco.lin`, then SPCAT, and SHALL record that route as a listed
+  difference from the shipped `.var` route (D-SPYC-26, PI 2026-10-18: "Y: yes, recorded as a
+  listed difference").
+  *Source* R1-02, R4-07; D-SPYC-17 (PI 2026-10-17: "include DPFIT/DPCAT"); D-SPYC-26 · Core · T,
+  V-PICK-05 · proposed
 - **SF-RUN-008** Use rights recorded. Each external engine record SHALL state the source, the
   PI-determined use rights and whether the engine may be redistributed, and an engine without
   recorded rights SHALL NOT be bundled.
-  *Source* R1-16; errata row 9 · Core · I, V-RUN-08 · proposed; use rights blocked on D-SPYC-17
+  *Source* R1-16; errata row 9 · Core · I, V-RUN-08 · proposed; the PI's use-rights sentence for
+  the Pickett programs is open (D-SPYC-17, D-SPYC-26)
 - **SF-RUN-009** Pickett sources. SPFIT, SPCAT, DPFIT and DPCAT SHALL be built only from the
   calpgm source files published at `https://spec.jpl.nasa.gov/ftp/pub/calpgm/` whose SHA-256
   match a recorded source manifest.
   *Source* D-SPYC-17 (PI 2026-10-17) · Core · T, V-RUN-09 · proposed
+- **SF-RUN-009a** Provisioning receipt. SpycFit SHALL locate SPFIT, SPCAT, DPFIT and DPCAT through
+  the CoChem-BASE provisioning receipt `cochem.pickett-installation/1` (source inventory and
+  digest; build command, compiler, flags, build-log hash, platform; per-program path, SHA-256 and
+  status `built` or `accepted`; the quoted rights notice; the HCO and NO acceptance results), or
+  through a receipt path given on the command line on headless hosts (SF-UI-007), SHALL verify each
+  program's SHA-256 against the receipt (SF-RUN-006a), and SHALL NOT search `PATH` for the
+  programs. BASE owns the provisioner and the JPL pin, runs the build automatically in its
+  Codespaces setup script, and removes its in-process SPCAT fallback in the same BASE change
+  (D-SPYC-26, PI 2026-10-18: "A: BASE owns the provisioner", "H1: automatic in the Codespaces
+  setup script", "F1: remove it in the same BASE PR"). Conflict stated: TORQ's accepted text
+  "Automatic student-image provisioning remains blocked until the laboratory establishes
+  appropriate distribution/use rights" (`CoChem-TORQ/docs/development/pickett_backend.md`); the
+  PI's choice is followed and the receipt carries the rights basis. The BASE side waits on the
+  BASE pull request the PI requests.
+  *Source* D-SPYC-26 (PI 2026-10-18); task 11 · Core · T, V-RUN-09 · proposed; blocked on the BASE
+  PR
 
 ### 4.2 Experimental input
 
@@ -1625,7 +1647,7 @@ with its tolerance committed before the implementation PR (SF-VER-004).
 | V-PICK-02 | Writer output run through the pinned binary reproduces the original outputs on hash-verified inputs | external-engine |
 | V-PICK-03 | SPCAT energies for each §1.7.2 row match an independent Watson Hamiltonian at J ≤ 6 within the `.egy` print quantum | external-engine, analytical |
 | V-PICK-04 | Reference inputs are unchanged after any SPFIT or SPCAT run | software |
-| V-PICK-05 | SPFIT/SPCAT on the HCO example: SPCAT reproduces `hco.cat` byte for byte; SPFIT's first iteration reproduces the last iteration of `hco.fit`. DPFIT/DPCAT on the NO example: listed differences recorded | external-engine |
+| V-PICK-05 | SPFIT/SPCAT on the HCO example: SPCAT reproduces `hco.cat` byte for byte; SPFIT's first iteration reproduces the last iteration of `hco.fit`; while `hco.var` is unavailable the run starts from `hcotst.par` and records that as a listed difference (D-SPYC-26). DPFIT/DPCAT on the NO example: listed differences recorded | external-engine |
 | V-CMP-01..20 | One test per SF-CMP requirement, using genuine pinned engines on the §8.3 panel and convention, coverage and failure cases of amendment §3.5 | external-engine, software |
 | V-FIT-01..13 | One test per fitting requirement; statistics checked against hand-computed values on small problems and against SPFIT's printed statistics | analytical, external-engine |
 | V-FIT-08 | Linear additive and Ishigami indices reproduced within three bootstrap standard errors | analytical |
@@ -1733,6 +1755,7 @@ answered further questions on 2026-10-17. The entries below are ANSWERED (record
 | D-SPYC-13 Dark components | A recorded view with three label states and a relative intensity floor, never deletion; pruning by recorded expert opt-in; unevaluated lines at normal rank (2026-10-18) | The preset: a published detection value to research and pre-fill (R5); the Method Matrix §6.1 line and BASE's dark-branch filter as BASE items |
 | D-SPYC-23 BASE boundaries and input route | None of `pickett_export`, `pgopher_export`, `spectroscopy_snapshot` is provided; SpycFit publishes its own operations; Pickett and ORCA inputs arrive through BASE input kinds, SF-IF-002 keeps "only" (2026-10-18) | BASE adding the input kinds, a multi-file handoff, an adapter and manifest entries; the shell cleanup |
 | D-SPYC-24 Use cases of the first release | Two tracks, staged: release 1 = UC-7, UC-8 (Pickett), WP-PICK round trip, UC-1 with SPFIT as fit of record, UC-9 on the GEOM schema, UC-5 after the engine research, UC-4 as P8 only; release 2 = UC-2, UC-3, UC-6, P2-P4, P7, P15 (2026-10-18) | Demonstration cases per engine component with two isotopologues from reputable databases (R6); the plan amendment at G0 |
+| D-SPYC-26 BASE build mechanism (task 11) | BASE owns the provisioner and the JPL pin (A); the build runs automatically in BASE's Codespaces setup script (H1); BASE's in-process SPCAT fallback is removed in the same BASE PR (F1); the `hcotst.par` route satisfies V-PICK-05 while `hco.var` is unavailable (Y); the recorded task-11 wording confirmed (2026-10-18) | The BASE PR; the PI's use-rights sentence for SF-RUN-008; TORQ's inventory and its sentence on automatic provisioning; the XIAM/ERHAM second PR |
 | D-01, D-02, D-03 | Divergence review at export; offline-capable core; semirigid first | Recorded as D-SPYC entries |
 
 Questions raised by this draft:
@@ -1765,6 +1788,8 @@ Questions raised by this draft:
     2026-10-18 (D-SPYC-07, 12, 13); the dark-component preset awaits research R5.
 17. Select and order the use cases of the first release. Answered 2026-10-18: two tracks, staged
     (D-SPYC-24); the demonstration cases await research R6.
+18. Settle the BASE build mechanism for the Pickett programs (task 11). Answered 2026-10-18: A,
+    H1, F1, Y (D-SPYC-26); the PI's use-rights sentence for SF-RUN-008 is open.
 
 ## Appendices
 
