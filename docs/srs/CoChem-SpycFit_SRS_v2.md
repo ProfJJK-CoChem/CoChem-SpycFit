@@ -515,8 +515,8 @@ Owner: `io/pickett`, `fit`, `catalog`.
   appropriate distribution/use rights" (`CoChem-TORQ/docs/development/pickett_backend.md`); the
   PI's choice is followed and the receipt carries the rights basis. The BASE side waits on the
   BASE pull request the PI requests.
-  *Source* D-SPYC-26 (PI 2026-10-18); task 11 · Core · T, V-RUN-09 · proposed; blocked on the BASE
-  PR
+  *Source* D-SPYC-26 (PI 2026-10-18); task 11 · Core · T, V-RUN-09 · proposed; the BASE side is
+  draft PR ProfJJK-CoChem/CoChem-BASE#14 (2026-10-18), awaiting the PI
 
 ### 4.2 Experimental input
 

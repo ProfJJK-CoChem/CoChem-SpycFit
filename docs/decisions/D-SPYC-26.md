@@ -2,7 +2,7 @@
 
 | Field | Value |
 | :--- | :--- |
-| Status | ANSWERED (agent). DECIDED only after the PI approves the PR that contains this record. The BASE change itself is a CoChem-BASE pull request that the PI requests from the BASE maintainer. |
+| Status | ANSWERED (agent). DECIDED only after the PI approves the PR that contains this record. The BASE change is draft pull request ProfJJK-CoChem/CoChem-BASE#14 (opened 2026-10-18 on branch `ccr-c1697164-ao6hz4`), which the PI approves in a PR comment there. |
 | Answered | 2026-10-18 (UTC) |
 | Answered by | PI (Dr. Joshua John Klaassen) |
 | Source | pop-up question (`docs/handoff/pi_answers_2026-10-17_popups.md`, "BASE-BUILD"); brief `docs/handoff/briefs/BASE-BUILD_2026-10-17.md` |
@@ -59,9 +59,13 @@ The PI selected:
 - XIAM (XIAMALL.FOR) and ERHAM follow in a second BASE pull request once the PI has their terms
   (D-SPYC-04); that PR adds gfortran to the image.
 - D-SPYC-16 option E (one shared runner and receipt) is revisited once the BASE mechanism exists.
-- Cross-repository work for the PI to request: the CoChem-BASE pull request above (the BASE hash
-  ring and `pytest.ini` are refreshed in the same PR); the TORQ inventory and receipt change; the
-  TORQ documentation sentence on automatic provisioning.
+- Cross-repository work: the CoChem-BASE pull request is open as ProfJJK-CoChem/CoChem-BASE#14
+  (draft, 2026-10-18): `scripts/pickett-distribution.json`, `scripts/provision_pickett.py`,
+  `cochem-cli pickett`, the setup hook, the fallback removal, `pickett_build.yml`, the tests, and the
+  refreshed hash ring and `pytest.ini`. A local run on 2026-10-18 is recorded in
+  `docs/evidence/pickett_build_2026-10-18.md`. Still for the PI to request: the TORQ inventory and
+  receipt change and the TORQ documentation sentence on automatic provisioning; the PI's use-rights
+  sentence for `pi_use_rights` (SF-RUN-008).
 
 ## Alternatives not chosen
 

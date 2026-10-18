@@ -48,7 +48,8 @@ an open decision say so.
    build runs automatically in BASE's Codespaces setup script, BASE's in-process SPCAT fallback is
    removed in the same BASE PR, and the `hcotst.par` route satisfies V-PICK-05 while `hco.var` is
    unavailable; `docs/handoff/briefs/BASE-BUILD_2026-10-17.md`). SpycFit reads the receipt
-   (SF-RUN-009a); the BASE PR is the PI's request to the BASE maintainer.
+   (SF-RUN-009a); the BASE side is draft PR ProfJJK-CoChem/CoChem-BASE#14 (2026-10-18), with a
+   local run recorded in `docs/evidence/pickett_build_2026-10-18.md`.
 2. **WP-EXP**: experimental spectrum and peak-list input; peak picking with an uncertainty model.
 3. **WP-HAM**: the in-process model, if any (D-SPYC-16, D-SPYC-18): Watson A/S in the chosen
    representations, Wang-block labelling, quadrupole hyperfine and multi-state structure,
