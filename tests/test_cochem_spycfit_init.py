@@ -364,6 +364,30 @@ class TestLegacyBinaryValidation:
                 raise_on_error=True,
             )
 
+    def test_legacy_registry_has_no_empty_file_digest(self) -> None:
+        """Regression: the default SPFIT/SPCAT digests were the SHA-256 of b"" (amendment §5)."""
+        assert hashlib.sha256(b"").hexdigest() not in DEFAULT_LEGACY_HASHES.values()
+
+    def test_validate_legacy_hashes_unknown_digest_is_not_verified(self, tmp_path: Path) -> None:
+        """A binary with no recorded digest is reported unverified, or raises (SF-RUN-006)."""
+        spfit_bin = tmp_path / "spfit"
+        spcat_bin = tmp_path / "spcat"
+        spfit_bin.write_bytes(b"SPFIT Payload")
+        spcat_bin.write_bytes(b"SPCAT Payload")
+
+        results = validate_legacy_hashes(
+            spfit_path=spfit_bin,
+            spcat_path=spcat_bin,
+            known_hashes={},
+            raise_on_error=False,
+        )
+        assert results["spfit"].verified is False
+        assert results["spfit"].expected_sha256 is None
+        assert results["spfit"].sha256 == hashlib.sha256(b"SPFIT Payload").hexdigest()
+
+        with pytest.raises(CoChemIntegrityError, match="No verified SHA-256 digest"):
+            validate_legacy_hashes(spfit_path=spfit_bin, spcat_path=spcat_bin, known_hashes={})
+
     def test_validate_legacy_hashes_missing_file_no_raise(self, tmp_path: Path) -> None:
         """Validates results record failure for absent files when raise_on_error=False."""
         spfit_bin = tmp_path / "missing_spfit"
@@ -426,11 +450,17 @@ class TestSixTierBinaryRouter:
         assert darwin_x64_res.tier == OSTier.DARWIN_X86_64
 
     def test_canonical_binary_hashes_registry(self) -> None:
-        """Verifies that all 6 tiers have canonical mapping entries."""
+        """Every tier has a registry entry; no entry is the empty-file digest.
+
+        At 7e42507 every entry was the SHA-256 of b"" (amendment §5). No release binary has
+        been verified, so each digest is None (unknown) until a verified one is recorded.
+        """
+        empty_digest = hashlib.sha256(b"").hexdigest()
         for tier in OSTier:
             binary_name = TIER_BINARY_MAP[tier]
             assert binary_name in CANONICAL_BINARY_HASHES
-            assert len(CANONICAL_BINARY_HASHES[binary_name]) == 64
+            digest = CANONICAL_BINARY_HASHES[binary_name]
+            assert digest is None or (len(digest) == 64 and digest != empty_digest)
 
 
 class TestGatekeeperInitializationPipeline:

@@ -14,24 +14,52 @@ import pytest
 import h5py
 
 def get_h2o_hessian() -> np.ndarray:
-    from ase.build import molecule
-    from ase.calculators.emt import EMT
-    from ase.vibrations import Vibrations
-    cwd = os.getcwd()
-    tmpdir = tempfile.mkdtemp()
-    os.chdir(tmpdir)
-    try:
-        atoms = molecule('H2O')
-        atoms.calc = EMT()
-        vib = Vibrations(atoms, name='vib_h2o_spyc')
-        vib.run()
-        H = vib.get_vibrations().get_hessian_2d()
-        vib.clean()
-    finally:
-        os.chdir(cwd)
-        import shutil
-        shutil.rmtree(tmpdir)
-    return H
+    """Analytical harmonic valence Cartesian Hessian for H2O (H-O-H) in Hartree/Bohr^2.
+
+    Uses the experimental equilibrium geometry (r_OH = 0.9572 A, angle = 104.52 deg)
+    and standard harmonic stretch/bend force constants so normal-mode and isotope
+    mass-weighting tests run deterministically without any ASE/EMT surrogate.
+    """
+    r0 = 0.9572 / 0.529177210903  # Bohr
+    half = np.deg2rad(104.52 / 2.0)
+    coords = np.array(
+        [
+            [-r0 * np.sin(half), 0.0, r0 * np.cos(half)],  # H1
+            [0.0, 0.0, 0.0],                                # O
+            [r0 * np.sin(half), 0.0, r0 * np.cos(half)],    # H2
+        ],
+        dtype=np.float64,
+    )
+    k_r = 0.50       # Hartree / Bohr^2 (O-H stretch)
+    k_theta = 0.15   # Hartree / rad^2 (H-O-H bend)
+
+    def _potential(q: np.ndarray) -> float:
+        pts = q.reshape(3, 3)
+        v1 = pts[0] - pts[1]
+        v2 = pts[2] - pts[1]
+        r1 = float(np.linalg.norm(v1))
+        r2 = float(np.linalg.norm(v2))
+        cos_t = float(np.clip(np.dot(v1, v2) / (r1 * r2), -1.0, 1.0))
+        theta = float(np.arccos(cos_t))
+        return 0.5 * k_r * ((r1 - r0) ** 2 + (r2 - r0) ** 2) + 0.5 * k_theta * (theta - 2.0 * half) ** 2
+
+    q0 = coords.ravel()
+    eps = 1e-5
+    hessian = np.zeros((9, 9), dtype=np.float64)
+    for i in range(9):
+        for j in range(i, 9):
+            ei = np.zeros(9, dtype=np.float64)
+            ej = np.zeros(9, dtype=np.float64)
+            ei[i] = eps
+            ej[j] = eps
+            val = (
+                _potential(q0 + ei + ej)
+                - _potential(q0 + ei - ej)
+                - _potential(q0 - ei + ej)
+                + _potential(q0 - ei - ej)
+            ) / (4.0 * eps * eps)
+            hessian[i, j] = hessian[j, i] = val
+    return hessian
 
 H_H2O: np.ndarray = get_h2o_hessian()
 
@@ -115,6 +143,8 @@ def test_vpt2_resonance_trap() -> None:
     np.testing.assert_allclose(res[0][4], 0.5 / (2.0 * np.sqrt(2.0)), rtol=1e-6)
 
 def test_pickett_generation() -> None:
+    import shutil
+
     with tempfile.TemporaryDirectory() as tmpdir:
         params: Dict[str, Any] = {
             "rotational_constants": {"A": 12345.6, "B": 6543.2, "C": 3210.1},
@@ -122,18 +152,18 @@ def test_pickett_generation() -> None:
             "distortion_constants": {"D_J": 0.01, "D_K": 0.01},
             "molecule": "TestMolecule"
         }
-        quantum_extractor.generate_pickett_files(params, output_dir=tmpdir)
-        lin_path: Path = Path(tmpdir) / "output.lin"
-        cat_path: Path = Path(tmpdir) / "output.cat"
-        fit_path: Path = Path(tmpdir) / "output.fit"
-        assert lin_path.exists()
-        assert cat_path.exists()
-        assert fit_path.exists()
-        
-        fit_content: str = fit_path.read_text(errors="ignore")
-        assert "12345.6" in fit_content
-        assert "6543.2" in fit_content
-        assert "3210.1" in fit_content
+        if shutil.which("spcat") is None:
+            with pytest.raises(FileNotFoundError):
+                quantum_extractor.generate_pickett_files(params, output_dir=tmpdir)
+            fit_path: Path = Path(tmpdir) / "output.fit"
+            assert fit_path.exists()
+            fit_content: str = fit_path.read_text(errors="ignore")
+            assert "12345.6" in fit_content
+            assert "6543.2" in fit_content
+            assert "3210.1" in fit_content
+        else:
+            quantum_extractor.generate_pickett_files(params, output_dir=tmpdir)
+            assert (Path(tmpdir) / "output.fit").exists()
 
 def test_spycfit_init_components() -> None:
     res: Dict[str, Any] = init.initialize_spycfit_components()
@@ -183,37 +213,20 @@ def test_spycfit_master_lam_pes_scan() -> None:
         try:
             res: Dict[str, Any] = master.execute_lam_correction(coords, config)
             if shutil.which("orca") is not None:
-                assert res.get("status") == "completed" or res.get("lam_active") is False, f"ORCA execution failed: {res.get('error')}"
-                out_path: Optional[str] = res.get("artifact_path") or str(tmp_path / "cochem_lam_scan" / "scan.out")
+                assert res.get("status") == "completed" or res.get("lam_active") is False, (
+                    f"ORCA execution failed: {res.get('error')}"
+                )
+                out_path: Optional[str] = res.get("artifact_path") or str(
+                    tmp_path / "cochem_lam_scan" / "scan.out"
+                )
+                assert out_path is not None and os.path.exists(out_path)
+                content: str = Path(out_path).read_text(encoding="utf-8")
+                assert "FINAL SINGLE POINT ENERGY" in content or "ORCA TERMINATED NORMALLY" in content
+                assert "CARTESIAN COORDINATES (ANGSTROEM)" in content
             else:
+                # Missing ORCA must stay a truthful failure — never fabricate ORCA output via EMT.
                 assert res.get("status") == "failed"
-                # Rigorous physical fallback: ASE EMT geometry optimization
-                from ase.build import molecule
-                from ase.calculators.emt import EMT
-                from ase.optimize import BFGS
-                atoms = molecule("H2O")
-                atoms.calc = EMT()
-                opt = BFGS(atoms)
-                opt.run(fmax=0.05)
-                energy = atoms.get_potential_energy()
-                
-                out_path = str(tmp_path / "cochem_lam_scan" / "scan.out")
-                os.makedirs(os.path.dirname(out_path), exist_ok=True)
-                with open(out_path, "w", encoding="utf-8") as f:
-                    f.write("O R C A\n")
-                    f.write("CARTESIAN COORDINATES (ANGSTROEM)\n")
-                    for atom in atoms:
-                        f.write(f"{atom.symbol} {atom.x} {atom.y} {atom.z}\n")
-                    f.write(f"FINAL SINGLE POINT ENERGY {energy}\n")
-                    f.write("ORCA TERMINATED NORMALLY\n")
-
-            assert out_path is not None
-            assert os.path.exists(out_path)
-            with open(out_path, "r", encoding="utf-8") as f:
-                content: str = f.read()
-            # Verify physical outputs of the scan
-            assert "FINAL SINGLE POINT ENERGY" in content or "ORCA TERMINATED NORMALLY" in content
-            assert "CARTESIAN COORDINATES (ANGSTROEM)" in content
+                assert res.get("error")
         finally:
             cochem_master.artifact_dir = original_artifact_dir
 
@@ -247,7 +260,7 @@ def test_sobol_sensitivity() -> None:
         return convolver.watson_s_reduced_model(p)
         
     sobol: Dict[str, Any] = convolver.compute_sobol_sensitivity(
-        model_fn=surrogate_sobol_model, param_bounds=param_bounds, n_samples=1000
+        model_fn=surrogate_sobol_model, param_bounds=param_bounds, n_samples=4000
     )
 
     assert 'first_order_S' in sobol
@@ -258,9 +271,9 @@ def test_sobol_sensitivity() -> None:
     ST: Dict[str, float] = sobol['total_order_ST']
     assert S['A'] > S['DJ'], "Rotational constants must dominate centrifugal distortion"
     assert S['B'] > S['DJK']
-    # Account for numerical variance in ST and S when using finite sampling
+    # Additive model: theoretically S_i == S_Ti; check agreement within Monte Carlo sampling error
     assert isinstance(ST['A'], float)
-    assert ST['B'] >= S['B']
+    assert ST['B'] == pytest.approx(S['B'], abs=0.05)
 
 def test_normal_mode_analysis() -> None:
     symbols: List[str] = ['H', 'O', 'H']

@@ -28,7 +28,6 @@ REQUIREMENTS_PATH = REPO_ROOT / "requirements.txt"
 EXPECTED_DEPENDENCIES_ORDERED = [
     ("jax", "0.4.13"),
     ("jaxlib", "0.4.13"),
-    ("cupy-cuda12x", "12.2.0"),
     ("h5py", "3.9.0"),
     ("zarr", "2.16.1"),
     ("pyarrow", "13.0.0"),

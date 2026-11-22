@@ -37,3 +37,5 @@ __pycache__/
 *$py.class
 .ipynb_checkpoints/
 .env
+.pytest_cache/
+*.egg-info/

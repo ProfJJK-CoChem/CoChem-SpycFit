@@ -111,6 +111,10 @@ from cochem_spycfit.serialization import (
     write_spycfit_telemetry,
 )
 from cochem_spycfit.core_engine.cochem_spycfit_state import CommitManager, FitState
+from cochem_spycfit.serialization.cochem_spycfit_pickett_output import (
+    PickettOutputError,
+    parse_spfit_fit,
+)
 
 logger = logging.getLogger("Test.SerializationInit")
 
@@ -148,7 +152,9 @@ H2O_TRANSITIONS: Tuple[Tuple[int, int, int, int, int, int, float], ...] = (
     (5, 1, 4, 5, 0, 5, 2264148.770),
 )
 
-# Authentic Pickett SPFIT .fit output text
+# Invented text in a .fit-like layout. It is NOT SPFIT output: genuine SPFIT writes a
+# different layout (see tests/test_cochem_spycfit_pickett_output.py). Kept only because
+# the Pickett bridge parser test below still uses it (follow-up in the Phase 0 inventory).
 AUTHENTIC_FIT_OUTPUT: str = (
     "WATER (H2O) GROUND STATE ROTATIONAL SPECTRUM FIT\n"
     "MICROWAVE RMS = 0.0042   STANDARD ERROR OF FIT = 0.8412   VARIANCE = 0.7076\n"
@@ -290,14 +296,17 @@ class TestSerializationInitExports:
         assert SPFIT_WATSON_A_PARAM_MAP["dJ"] == 40100
         assert SPFIT_WATSON_A_PARAM_MAP["dK"] == 41000
 
+        # Reverse names give the value SPFIT stores: -DJ at 200, -DJK at 1100, -DK at 2000,
+        # -dK at 41000. Code 40100 is -dJ (A reduction) or d1 (S reduction), so it has no
+        # reduction-free name. At 7e42507 these were named DJ, DJK, DK, dJ, dK (sign error).
         assert PARAM_ID_TO_NAME_MAP[10000] == "A"
         assert PARAM_ID_TO_NAME_MAP[20000] == "B"
         assert PARAM_ID_TO_NAME_MAP[30000] == "C"
-        assert PARAM_ID_TO_NAME_MAP[200] == "DJ"
-        assert PARAM_ID_TO_NAME_MAP[1100] == "DJK"
-        assert PARAM_ID_TO_NAME_MAP[2000] == "DK"
-        assert PARAM_ID_TO_NAME_MAP[40100] == "dJ"
-        assert PARAM_ID_TO_NAME_MAP[41000] == "dK"
+        assert PARAM_ID_TO_NAME_MAP[200] == "-DJ"
+        assert PARAM_ID_TO_NAME_MAP[1100] == "-DJK"
+        assert PARAM_ID_TO_NAME_MAP[2000] == "-DK"
+        assert 40100 not in PARAM_ID_TO_NAME_MAP
+        assert PARAM_ID_TO_NAME_MAP[41000] == "-dK"
 
 
 class TestDualTreeParity:
@@ -368,7 +377,9 @@ class TestFunctionalPhysicalSmoke:
         assert "4.35351717" in var_text
         assert "2.78138700" in var_text
 
-        lin_text = SpfitSandbox.format_lin_file(H2O_TRANSITIONS)
+        # 0.1 MHz and weight 1.0 are formatting inputs, not measured uncertainties; the
+        # writer refuses lines without an uncertainty.
+        lin_text = SpfitSandbox.format_lin_file(tuple(t + (0.1, 1.0) for t in H2O_TRANSITIONS))
         data_lines = [ln for ln in lin_text.splitlines() if ln.strip() and not ln.startswith("!")]
         assert len(data_lines) == len(H2O_TRANSITIONS)
         assert "556935.985" in lin_text
@@ -405,18 +416,42 @@ class TestFunctionalPhysicalSmoke:
         assert abs(parsed.residuals[0].residual_mhz - 0.0038) < 1e-4
 
     def test_spfit_sandbox_static_fit_parser(self) -> None:
-        """Verify SpfitSandbox._parse_fit_file_static parses on-disk .fit files."""
+        """Verify SpfitSandbox._parse_fit_file_static parses genuine SPFIT .fit files.
+
+        Uses genuine SPFIT output (HCOOH-DME parent fit produced by calpgm spfit).
+        At 7e42507 this test used AUTHENTIC_FIT_OUTPUT, which is not SPFIT's layout; the
+        parser now rejects that text.
+        """
+        genuine_fit = (
+            "HCOOH-DME_Parent                                        Thu Nov  5 00:08:15 2026\n"
+            "LINES REQUESTED=    2 NUMBER OF PARAMETERS=  3 NUMBER OF ITERATIONS=  1\n"
+            "                                        EXP.FREQ.  -  CALC.FREQ. -   DIFF.  - EXP.ERR.- EST.ERR.-AVG. CALC.FREQ. -  DIFF. - WT.\n"
+            "    1:   2  1  2  1  1  1                      7249.92500    7249.92552   -0.00052    0.00300   0.00000\n"
+            "    2:   2  0  2  1  0  1                      7266.34400    7266.34561   -0.00161    0.00300   0.00000\n"
+            "                                NEW PARAMETER (EST. ERROR) -- CHANGE THIS ITERATION\n"
+            "   1         10000          A           5177.7( 72)              0.0    \n"
+            "   2         20000          B       1824.84540( 82)          0.00000    \n"
+            "   3         30000          C       1808.39071( 82)         -0.00000    \n"
+            " MICROWAVE AVG =        0.000005 MHz, IR AVG =        0.00000\n"
+            " MICROWAVE RMS =        0.002960 MHz, IR RMS =        0.00000\n"
+            " END OF ITERATION  1 OLD, NEW RMS ERROR=        0.98658         0.98658\n"
+        )
         with tempfile.TemporaryDirectory() as temp_dir:
-            fit_file = Path(temp_dir) / "water.fit"
-            fit_file.write_text(AUTHENTIC_FIT_OUTPUT, encoding="utf-8")
+            fit_file = Path(temp_dir) / "fa_dme.fit"
+            fit_file.write_text(genuine_fit, encoding="utf-8")
 
             parsed = SpfitSandbox._parse_fit_file_static(fit_file)
-            assert abs(parsed["rmsd_khz"] - 2.835) < 0.01
-            assert parsed["n_lines"] == 5
-            assert parsed["constants"]["A"] == pytest.approx(835840.288, rel=1e-5)
-            assert parsed["constants"]["B"] == pytest.approx(435351.717, rel=1e-5)
-            assert parsed["constants"]["C"] == pytest.approx(278138.700, rel=1e-5)
-            assert len(parsed["residuals"]) == 5
+            report = parse_spfit_fit(genuine_fit)
+            assert parsed["rmsd_khz"] == pytest.approx(report.final.microwave_rms_mhz * 1000.0)
+            assert parsed["n_lines"] == len(report.final.residuals) == 2
+            assert parsed["parameter_source"] == "fit"
+            assert parsed["constants"]["A"] == pytest.approx(5177.7)
+            assert len(parsed["residuals"]) == 2
+
+            invented = Path(temp_dir) / "water.fit"
+            invented.write_text(AUTHENTIC_FIT_OUTPUT, encoding="utf-8")
+            with pytest.raises(PickettOutputError):
+                SpfitSandbox._parse_fit_file_static(invented)
 
     def test_fair_exporter_full_pipeline_execution(self) -> None:
         """Verify FairExporter generates publication tables, methods paragraph, and Parquet."""
@@ -438,7 +473,9 @@ class TestFunctionalPhysicalSmoke:
             assert "methods_tex" in outputs
             assert "parquet" in outputs
             assert "var" in outputs
-            assert "lin" in outputs
+            # No .lin without measurement uncertainties; the reason is written instead.
+            assert "lin" not in outputs
+            assert "lin_absent" in outputs
 
             for path in outputs.values():
                 assert path.exists(), f"Generated export file missing: {path}"
@@ -446,13 +483,13 @@ class TestFunctionalPhysicalSmoke:
             # Verify publication table contains Deluxetable and rotational constants
             tex_content = outputs["constants_table_tex"].read_text(encoding="utf-8")
             assert r"\begin{deluxetable}" in tex_content
-            assert "835840.288000" in tex_content
-            assert "435351.717000" in tex_content
-            assert "278138.700000" in tex_content
+            assert "835840.288 & {unknown}" in tex_content
+            assert "435351.717 & {unknown}" in tex_content
+            assert "278138.7 & {unknown}" in tex_content
 
-            # Verify methods paragraph contains degrees of freedom and RMSD
+            # The methods paragraph does not assert a reduction the fit state does not record.
             methods_content = outputs["methods_tex"].read_text(encoding="utf-8")
-            assert "Watson" in methods_content
+            assert "Watson" not in methods_content
             assert r"\SI{4.20}{kHz}" in methods_content
 
             # Verify Parquet table is readable
@@ -495,22 +532,43 @@ class TestMendeleevMassMandate:
 class TestSystemConfigBootstrapTemplate:
     """Test suite verifying cochem_system_config.json bootstrap template and lookup."""
 
-    def test_bootstrap_config_template_structure(self) -> None:
+    def test_bootstrap_config_template_structure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify presence of required bootstrap keys and default types in system config template."""
-        # Check system config file in CoChem_Artifacts/Registry/cochem_system_config.json
-        config_path = Path.home() / "CoChem_Artifacts" / "Registry" / "cochem_system_config.json"
+        # Check host system config if provisioned, otherwise verify physical bootstrap config on disk.
+        candidates = []
         artifacts_env = os.environ.get("COCHEM_ARTIFACTS_ROOT") or os.environ.get("COCHEM_ARTIFACTS")
         if artifacts_env:
-            config_path = Path(artifacts_env) / "Registry" / "cochem_system_config.json"
-        if not config_path.exists():
-            config_path = Path(r"d:\__CoChem\cochem_system_config.json")
+            candidates.append(Path(artifacts_env) / "Registry" / "cochem_system_config.json")
+        candidates.append(Path.home() / "CoChem_Artifacts" / "Registry" / "cochem_system_config.json")
 
-        assert config_path.exists(), f"Configuration file not found at {config_path}"
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg_data = json.load(f)
+        config_path = next((p for p in candidates if p.is_file()), None)
+        if config_path is not None:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg_data = json.load(f)
+            assert isinstance(cfg_data, dict)
+            assert ("schema_version" in cfg_data or "version" in cfg_data or "hardware" in cfg_data)
+            return
 
-        assert isinstance(cfg_data, dict)
-        assert ("schema_version" in cfg_data or "version" in cfg_data or "hardware" in cfg_data)
+        registry_dir = tmp_path / "CoChem_Artifacts" / "Registry"
+        registry_dir.mkdir(parents=True, exist_ok=True)
+        scratch_dir = tmp_path / "scratch_sandbox"
+        bootstrap_cfg = {
+            "schema_version": "1.0",
+            "scratch_root": str(scratch_dir),
+            "hardware": {"vram_gb": 0.0, "gpu_profile": "CPU"},
+        }
+        cfg_file = registry_dir / "cochem_system_config.json"
+        cfg_file.write_text(json.dumps(bootstrap_cfg, indent=2), encoding="utf-8")
+
+        for env_var in ("COCHEM_STATE", "COCHEM_SCRATCH_DIR", "COCHEM_SCRATCH_ROOT"):
+            monkeypatch.delenv(env_var, raising=False)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+        loaded = json.loads(cfg_file.read_text(encoding="utf-8"))
+        assert isinstance(loaded, dict)
+        assert "schema_version" in loaded and "hardware" in loaded
+        resolved = SpfitSandbox._resolve_scratch_root(None)
+        assert resolved == scratch_dir.resolve()
 
     def test_config_scratch_root_resolution(self) -> None:
         """Verify SpfitSandbox resolves scratch_root from environment or system config."""
@@ -524,10 +582,11 @@ class TestStaticASTIntegrityAndZeroBannedTerms:
 
     def test_zero_pass_statements(self) -> None:
         """Analyzes AST trees to guarantee zero pass statements in serialization package init and tests."""
+        repo_root = Path(__file__).resolve().parent.parent
         files_to_check = [
             Path(__file__).resolve(),
-            Path(r"D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\serialization\__init__.py"),
-            Path(r"D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\serialization\__init__.py"),
+            repo_root / "src" / "cochem_spycfit" / "serialization" / "__init__.py",
+            repo_root / "cochem_spycfit" / "serialization" / "__init__.py",
         ]
 
         for file_path in files_to_check:
@@ -549,10 +608,11 @@ class TestStaticASTIntegrityAndZeroBannedTerms:
             "# TO" + "DO: implement",
         ]
 
+        repo_root = Path(__file__).resolve().parent.parent
         files_to_check = [
             Path(__file__).resolve(),
-            Path(r"D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\serialization\__init__.py"),
-            Path(r"D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\serialization\__init__.py"),
+            repo_root / "src" / "cochem_spycfit" / "serialization" / "__init__.py",
+            repo_root / "cochem_spycfit" / "serialization" / "__init__.py",
         ]
 
         for file_path in files_to_check:

@@ -718,9 +718,7 @@ def test_mendeleev_dynamic_mass_compliance() -> None:
 
 def test_anti_spoofing_no_pass_and_no_mock() -> None:
     """Static AST check verifying zero pass statements and zero banned tokens in cochem_jax_coupling.py."""
-    module_path = Path("src/cochem_spycfit/physics_core/cochem_jax_coupling.py")
-    if not module_path.exists():
-        module_path = Path("D:/__CoChem/GitHub-Repo/CoChem-SpycFit/src/cochem_spycfit/physics_core/cochem_jax_coupling.py")
+    module_path = Path(__file__).resolve().parent.parent / "src" / "cochem_spycfit" / "physics_core" / "cochem_jax_coupling.py"
 
     assert module_path.exists(), f"Target module not found at {module_path}"
 

@@ -265,8 +265,8 @@ class TestFunctionalPhysicalSmoke:
             spfit_constants=spfit_params,
         )
 
-        assert report.status == ParityStatus.VERIFIED
-        assert report.is_verified is True
+        assert report.status == ParityStatus.WITHIN_TOLERANCE
+        assert report.is_within_tolerance is True
         assert report.max_delta_khz < 0.1
 
     def test_quantum_feature_extractor_and_gp_regressor(self) -> None:
@@ -354,10 +354,11 @@ class TestStaticASTIntegrityAndZeroBannedTerms:
 
     def test_zero_pass_statements(self) -> None:
         """Analyzes AST trees to guarantee zero pass statements."""
+        repo_root = Path(__file__).resolve().parent.parent
         files_to_check = [
             Path(__file__).resolve(),
-            Path(r"D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\__init__.py"),
-            Path(r"D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\__init__.py"),
+            repo_root / "src" / "cochem_spycfit" / "physics_core" / "__init__.py",
+            repo_root / "cochem_spycfit" / "physics_core" / "__init__.py",
         ]
 
         for file_path in files_to_check:
@@ -379,10 +380,11 @@ class TestStaticASTIntegrityAndZeroBannedTerms:
             "# TO" + "DO: implement",
         ]
 
+        repo_root = Path(__file__).resolve().parent.parent
         files_to_check = [
             Path(__file__).resolve(),
-            Path(r"D:\__CoChem\GitHub-Repo\CoChem-SpycFit\src\cochem_spycfit\physics_core\__init__.py"),
-            Path(r"D:\__CoChem\GitHub-Repo\CoChem-SpycFit\cochem_spycfit\physics_core\__init__.py"),
+            repo_root / "src" / "cochem_spycfit" / "physics_core" / "__init__.py",
+            repo_root / "cochem_spycfit" / "physics_core" / "__init__.py",
         ]
 
         for file_path in files_to_check:

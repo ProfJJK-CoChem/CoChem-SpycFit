@@ -10,7 +10,6 @@ authors = [{name = "CoChem Swarm"}]
 dependencies = [
     "jax",
     "jaxlib",
-    "cupy-cuda12x",
     "h5py",
     "zarr",
     "pyarrow",
@@ -22,5 +21,13 @@ dependencies = [
     "pyzmq"
 ]
 
+[project.entry-points."cochem.modules"]
+spycfit = "cochem_spycfit.module_provider:spycfit_provider"
+
 [project.optional-dependencies]
 dev = ["pytest", "flake8"]
+gpu = ["cupy-cuda12x"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["cochem_spycfit*"]
