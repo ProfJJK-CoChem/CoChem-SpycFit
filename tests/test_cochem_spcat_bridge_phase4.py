@@ -374,15 +374,22 @@ class TestExecuteSpcatSafelyPhase4:
     """Validates execute_spcat_safely in process-isolated, segfault-trapped environments."""
 
     def test_execute_spcat_safely_successful_simulation(self, phase4_workspace: Path) -> None:
+        """Transport-only evidence: staging, process launch, output collection, telemetry.
+
+        The executable is a Python stand-in, not SPCAT, and its output is not a catalog.
+        At 7e42507 the stand-in printed an SPCAT banner and wrote a catalog-like line
+        (amendment §5). The genuine SPCAT run is test_execute_spcat_safely_genuine_spcat.
+        """
         telemetry_file = phase4_workspace / "exec_telemetry.json"
 
-        # Create a Python script that mimics SPCAT creating a .cat file from .var and .int
-        driver_script = phase4_workspace / "spcat_simulator.py"
+        # A stand-in process that copies its staged inputs to the expected output name
+        driver_script = phase4_workspace / "transport_stand_in.py"
         driver_script.write_text(
             "import sys\n"
             "from pathlib import Path\n"
-            "print('SPCAT Fortran Engine Started')\n"
-            "Path('mol.cat').write_text('115271.2018  0.0005 -3.1234 2 0.0000 3 28001 0  1  0  0  0  0  0')\n"
+            "print('transport stand-in started (not SPCAT)')\n"
+            "staged = Path('mol.var').read_text() + Path('mol.int').read_text()\n"
+            "Path('mol.cat').write_text('stand-in output, not a catalog\\n' + staged)\n"
             "sys.exit(0)\n",
             encoding="utf-8",
         )
@@ -402,12 +409,34 @@ class TestExecuteSpcatSafelyPhase4:
         )
 
         assert result.return_code == 0
-        assert "SPCAT Fortran Engine Started" in result.stdout
+        assert "transport stand-in started (not SPCAT)" in result.stdout
         assert "mol.cat" in result.output_files
-        assert "115271.2018" in result.output_files["mol.cat"]
+        assert result.output_files["mol.cat"].startswith("stand-in output, not a catalog")
+        assert input_files["mol.int"] in result.output_files["mol.cat"]
         assert result.segfault_detected is False
         assert result.telemetry_logged is True
         assert telemetry_file.is_file()
+
+    @pytest.mark.calpgm
+    def test_execute_spcat_safely_genuine_spcat(self, phase4_workspace: Path) -> None:
+        """Genuine SPCAT through the same entry point predicts transitions on a real Pickett deck."""
+        from cochem_spycfit.serialization.cochem_spycfit_pickett_output import parse_spcat_cat
+        from pickett_reference import program
+        from test_cochem_spycfit_provider_and_calpgm import FA_DME_INT, FA_DME_PAR
+
+        result = execute_spcat_safely(
+            executable_path=str(program("spcat")),
+            arguments=["fa_dme"],
+            input_files={"fa_dme.var": FA_DME_PAR, "fa_dme.int": FA_DME_INT},
+            expected_output_files=["fa_dme.cat"],
+            timeout_sec=120.0,
+            telemetry_file=phase4_workspace / "genuine_telemetry.json",
+        )
+
+        assert result.return_code == 0
+        assert result.segfault_detected is False
+        transitions = parse_spcat_cat(result.output_files["fa_dme.cat"])
+        assert len(transitions) > 20
 
     def test_execute_spcat_safely_timeout_and_orphan_sweep(self, phase4_workspace: Path) -> None:
         telemetry_file = phase4_workspace / "timeout_telemetry.json"

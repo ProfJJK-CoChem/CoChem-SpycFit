@@ -1,10 +1,8 @@
-"""Physical unit tests for Mathematical Parity Auditor (JAX autodiff vs. Pickett SPFIT).
+"""Unit tests for the constant-level comparison between native SpycFit and SPFIT fits.
 
-Strict Zero-Mock & Anti-Spoofing Directive v2 Compliance:
-- Authentic literature rotational and centrifugal distortion constants for H2O.
-- Physical mathematical divergence checks against strict 0.1 kHz threshold.
-- Direct validation of frozen dataclass immutability, boundary conditions, and uncertainty preservation.
-- Static AST validation confirming zero synthetic mocks, zero stubs, and zero pass statements.
+These tests exercise the comparison logic only (SF-CMP-006, SF-CMP-008, SF-CMP-012). The
+constants are input values for the comparator; no physical claim about water is tested.
+The 0.1 kHz tolerance is a test parameter, not an acceptance tolerance (SF-CMP-008).
 """
 
 from __future__ import annotations
@@ -24,10 +22,13 @@ from cochem_spycfit.physics_core.cochem_spycfit_auditor import (
     format_contrast_dataframe,
 )
 
+# Test parameter only. SF-CMP-008 forbids a universal acceptance tolerance.
+TEST_TOLERANCE_KHZ = 0.1
+
 
 @pytest.fixture
 def h2o_constants() -> Dict[str, float]:
-    """Authentic literature Watson A-reduction parameters for H2O in MHz."""
+    """Input values for the comparator, shaped like Watson A-reduction constants (MHz)."""
     return {
         "A": 835840.288,
         "B": 435351.717,
@@ -41,14 +42,14 @@ def h2o_constants() -> Dict[str, float]:
 
 
 def test_parity_verified_identical_constants(h2o_constants: Dict[str, float]) -> None:
-    """Verify VERIFIED parity status when JAX and SPFIT constants are identical."""
-    auditor = ParityAuditor()
+    """Identical complete constant sets are WITHIN_TOLERANCE."""
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
     warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=h2o_constants)
 
     assert isinstance(warning, ParityWarning)
-    assert warning.status == ParityStatus.VERIFIED
-    assert warning.status == "VERIFIED"
-    assert warning.is_verified is True
+    assert warning.status == ParityStatus.WITHIN_TOLERANCE
+    assert warning.status == "WITHIN_TOLERANCE"
+    assert warning.is_within_tolerance is True
     assert warning.has_divergence is False
     assert warning.max_delta_khz == 0.0
     assert warning.divergent_constants == ()
@@ -62,16 +63,16 @@ def test_parity_verified_identical_constants(h2o_constants: Dict[str, float]) ->
 
 
 def test_parity_warning_perturbed_constant(h2o_constants: Dict[str, float]) -> None:
-    """Verify WARNING parity status when constant A is perturbed by +0.0002 MHz (0.2 kHz > 0.1 kHz)."""
-    auditor = ParityAuditor()
+    """A 0.2 kHz difference in A against a 0.1 kHz tolerance is DIVERGENT."""
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
     spfit_constants = dict(h2o_constants)
     spfit_constants["A"] += 0.0002  # 0.2 kHz divergence
 
     warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=spfit_constants)
 
-    assert warning.status == ParityStatus.WARNING
-    assert warning.status == "WARNING"
-    assert warning.is_verified is False
+    assert warning.status == ParityStatus.DIVERGENT
+    assert warning.status == "DIVERGENT"
+    assert warning.is_within_tolerance is False
     assert warning.has_divergence is True
     assert "A" in warning.divergent_constants
     assert len(warning.divergent_constants) == 1
@@ -84,14 +85,14 @@ def test_parity_warning_perturbed_constant(h2o_constants: Dict[str, float]) -> N
 
 
 def test_parity_exact_boundary_tolerance(h2o_constants: Dict[str, float]) -> None:
-    """Verify boundary condition: perturbation of exactly 0.0001 MHz (0.1 kHz) remains VERIFIED."""
-    auditor = ParityAuditor()
+    """A difference equal to the tolerance (0.1 kHz) is WITHIN_TOLERANCE."""
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
     spfit_constants = dict(h2o_constants)
     spfit_constants["A"] += 0.0001  # Exactly 0.1 kHz = tolerance threshold
 
     warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=spfit_constants)
 
-    assert warning.status == ParityStatus.VERIFIED
+    assert warning.status == ParityStatus.WITHIN_TOLERANCE
     assert warning.divergent_constants == ()
     assert warning.max_delta_khz == pytest.approx(0.1, abs=0.001)
     assert warning.contrast_table["A"]["status"] == "✅"
@@ -99,14 +100,14 @@ def test_parity_exact_boundary_tolerance(h2o_constants: Dict[str, float]) -> Non
 
 
 def test_parity_slight_threshold_breach(h2o_constants: Dict[str, float]) -> None:
-    """Verify boundary breach: perturbation of 0.0001001 MHz (0.1001 kHz > 0.1 kHz) triggers WARNING."""
-    auditor = ParityAuditor()
+    """A 0.1001 kHz difference against a 0.1 kHz tolerance is DIVERGENT."""
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
     spfit_constants = dict(h2o_constants)
     spfit_constants["A"] += 0.0001001  # 0.1001 kHz > 0.1 kHz threshold
 
     warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=spfit_constants)
 
-    assert warning.status == ParityStatus.WARNING
+    assert warning.status == ParityStatus.DIVERGENT
     assert "A" in warning.divergent_constants
     assert warning.max_delta_khz == pytest.approx(0.1001, abs=0.001)
     assert warning.contrast_table["A"]["status"] == "⚠️"
@@ -115,7 +116,7 @@ def test_parity_slight_threshold_breach(h2o_constants: Dict[str, float]) -> None
 
 def test_uncertainty_preservation(h2o_constants: Dict[str, float]) -> None:
     """Verify uncertainty preservation when jax_uncertainties and spfit_uncertainties are passed."""
-    auditor = ParityAuditor()
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
     jax_unc = {
         "A": 0.0050,
         "B": 0.0030,
@@ -153,8 +154,8 @@ def test_uncertainty_preservation(h2o_constants: Dict[str, float]) -> None:
 
 
 def test_disjoint_constant_sets() -> None:
-    """Verify that when parameter sets are disjoint, only common keys are audited."""
-    auditor = ParityAuditor()
+    """Constants present in only one set make the comparison INCOMPLETE (SF-CMP-012)."""
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
     jax_constants = {
         "A": 835840.288,
         "B": 435351.717,
@@ -170,10 +171,15 @@ def test_disjoint_constant_sets() -> None:
 
     warning = auditor.audit(jax_constants=jax_constants, spfit_constants=spfit_constants)
 
-    assert warning.status == ParityStatus.VERIFIED
+    assert warning.status == ParityStatus.INCOMPLETE
+    assert warning.is_within_tolerance is False
+    assert warning.is_complete is False
     assert warning.max_delta_khz == 0.0
     assert warning.divergent_constants == ()
     assert set(warning.contrast_table.keys()) == {"A", "B", "C"}
+    assert set(warning.compared_constants) == {"A", "B", "C"}
+    assert warning.missing_from_native == ("LK",)
+    assert warning.missing_from_spfit == ("HJ",)
     assert "HJ" not in warning.contrast_table
     assert "LK" not in warning.contrast_table
 
@@ -182,7 +188,7 @@ def test_format_contrast_dataframe(h2o_constants: Dict[str, float]) -> None:
     """Verify format_contrast_dataframe returns valid pandas DataFrame with correct columns and emojis."""
     import pandas as pd  # type: ignore[import-untyped]
 
-    auditor = ParityAuditor()
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
     spfit_constants = dict(h2o_constants)
     spfit_constants["A"] += 0.0003  # 0.3 kHz divergence (⚠️)
     spfit_constants["B"] += 0.00005  # 0.05 kHz within tolerance (✅)
@@ -217,11 +223,11 @@ def test_format_contrast_dataframe(h2o_constants: Dict[str, float]) -> None:
 
 def test_dataclass_immutability(h2o_constants: Dict[str, float]) -> None:
     """Verify ParityWarning is a strictly frozen immutable dataclass."""
-    auditor = ParityAuditor()
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
     warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=h2o_constants)
 
     with pytest.raises(FrozenInstanceError):
-        warning.status = ParityStatus.WARNING  # type: ignore[misc]
+        warning.status = ParityStatus.DIVERGENT  # type: ignore[misc]
 
     with pytest.raises(FrozenInstanceError):
         warning.max_delta_khz = 100.0  # type: ignore[misc]
@@ -231,15 +237,17 @@ def test_dataclass_immutability(h2o_constants: Dict[str, float]) -> None:
 
 
 def test_spfit_failed_state(h2o_constants: Dict[str, float]) -> None:
-    """Verify SPFIT_FAILED state when spfit_constants is None."""
-    auditor = ParityAuditor()
+    """A failed SPFIT run (no constants) is FAILED, with nothing compared."""
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
     warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=None)
 
-    assert warning.status == ParityStatus.SPFIT_FAILED
-    assert warning.is_verified is False
-    assert math.isinf(warning.max_delta_khz)
+    assert warning.status == ParityStatus.FAILED
+    assert warning.is_within_tolerance is False
+    assert warning.max_delta_khz is None
     assert warning.contrast_table == {}
-    assert set(warning.divergent_constants) == set(h2o_constants.keys())
+    assert warning.divergent_constants == ()
+    assert warning.compared_constants == ()
+    assert set(warning.missing_from_spfit) == set(h2o_constants.keys())
 
 
 def test_custom_tolerance(h2o_constants: Dict[str, float]) -> None:
@@ -250,7 +258,7 @@ def test_custom_tolerance(h2o_constants: Dict[str, float]) -> None:
 
     # Relaxed tolerance of 0.5 kHz accepts 0.3 kHz delta
     warning_relaxed = auditor_relaxed.audit(jax_constants=h2o_constants, spfit_constants=spfit_constants)
-    assert warning_relaxed.status == ParityStatus.VERIFIED
+    assert warning_relaxed.status == ParityStatus.WITHIN_TOLERANCE
 
     # Overridden strict tolerance of 0.1 kHz flags 0.3 kHz delta
     warning_strict = auditor_relaxed.audit(
@@ -258,22 +266,133 @@ def test_custom_tolerance(h2o_constants: Dict[str, float]) -> None:
         spfit_constants=spfit_constants,
         tolerance_khz=0.1,
     )
-    assert warning_strict.status == ParityStatus.WARNING
+    assert warning_strict.status == ParityStatus.DIVERGENT
     assert "A" in warning_strict.divergent_constants
 
 
 def test_multiple_divergences(h2o_constants: Dict[str, float]) -> None:
     """Verify handling of multiple diverging parameters."""
-    auditor = ParityAuditor()
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
     spfit_constants = dict(h2o_constants)
     spfit_constants["A"] += 0.0005  # 0.5 kHz
     spfit_constants["DJK"] += 0.0008  # 0.8 kHz
 
     warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=spfit_constants)
 
-    assert warning.status == ParityStatus.WARNING
+    assert warning.status == ParityStatus.DIVERGENT
     assert set(warning.divergent_constants) == {"A", "DJK"}
     assert warning.max_delta_khz == pytest.approx(0.8, abs=0.001)
+
+
+def test_no_overlapping_constants_is_incomplete() -> None:
+    """Regression: no shared constant names returned VERIFIED at 7e42507 (amendment §5)."""
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
+    warning = auditor.audit(
+        jax_constants={"A": 835840.288, "B": 435351.717},
+        spfit_constants={"10000": 835840.288, "20000": 435351.717},
+    )
+
+    assert warning.status == ParityStatus.INCOMPLETE
+    assert warning.is_within_tolerance is False
+    assert warning.compared_constants == ()
+    assert warning.max_delta_khz is None
+    assert warning.contrast_table == {}
+
+
+def test_empty_constant_sets_are_incomplete() -> None:
+    """Two empty sets give an empty comparison, which is INCOMPLETE (SF-CMP-012)."""
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
+    warning = auditor.audit(jax_constants={}, spfit_constants={})
+
+    assert warning.status == ParityStatus.INCOMPLETE
+    assert warning.max_delta_khz is None
+    assert warning.is_complete is False
+
+
+def test_non_finite_value_is_not_compared(h2o_constants: Dict[str, float]) -> None:
+    """A NaN or infinite constant is reported missing, never compared as a number."""
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
+    spfit_constants = dict(h2o_constants)
+    spfit_constants["DK"] = float("nan")
+    native_constants = dict(h2o_constants)
+    native_constants["dK"] = float("inf")
+
+    warning = auditor.audit(jax_constants=native_constants, spfit_constants=spfit_constants)
+
+    assert warning.status == ParityStatus.INCOMPLETE
+    assert warning.missing_from_spfit == ("DK",)
+    assert warning.missing_from_native == ("dK",)
+    assert "DK" not in warning.contrast_table
+    assert "dK" not in warning.contrast_table
+
+
+def test_required_constants_absent_from_both_sets(h2o_constants: Dict[str, float]) -> None:
+    """A required constant missing from both fits makes a matching comparison INCOMPLETE."""
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
+    warning = auditor.audit(
+        jax_constants=h2o_constants,
+        spfit_constants=h2o_constants,
+        required_constants=list(h2o_constants) + ["HJ"],
+    )
+
+    assert warning.status == ParityStatus.INCOMPLETE
+    assert warning.missing_from_native == ("HJ",)
+    assert warning.missing_from_spfit == ("HJ",)
+    assert warning.divergent_constants == ()
+
+
+def test_divergence_reported_even_when_coverage_is_partial(h2o_constants: Dict[str, float]) -> None:
+    """Divergence is never hidden by partial coverage; missing constants stay listed."""
+    auditor = ParityAuditor(default_tolerance_khz=TEST_TOLERANCE_KHZ)
+    spfit_constants = {k: v for k, v in h2o_constants.items() if k != "dK"}
+    spfit_constants["A"] += 0.001  # 1 kHz
+
+    warning = auditor.audit(jax_constants=h2o_constants, spfit_constants=spfit_constants)
+
+    assert warning.status == ParityStatus.DIVERGENT
+    assert warning.divergent_constants == ("A",)
+    assert warning.missing_from_spfit == ("dK",)
+    assert warning.is_complete is False
+
+
+def test_tolerance_must_be_declared(h2o_constants: Dict[str, float]) -> None:
+    """No built-in tolerance exists (SF-CMP-008): an undeclared tolerance is an error."""
+    auditor = ParityAuditor()
+    with pytest.raises(ValueError, match="No comparison tolerance was declared"):
+        auditor.audit(jax_constants=h2o_constants, spfit_constants=h2o_constants)
+
+
+def test_per_constant_tolerances(h2o_constants: Dict[str, float]) -> None:
+    """Tolerances can be declared per constant and are recorded in the result."""
+    tolerances = {k: 0.1 for k in h2o_constants}
+    tolerances["DK"] = 5.0
+    auditor = ParityAuditor()
+    spfit_constants = dict(h2o_constants)
+    spfit_constants["DK"] += 0.002  # 2 kHz, within the 5 kHz tolerance declared for DK
+    spfit_constants["A"] += 0.0002  # 0.2 kHz, outside the 0.1 kHz tolerance for A
+
+    warning = auditor.audit(
+        jax_constants=h2o_constants,
+        spfit_constants=spfit_constants,
+        tolerance_khz=tolerances,
+    )
+
+    assert warning.status == ParityStatus.DIVERGENT
+    assert warning.divergent_constants == ("A",)
+    assert warning.tolerance_khz["DK"] == 5.0
+    assert warning.contrast_table["DK"]["is_divergent"] is False
+    assert warning.contrast_table["DK"]["tolerance_khz"] == 5.0
+
+
+def test_per_constant_tolerance_missing_entry_raises(h2o_constants: Dict[str, float]) -> None:
+    """A tolerance mapping that omits a compared constant is an error, not a default."""
+    auditor = ParityAuditor()
+    with pytest.raises(ValueError, match="No tolerance declared for constants: dK"):
+        auditor.audit(
+            jax_constants=h2o_constants,
+            spfit_constants=h2o_constants,
+            tolerance_khz={k: 0.1 for k in h2o_constants if k != "dK"},
+        )
 
 
 def test_dual_tree_parity_exports() -> None:

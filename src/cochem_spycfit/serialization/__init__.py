@@ -4,86 +4,102 @@ CoChem-SpycFit: High-Performance Serialization, Out-of-Core Catalog & Legacy For
 
 from __future__ import annotations
 
-from cochem_spycfit.serialization.cochem_catalog_compiler import (
-    CatalogCompilerConfig,
-    CatalogCompilerError,
-    CatalogCorruptionError,
-    CatalogDatasetError,
-    CatalogLockError,
-    CatalogLockTimeoutError,
-    CatalogManifestRecord,
-    CatalogSchemaError,
-    CatalogStreamingError,
-    LustreCatalogLockError,
-    PARQUET_TRANSITION_SCHEMA,
-    Tier3RegistryLock,
-    TransitionBatch,
-    TransitionRecord,
-    VirtualLayoutError,
-    compile_master_manifest,
-    compile_virtual_catalog,
-    compute_sha256,
-    extract_catalog_metadata,
-    get_chunked_transitions_dir,
-    is_lustre_filesystem,
-    jax_serialize_chunk_callback,
-    read_chunked_catalog,
-    read_parquet_catalog,
-    serialize_chunk_to_parquet,
-    stream_chunked_catalog,
-    verify_catalog_integrity,
-)
-from cochem_spycfit.serialization.cochem_spcat_bridge import (
-    FortranBinaryNotFoundError,
-    FortranBridgeDispatcher,
-    FortranBridgeError,
-    FortranExecutionError,
-    FortranExecutionResult,
-    FortranExecutionSegfaultError,
-    FortranExecutionTask,
-    FortranExecutionTimeoutError,
-    FortranTaskQueue,
-    PickettCatFile,
-    PickettCatRecord,
-    PickettDipoleRecord,
-    PickettEgyFile,
-    PickettEgyRecord,
-    PickettFitResidual,
-    PickettFitResult,
-    PickettFormatError,
-    PickettIntFile,
-    PickettLinFile,
-    PickettLinRecord,
-    PickettParameterRecord,
-    PickettScratchContext,
-    PickettVarFile,
-    calculate_reduced_mass,
-    capture_hex_telemetry,
-    decode_pickett_quantum,
-    dispatch_fortran_binary,
-    encode_pickett_quantum,
-    format_pickett_line,
-    fortran_float_converter,
-    get_fortran_deployment_dir,
-    get_isotopic_mass,
-    is_segfault_exit_code,
-    parse_pickett_cat,
-    parse_pickett_egy,
-    parse_pickett_fit,
-    parse_pickett_int,
-    parse_pickett_lin,
-    parse_pickett_var,
-    resolve_fortran_binary,
-    write_spycfit_telemetry,
-)
-from cochem_spycfit.serialization.cochem_spycfit_export import (
-    FairExporter,
-)
+import logging as _logging
+
+_logger = _logging.getLogger(__name__)
+
 from cochem_spycfit.serialization.cochem_spycfit_spcat_wrapper import (
     PARAM_ID_TO_NAME_MAP,
     SPFIT_WATSON_A_PARAM_MAP,
     SpfitSandbox,
 )
+
+try:
+    from cochem_spycfit.serialization.cochem_catalog_compiler import (
+        CatalogCompilerConfig,
+        CatalogCompilerError,
+        CatalogCorruptionError,
+        CatalogDatasetError,
+        CatalogLockError,
+        CatalogLockTimeoutError,
+        CatalogManifestRecord,
+        CatalogSchemaError,
+        CatalogStreamingError,
+        LustreCatalogLockError,
+        PARQUET_TRANSITION_SCHEMA,
+        Tier3RegistryLock,
+        TransitionBatch,
+        TransitionRecord,
+        VirtualLayoutError,
+        compile_master_manifest,
+        compile_virtual_catalog,
+        compute_sha256,
+        extract_catalog_metadata,
+        get_chunked_transitions_dir,
+        is_lustre_filesystem,
+        jax_serialize_chunk_callback,
+        read_chunked_catalog,
+        read_parquet_catalog,
+        serialize_chunk_to_parquet,
+        stream_chunked_catalog,
+        verify_catalog_integrity,
+    )
+except ModuleNotFoundError as _exc:
+    _logger.debug("Optional catalog compiler unavailable: %s", _exc)
+
+try:
+    from cochem_spycfit.serialization.cochem_spcat_bridge import (
+        FortranBinaryNotFoundError,
+        FortranBridgeDispatcher,
+        FortranBridgeError,
+        FortranExecutionError,
+        FortranExecutionResult,
+        FortranExecutionSegfaultError,
+        FortranExecutionTask,
+        FortranExecutionTimeoutError,
+        FortranTaskQueue,
+        PickettCatFile,
+        PickettCatRecord,
+        PickettDipoleRecord,
+        PickettEgyFile,
+        PickettEgyRecord,
+        PickettFitResidual,
+        PickettFitResult,
+        PickettFormatError,
+        PickettIntFile,
+        PickettLinFile,
+        PickettLinRecord,
+        PickettParameterRecord,
+        PickettScratchContext,
+        PickettVarFile,
+        calculate_reduced_mass,
+        capture_hex_telemetry,
+        decode_pickett_quantum,
+        dispatch_fortran_binary,
+        encode_pickett_quantum,
+        format_pickett_line,
+        fortran_float_converter,
+        get_fortran_deployment_dir,
+        get_isotopic_mass,
+        is_segfault_exit_code,
+        parse_pickett_cat,
+        parse_pickett_egy,
+        parse_pickett_fit,
+        parse_pickett_int,
+        parse_pickett_lin,
+        parse_pickett_var,
+        resolve_fortran_binary,
+        write_spycfit_telemetry,
+    )
+except ModuleNotFoundError as _exc:
+    _logger.debug("Optional spcat bridge unavailable: %s", _exc)
+
+try:
+    from cochem_spycfit.serialization.cochem_spycfit_export import (
+        FairExporter,
+    )
+except ModuleNotFoundError as _exc:
+    _logger.debug("Optional fair exporter unavailable: %s", _exc)
 
 __all__ = [
     "CatalogCompilerConfig",

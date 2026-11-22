@@ -607,24 +607,25 @@ def parse_pickett_cat(content_or_path: Union[str, Path, bytes, io.StringIO]) -> 
     )
 
     for line_idx, raw_line in enumerate(lines, start=1):
-        line = raw_line.rstrip()
-        if not line or line.startswith("#") or line.startswith("!"):
+        line = raw_line.rstrip("\r\n")
+        if not line.strip() or line.lstrip().startswith("#") or line.lstrip().startswith("!"):
             continue
 
-        if len(line) >= 79:
+        if len(line) >= 57:
+            padded = line.ljust(79)
             try:
-                freq = fortran_float_converter(line[0:13])
-                unc = fortran_float_converter(line[13:21])
-                lgint = fortran_float_converter(line[21:29])
-                dr = int(line[29:31].strip() or 0)
-                elow = fortran_float_converter(line[31:41])
-                gup = int(line[41:44].strip() or 1)
-                tag = int(line[44:51].strip() or 0)
-                qnfmt = int(line[51:55].strip() or 0)
+                freq = fortran_float_converter(padded[0:13])
+                unc = fortran_float_converter(padded[13:21])
+                lgint = fortran_float_converter(padded[21:29])
+                dr = int(padded[29:31].strip() or 0)
+                elow = fortran_float_converter(padded[31:41])
+                gup = int(padded[41:44].strip() or 1)
+                tag = int(padded[44:51].strip() or 0)
+                qnfmt = int(padded[51:55].strip() or 0)
 
                 # Decode 6 upper and 6 lower quanta
-                qu = tuple(decode_pickett_quantum(line[55 + 2 * i : 57 + 2 * i]) for i in range(6))
-                ql = tuple(decode_pickett_quantum(line[67 + 2 * i : 69 + 2 * i]) for i in range(6))
+                qu = tuple(decode_pickett_quantum(padded[55 + 2 * i : 57 + 2 * i]) for i in range(6))
+                ql = tuple(decode_pickett_quantum(padded[67 + 2 * i : 69 + 2 * i]) for i in range(6))
 
                 records.append(
                     PickettCatRecord(
@@ -1050,8 +1051,9 @@ def get_fortran_deployment_dir() -> Path:
 
 def resolve_fortran_binary(binary_name: str) -> Optional[Path]:
     """
-    Resolves executable path for a legacy Fortran binary within the deployment directory
-    or the active system PATH.
+    Resolves executable path for a legacy Fortran binary via explicit env vars
+    (``COCHEM_<NAME>_BIN``, ``SPYCFIT_CALPGM_DIR``, ``COCHEM_BIN_DIR``),
+    the deployment directory, active ``PATH``, and ``~/.local/bin``.
 
     Args:
         binary_name: Binary filename or command (e.g. 'spcat', 'spfit').
@@ -1059,23 +1061,52 @@ def resolve_fortran_binary(binary_name: str) -> Optional[Path]:
     Returns:
         Optional[Path]: Absolute path to executable file, or None if not found.
     """
+    is_win = platform.system().lower() == "windows"
+    stem = Path(binary_name).stem.lower()
+    names = [binary_name]
+    if is_win and not binary_name.lower().endswith(".exe"):
+        names.append(f"{binary_name}.exe")
+
+    def _ok(path: Path) -> bool:
+        return path.is_file() and (is_win or os.access(str(path), os.X_OK))
+
+    # 1. Explicit binary env var (e.g. COCHEM_SPFIT_BIN / COCHEM_SPCAT_BIN)
+    explicit_env = os.environ.get(f"COCHEM_{stem.upper()}_BIN")
+    if explicit_env:
+        cand = Path(explicit_env).expanduser().resolve()
+        if _ok(cand):
+            return cand
+
+    # 2. Explicit directory env vars
+    for dir_env in ("SPYCFIT_CALPGM_DIR", "COCHEM_BIN_DIR"):
+        dir_val = os.environ.get(dir_env)
+        if dir_val:
+            for name in names:
+                cand = (Path(dir_val).expanduser() / name).resolve()
+                if _ok(cand):
+                    return cand
+
+    # 3. Deployment directory
     dep_dir = get_fortran_deployment_dir()
+    for name in names:
+        cand = (dep_dir / name).resolve()
+        if _ok(cand):
+            return cand
 
-    # Check direct name in deployment directory
-    candidate = dep_dir / binary_name
-    if candidate.is_file() and os.access(str(candidate), os.X_OK):
-        return candidate
+    # 4. System PATH
+    for name in names:
+        found = shutil.which(name)
+        if found:
+            cand = Path(found).resolve()
+            if _ok(cand):
+                return cand
 
-    # Check Windows .exe extension
-    if platform.system().lower() == "windows" and not binary_name.lower().endswith(".exe"):
-        candidate_exe = dep_dir / f"{binary_name}.exe"
-        if candidate_exe.is_file():
-            return candidate_exe
-
-    # Check system PATH
-    found = shutil.which(binary_name)
-    if found:
-        return Path(found).resolve()
+    # 5. User-local ~/.local/bin
+    local_bin = Path.home() / ".local" / "bin"
+    for name in names:
+        cand = (local_bin / name).resolve()
+        if _ok(cand):
+            return cand
 
     return None
 
@@ -1217,7 +1248,12 @@ def sweep_orphan_process(process_or_pid: Union[subprocess.Popen, int]) -> None:
             import signal
             try:
                 pgid = os.getpgid(pid)
-                os.killpg(pgid, signal.SIGKILL)
+                if pgid == os.getpgrp():
+                    # The process shares the caller's group (it was not started with
+                    # start_new_session); killing the group would kill the caller.
+                    os.kill(pid, signal.SIGKILL)
+                else:
+                    os.killpg(pgid, signal.SIGKILL)
             except (ProcessLookupError, PermissionError):
                 os.kill(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError) as exc:

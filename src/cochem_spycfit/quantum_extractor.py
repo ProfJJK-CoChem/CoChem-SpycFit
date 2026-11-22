@@ -520,7 +520,12 @@ def extract_lam_data(data: Dict[str, Any]) -> Dict[str, Any]:
             extracted_lam_data['kraitchman_coords'] = data['kraitchman_coords']
     return extracted_lam_data
 
-def generate_pickett_files(fitted_results: Dict[str, Any], output_dir: str | Path = "pickett_output") -> None:
+def generate_pickett_files(
+    fitted_results: Dict[str, Any],
+    output_dir: str | Path = "pickett_output",
+    *,
+    notify_scribe: bool = False,
+) -> None:
     logger.info(f"{Colors.OKCYAN}💾 Generating Pickett-formatted files...{Colors.ENDC}")
     
     out_dir = artifact_dir / output_dir
@@ -610,22 +615,30 @@ def generate_pickett_files(fitted_results: Dict[str, Any], output_dir: str | Pat
         for line in fit_data:
             f.write(f"{line}\n")
 
+    par_text = (
+        f"{mol_name} parameters\n"
+        "   5   1   0   0   0.0000E+00   1.0000E+05   1.0000E+00 1.0000000000\n"
+        "s    1  1   0   15   0   1   1   1   0   0   0\n"
+        f"        10000  {a_val:22.15E} {max(a_unc, 1e-25):14.8E} /A\n"
+        f"        20000  {b_val:22.15E} {max(b_unc, 1e-25):14.8E} /B\n"
+        f"        30000  {c_val:22.15E} {max(c_unc, 1e-25):14.8E} /C\n"
+        f"          200  {-dj_val:22.15E} {max(dj_unc, 1e-25):14.8E} /-DJ\n"
+        f"         2000  {-dk_val:22.15E} {max(dk_unc, 1e-25):14.8E} /-DK\n"
+    )
     par_path = out_dir / "output.par"
-    with open(par_path, 'w') as f:
-        f.write(f"{mol_name} parameters\n")
-        f.write("    5  1   0   0   0.0000E+00   0.0000E+00   1.0000E+00\n")
-        f.write(f" 10000  {a_val:20.10f} {a_unc:15.10f}\n")
-        f.write(f" 20000  {b_val:20.10f} {b_unc:15.10f}\n")
-        f.write(f" 30000  {c_val:20.10f} {c_unc:15.10f}\n")
-        f.write(f"   200  {dj_val:20.10f} {dj_unc:15.10f}\n")
-        f.write(f"  2000  {dk_val:20.10f} {dk_unc:15.10f}\n")
-    
-    int_path = out_dir / "output.int"
-    with open(int_path, 'w') as f:
-        f.write(f"{mol_name} spcat config\n")
-        f.write("0  99  2000 0  1.0  0.0  0.0  0.0  0.0  0.0\n")
+    var_path = out_dir / "output.var"
+    par_path.write_text(par_text, encoding="utf-8")
+    var_path.write_text(par_text, encoding="utf-8")
 
-    proc = subprocess.Popen(["spcat", str(int_path.name), str(par_path.name)], cwd=str(out_dir), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    int_path = out_dir / "output.int"
+    int_path.write_text(
+        f"{mol_name} spcat config\n"
+        f" 0000  90001      100.0000   0   8  -10.0000  -10.0000   50.0000  {temp:6.2f}\n"
+        " 1  1.0000 /mua\n",
+        encoding="utf-8",
+    )
+
+    proc = subprocess.Popen(["spcat", "output"], cwd=str(out_dir), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     _SUBPROCESSES.append(proc)
     try:
         stdout, stderr = proc.communicate(timeout=60)
@@ -658,7 +671,8 @@ def generate_pickett_files(fitted_results: Dict[str, Any], output_dir: str | Pat
     logger.info(f"{Colors.OKGREEN}✅ Pickett files generated for {mol_name}:")
     logger.info(f"   output.lin, output.cat, output.fit, output.par, output.int{Colors.ENDC}")
     
-    trigger_scribe_daemon(output_dir)
+    if notify_scribe or os.environ.get("COCHEM_SCRIBE_ENDPOINT"):
+        trigger_scribe_daemon(output_dir)
 
 def trigger_scribe_daemon(output_dir: str | Path) -> None:
     logger.info(f"{Colors.OKCYAN}📡 Triggering CoChem-SCRIBE daemon via ZeroMQ...{Colors.ENDC}")
@@ -670,18 +684,24 @@ def trigger_scribe_daemon(output_dir: str | Path) -> None:
     }
 
     import zmq
+    endpoint = os.environ.get("COCHEM_SCRIBE_ENDPOINT", "tcp://127.0.0.1:5555")
     context = zmq.Context()
     socket = context.socket(zmq.REQ)
-    socket.setsockopt(zmq.LINGER, 500)
-    socket.setsockopt(zmq.RCVTIMEO, 5000)
-    socket.connect("tcp://127.0.0.1:5555")
-    
-    socket.send_json(payload)
     try:
-        resp = socket.recv_json()
-        logger.info(f"{Colors.OKGREEN}✅ SCRIBE daemon ZMQ response: {resp}{Colors.ENDC}")
-    except zmq.error.Again:
-        raise ConnectionError("ZMQ connection to SCRIBE daemon timed out. Ensure the daemon is running.")
+        socket.setsockopt(zmq.LINGER, 0)
+        socket.setsockopt(zmq.RCVTIMEO, 5000)
+        socket.connect(endpoint)
+        socket.send_json(payload)
+        try:
+            resp = socket.recv_json()
+            logger.info(f"{Colors.OKGREEN}✅ SCRIBE daemon ZMQ response: {resp}{Colors.ENDC}")
+        except zmq.error.Again as exc:
+            raise ConnectionError(
+                "ZMQ connection to SCRIBE daemon timed out. Ensure the daemon is running."
+            ) from exc
+    finally:
+        socket.close(linger=0)
+        context.term()
 
 def update_swarm_state(status: str, artifacts: List[str], error_code: Optional[str] = None) -> None:
     from datetime import datetime, timezone

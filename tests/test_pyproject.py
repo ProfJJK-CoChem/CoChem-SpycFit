@@ -37,7 +37,6 @@ EXPECTED_PROJECT_AUTHORS = [{"name": "CoChem Swarm"}]
 EXPECTED_DEPENDENCIES = [
     "jax",
     "jaxlib",
-    "cupy-cuda12x",
     "h5py",
     "zarr",
     "pyarrow",
@@ -50,6 +49,7 @@ EXPECTED_DEPENDENCIES = [
 ]
 
 EXPECTED_DEV_DEPENDENCIES = ["pytest", "flake8"]
+EXPECTED_GPU_DEPENDENCIES = ["cupy-cuda12x"]
 
 
 @pytest.fixture
@@ -187,7 +187,7 @@ def test_pyproject_individual_dependency_validity(
 
 
 def test_pyproject_optional_dependencies_dev(parsed_pyproject: dict) -> None:
-    """Verify [project.optional-dependencies] table and 'dev' dependencies."""
+    """Verify [project.optional-dependencies] table, 'dev', and 'gpu' extras."""
     assert "project" in parsed_pyproject, "Missing [project] table"
     proj = parsed_pyproject["project"]
     assert "optional-dependencies" in proj, "Missing 'optional-dependencies' in [project]"
@@ -197,6 +197,22 @@ def test_pyproject_optional_dependencies_dev(parsed_pyproject: dict) -> None:
     assert "dev" in opt_deps, "Missing 'dev' in [project.optional-dependencies]"
     assert opt_deps["dev"] == EXPECTED_DEV_DEPENDENCIES, (
         f"Dev dependencies mismatch. Expected {EXPECTED_DEV_DEPENDENCIES}, got {opt_deps['dev']}"
+    )
+    assert "gpu" in opt_deps, "Missing 'gpu' in [project.optional-dependencies]"
+    assert opt_deps["gpu"] == EXPECTED_GPU_DEPENDENCIES, (
+        f"GPU dependencies mismatch. Expected {EXPECTED_GPU_DEPENDENCIES}, got {opt_deps['gpu']}"
+    )
+    assert "cupy-cuda12x" not in proj["dependencies"], (
+        "CUDA-only cupy-cuda12x must live under optional-dependencies.gpu, not core dependencies"
+    )
+
+
+def test_pyproject_cochem_modules_entry_point(parsed_pyproject: dict) -> None:
+    """Verify [project.entry-points.'cochem.modules'] registers spycfit."""
+    entry_points = parsed_pyproject["project"].get("entry-points", {})
+    assert "cochem.modules" in entry_points
+    assert entry_points["cochem.modules"].get("spycfit") == (
+        "cochem_spycfit.module_provider:spycfit_provider"
     )
 
 
