@@ -7,9 +7,9 @@
 
 ---
 
-## Requirements and agent handoff
+## Requirements, Primary Instrument Plan, and Agent Handoff
 
-Start with the [current SRS](docs/wiki/CoChem-SpycFit_Comprehensive_SRS.md) and the [next-agent handoff](docs/HANDOFF.md). The [October 16 amendment](docs/wiki/CoChem-SpycFit_SRS_2026-10-16_Amendment.md) records the independent SPCAT/SPFIT comparison contract, confirmed user decisions, and implementation defects requiring follow-up. These requirements supersede conflicting claims in the [archived October 7 SRS](docs/archive/CoChem-SpycFit_Comprehensive_SRS_7e42507.md).
+Start with the [current SRS](docs/wiki/CoChem-SpycFit_Comprehensive_SRS.md), the [Primary `SURF` Integration Plan](docs/SURF_PRIMARY_INTEGRATION_PLAN.md) (targeting [`GruLabRotSpec/SURF`](https://github.com/GruLabRotSpec/SURF), Gurusinghe Research Lab, Tennessee Tech University, as the out-of-the-gate default instrument profile `grulab_surf`), and the [next-agent handoff](docs/HANDOFF.md). The [October 16 amendment](docs/wiki/CoChem-SpycFit_SRS_2026-10-16_Amendment.md) records the independent SPCAT/SPFIT comparison contract, confirmed user decisions, and implementation defects requiring follow-up. These requirements supersede conflicting claims in the [archived October 7 SRS](docs/archive/CoChem-SpycFit_Comprehensive_SRS_7e42507.md).
 
 Publication of these requirements does not establish that the current software passes scientific acceptance. The handoff distinguishes completed documentation work from pending implementation and validation.
 
