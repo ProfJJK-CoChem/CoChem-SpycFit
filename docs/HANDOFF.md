@@ -6,7 +6,8 @@ Date: October 16, 2026 (America/Chicago)
 
 1. Read the [consolidated SRS](wiki/CoChem-SpycFit_Comprehensive_SRS.md).
 2. Read the [amendment, comparison contract, and evidence review](wiki/CoChem-SpycFit_SRS_2026-10-16_Amendment.md).
-3. Consult the [unchanged October 7 publication](archive/CoChem-SpycFit_Comprehensive_SRS_7e42507.md) only for historical context. Conflicting archived statements and unverified agent suggestions are not current requirements.
+3. Read the [Primary `SURF` Integration Plan](SURF_PRIMARY_INTEGRATION_PLAN.md) (`SPYC-SURF-01`..`SPYC-SURF-05`), which establishes [`GruLabRotSpec/SURF`](https://github.com/GruLabRotSpec/SURF) (Gurusinghe Research Lab, Tennessee Tech University; verified at commit `0486b877d2a38f5bbe50be3cb333d34e27c7c22d`) as the primary out-of-the-gate instrument profile (`grulab_surf`).
+4. Consult the [unchanged October 7 publication](archive/CoChem-SpycFit_Comprehensive_SRS_7e42507.md) only for historical context. Conflicting archived statements and unverified agent suggestions are not current requirements.
 
 The source review used GitHub main at 7e42507e4668751da393241294ffbb9dd4f0c259. This handoff accompanies the documentation publication requested by the user so another agent can continue. Application source, tests, dependency declarations, and scientific algorithms were not changed by this documentation work.
 
