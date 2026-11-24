@@ -27,6 +27,11 @@ _OPERATIONS = (
     "parse_pickett",
     "audit_fit",
 )
+_SURF_OPERATIONS = (
+    "plan_surf_scan",
+    "ingest_surf_run",
+)
+_HANDOFF_OPERATIONS = _OPERATIONS + _SURF_OPERATIONS
 
 
 def _load_submodule(dotted_name: str, relative_path: str) -> Any:
@@ -76,6 +81,48 @@ def _load_instrument_profiles() -> Any:
     return _load_submodule(
         "cochem_spycfit.instruments.profiles",
         "instruments/profiles.py",
+    )
+
+
+def _load_surf_planner() -> Any:
+    return _load_submodule(
+        "cochem_spycfit.instruments.surf_planner",
+        "instruments/surf_planner.py",
+    )
+
+
+def _load_surf_exporter() -> Any:
+    return _load_submodule(
+        "cochem_spycfit.instruments.surf_exporter",
+        "instruments/surf_exporter.py",
+    )
+
+
+def _load_surf_ingest() -> Any:
+    return _load_submodule(
+        "cochem_spycfit.instruments.surf_ingest",
+        "instruments/surf_ingest.py",
+    )
+
+
+def _load_surf_watcher() -> Any:
+    return _load_submodule(
+        "cochem_spycfit.instruments.surf_watcher",
+        "instruments/surf_watcher.py",
+    )
+
+
+def _load_surf_schemas() -> Any:
+    return _load_submodule(
+        "cochem_spycfit.instruments.surf_schemas",
+        "instruments/surf_schemas.py",
+    )
+
+
+def _load_ml_core() -> Any:
+    return _load_submodule(
+        "cochem_spycfit.physics_core.cochem_spycfit_ml_core",
+        "physics_core/cochem_spycfit_ml_core.py",
     )
 
 
@@ -327,6 +374,438 @@ def audit_fit(
     }
 
 
+def _coerce_residual_predictions(raw_predictions: Sequence[Any]) -> list[Any]:
+    """Convert mapping dicts or ``ResidualPrediction`` objects into ``ResidualPrediction`` instances."""
+    ml_core = _load_ml_core()
+    pred_cls = ml_core.ResidualPrediction
+    prov_cls = ml_core.ProvenanceTag
+    coerced: list[Any] = []
+    for item in raw_predictions:
+        if isinstance(item, pred_cls):
+            coerced.append(item)
+        elif isinstance(item, Mapping):
+            raw_qn = item["quantum_numbers"]
+            qn_tuple = tuple(int(q) for q in raw_qn)
+            if len(qn_tuple) != 6:
+                raise ValueError(f"Expected 6 quantum numbers per prediction, got {len(qn_tuple)}.")
+            raw_prov = item.get("provenance", "TORQ")
+            prov_tag = raw_prov if isinstance(raw_prov, prov_cls) else prov_cls(str(raw_prov))
+            nu_calc = float(item["nu_calc_physical_mhz"])
+            delta_ml = float(item.get("delta_nu_ml_shift_mhz", 0.0))
+            nu_prop = float(item.get("nu_proposed_mhz", nu_calc + delta_ml))
+            coerced.append(
+                pred_cls(
+                    quantum_numbers=qn_tuple,
+                    nu_calc_physical_mhz=nu_calc,
+                    delta_nu_ml_shift_mhz=delta_ml,
+                    nu_proposed_mhz=nu_prop,
+                    sigma_predict_mhz=float(item.get("sigma_predict_mhz", 0.1)),
+                    probable_correctness=float(item.get("probable_correctness", 0.5)),
+                    provenance=prov_tag,
+                )
+            )
+        else:
+            raise TypeError(
+                f"Expected ResidualPrediction or mapping in predictions, got {type(item).__name__}."
+            )
+    return coerced
+
+
+def plan_surf_scan(
+    *,
+    output_dir: str | Path,
+    predictions: Optional[Sequence[Any]] = None,
+    transition_frequencies_mhz: Optional[Sequence[float]] = None,
+    information_gains: Optional[Sequence[float]] = None,
+    start_freq_mhz: Optional[float] = None,
+    end_freq_mhz: Optional[float] = None,
+    mode: Optional[str] = None,
+    overrides: Optional[Mapping[str, Any]] = None,
+    edited_by: str = "operator",
+    instrument_profile: str = "grulab_surf",
+    molecule_name: str = "HCOOH_DME",
+    specimen_temp_c: float = 22.0,
+    gas_name: str = "Ne",
+    step_size_mhz: Optional[float] = None,
+    acq_num: Optional[int] = None,
+    rep_rate_hz: int = 5,
+    max_chunk_bandwidth_mhz: float = 50.0,
+    top_n: int = 3,
+    proposal_index: int = 0,
+    target_constants: Sequence[str] = (),
+    resolvability_penalties: Optional[Sequence[float]] = None,
+    line_strengths: Optional[Sequence[float]] = None,
+    ml_uncertainties_mhz: Optional[Sequence[float]] = None,
+    cavity_map_dir: Optional[str | Path] = None,
+    cavity_map_csv: Optional[str | Path] = None,
+    fit_state_id: Optional[str] = None,
+    spcat_catalog_path: Optional[str | Path] = None,
+    spcat_catalog_sha256: Optional[str] = None,
+    gp_hyperparameters: Optional[Mapping[str, Any]] = None,
+    region_stem: Optional[str] = None,
+    scan_date: Optional[str] = None,
+    surf_output_location: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Plan a GruLab SURF scan region, apply optional HITL overrides, and export validated TOMLs."""
+    planner_mod = _load_surf_planner()
+    exporter_mod = _load_surf_exporter()
+
+    out_path = Path(output_dir).expanduser().resolve()
+    out_path.mkdir(parents=True, exist_ok=True)
+    resolved_location = surf_output_location if surf_output_location is not None else str(out_path)
+
+    cavity_map = None
+    if cavity_map_dir is not None:
+        cavity_map = planner_mod.SurfCavityMap.from_cavity_runs_dir(cavity_map_dir)
+    elif cavity_map_csv is not None:
+        cavity_map = planner_mod.SurfCavityMap.from_cavity_run_csv(cavity_map_csv)
+
+    planner = planner_mod.SurfScanPlanner(
+        instrument_profile=instrument_profile,
+        cavity_map=cavity_map,
+        molecule_name=molecule_name,
+        specimen_temp_c=specimen_temp_c,
+        gas_name=gas_name,
+        output_location=resolved_location,
+        default_rep_rate_hz=rep_rate_hz,
+        scan_date=scan_date,
+    )
+
+    resolved_mode = mode
+    if resolved_mode is None:
+        if predictions is not None:
+            resolved_mode = "targeted"
+        elif transition_frequencies_mhz is not None:
+            resolved_mode = "survey"
+        elif start_freq_mhz is not None and end_freq_mhz is not None:
+            resolved_mode = "explicit"
+        else:
+            raise ValueError(
+                "plan_surf_scan requires predictions, transition_frequencies_mhz, "
+                "or explicit start_freq_mhz and end_freq_mhz."
+            )
+
+    proposals: list[Any] = []
+    selected_proposal = None
+
+    if resolved_mode == "targeted":
+        if predictions is None or information_gains is None:
+            raise ValueError("Targeted SURF scan planning requires both predictions and information_gains.")
+        coerced_preds = _coerce_residual_predictions(predictions)
+        proposals = planner.plan_targeted_windows(
+            coerced_preds,
+            information_gains,
+            resolvability_penalties=resolvability_penalties,
+            line_strengths=line_strengths,
+            target_constants=target_constants,
+            step_size_mhz=0.250 if step_size_mhz is None else float(step_size_mhz),
+            acq_num=acq_num,
+            rep_rate_hz=rep_rate_hz,
+            top_n=top_n,
+            gp_hyperparameters=gp_hyperparameters,
+        )
+        if not proposals:
+            raise ValueError("SurfScanPlanner produced zero valid in-band targeted scan proposals.")
+        if not (0 <= proposal_index < len(proposals)):
+            raise IndexError(f"proposal_index={proposal_index} out of range for {len(proposals)} proposals.")
+        selected_proposal = proposals[proposal_index]
+        override_table = planner.create_override_table(selected_proposal)
+    elif resolved_mode == "survey":
+        if transition_frequencies_mhz is None or information_gains is None:
+            raise ValueError("Survey SURF scan planning requires transition_frequencies_mhz and information_gains.")
+        proposals = planner.plan_survey_windows(
+            transition_frequencies_mhz,
+            information_gains,
+            resolvability_penalties=resolvability_penalties,
+            ml_uncertainties_mhz=ml_uncertainties_mhz,
+            target_constants=target_constants,
+            max_chunk_bandwidth_mhz=max_chunk_bandwidth_mhz,
+            step_size_mhz=0.500 if step_size_mhz is None else float(step_size_mhz),
+            acq_num=100 if acq_num is None else int(acq_num),
+            rep_rate_hz=rep_rate_hz,
+            top_n=top_n,
+            gp_hyperparameters=gp_hyperparameters,
+        )
+        if not proposals:
+            raise ValueError("SurfScanPlanner produced zero valid in-band survey scan proposals.")
+        if not (0 <= proposal_index < len(proposals)):
+            raise IndexError(f"proposal_index={proposal_index} out of range for {len(proposals)} proposals.")
+        selected_proposal = proposals[proposal_index]
+        override_table = planner.create_override_table(selected_proposal)
+    elif resolved_mode == "explicit":
+        if start_freq_mhz is None or end_freq_mhz is None:
+            raise ValueError("Explicit SURF scan mode requires both start_freq_mhz and end_freq_mhz.")
+        override_table = planner.create_default_override_table(
+            start_freq_mhz=float(start_freq_mhz),
+            end_freq_mhz=float(end_freq_mhz),
+            step_size_mhz=0.500 if step_size_mhz is None else float(step_size_mhz),
+            acq_num=100 if acq_num is None else int(acq_num),
+            rep_rate_hz=rep_rate_hz,
+        )
+    else:
+        raise ValueError(f"Unsupported plan_surf_scan mode {resolved_mode!r}; expected 'targeted', 'survey', or 'explicit'.")
+
+    if overrides:
+        override_table.apply_overrides(overrides, edited_by=edited_by)
+
+    exporter = exporter_mod.SurfExporter(instrument_profile=instrument_profile)
+    export_result = exporter.export_region(
+        output_dir=out_path,
+        override_table=override_table,
+        region_stem=region_stem,
+        fit_state_id=fit_state_id,
+        spcat_catalog_path=spcat_catalog_path,
+        spcat_catalog_sha256=spcat_catalog_sha256,
+        gp_hyperparameters=gp_hyperparameters,
+        recommendation=selected_proposal,
+        target_constants=target_constants if target_constants else None,
+    )
+    duration_est = override_table.estimated_duration
+
+    proposal_summary = None
+    if selected_proposal is not None:
+        proposal_summary = {
+            "rank": selected_proposal.rank,
+            "window_mode": selected_proposal.window_mode,
+            "start_freq_mhz": selected_proposal.start_freq_mhz,
+            "end_freq_mhz": selected_proposal.end_freq_mhz,
+            "information_gain": selected_proposal.information_gain,
+            "information_gain_per_minute": selected_proposal.information_gain_per_minute,
+            "estimated_runtime_minutes": selected_proposal.estimated_runtime_minutes,
+            "n_clean_lines": selected_proposal.n_clean_lines,
+            "targeted_constants": list(selected_proposal.targeted_constants),
+            "cavity_map_zaber_pos_mm": selected_proposal.cavity_map_zaber_pos_mm,
+            "cavity_map_source_sha256": selected_proposal.cavity_map_source_sha256,
+            "description": selected_proposal.description,
+        }
+
+    result: Dict[str, Any] = {
+        "instrument_profile": exporter.instrument_profile,
+        "mode": resolved_mode,
+        "region_stem": export_result.region_stem,
+        "output_dir": str(export_result.output_dir.resolve()),
+        "control_config_path": str(export_result.control_config_path.resolve()),
+        "scan_settings_path": str(export_result.scan_settings_path.resolve()),
+        "manifest_path": str(export_result.manifest_path.resolve()),
+        "control_config_sha256": export_result.control_config_sha256,
+        "scan_settings_sha256": export_result.scan_settings_sha256,
+        "manifest_sha256": export_result.manifest_sha256,
+        "estimated_runtime_minutes": float(export_result.manifest.estimated_runtime_minutes),
+        "estimated_iterations": int(duration_est.iterations),
+        "start_freq_mhz": float(export_result.scan_settings.scan_parameters.start_freq),
+        "end_freq_mhz": float(export_result.scan_settings.scan_parameters.end_freq),
+        "step_size_mhz": float(export_result.scan_settings.scan_parameters.step_size),
+        "valon_lo_mhz": float(export_result.control_config.valon_controller.freq),
+        "awg_freq_mhz": int(export_result.control_config.awg_controller.awg_freq),
+        "rf_level_dbm": int(export_result.control_config.valon_controller.rf_level),
+        "overrides_applied": [rec.model_dump(mode="json") for rec in export_result.manifest.overrides],
+        "warnings": list(export_result.warnings),
+        "proposal_count": len(proposals),
+        "selected_proposal": proposal_summary,
+        "manifest": export_result.manifest.model_dump(mode="json"),
+    }
+    json.dumps(result, allow_nan=False)
+    return result
+
+
+def ingest_surf_run(
+    run_dir: str | Path,
+    *,
+    snr_threshold: float = 5.0,
+    gas_name: Optional[str] = None,
+    beam_velocity_m_s: Optional[float] = None,
+    reconcile: bool = True,
+    write_provenance_ledger: bool = True,
+    fp64_atol: float = 1e-9,
+) -> Dict[str, Any]:
+    """Ingest a GruLab SURF run directory and pick coaxial Doppler doublet PROPOSED candidates."""
+    ingest_mod = _load_surf_ingest()
+    watcher_mod = _load_surf_watcher()
+    schemas_mod = _load_surf_schemas()
+
+    resolved_dir = Path(run_dir).expanduser().resolve(strict=True)
+    if not resolved_dir.is_dir():
+        raise NotADirectoryError(f"SURF run path is not a directory: {resolved_dir}")
+
+    settings_path = resolved_dir / "scan_settings.toml"
+    cavity_dir = resolved_dir / "CavityFiles"
+    if not settings_path.is_file():
+        raise FileNotFoundError(f"scan_settings.toml not found in SURF run directory: {resolved_dir}")
+    if not cavity_dir.is_dir():
+        raise FileNotFoundError(f"CavityFiles/ directory not found in SURF run directory: {resolved_dir}")
+
+    scan_settings = schemas_mod.SurfFrequencyScanSettings.from_surf_toml_file(settings_path)
+    settings_sha = _sha256_path(settings_path)
+    stem = scan_settings.output_settings.filename
+    config_path = resolved_dir / f"{stem}_config.toml"
+    config_sha = _sha256_path(config_path) if config_path.is_file() else None
+    step_direction = ingest_mod.StepDirection.from_bounds(
+        scan_settings.scan_parameters.start_freq,
+        scan_settings.scan_parameters.end_freq,
+    )
+    step_size = float(scan_settings.scan_parameters.step_size)
+    finalized_path = resolved_dir / f"{stem}.csv"
+
+    parser = ingest_mod.SurfOutputParser()
+    ledger_path: Optional[Path] = None
+    ledger_sha: Optional[str] = None
+    reconciliation_report = None
+
+    if write_provenance_ledger:
+        watcher = watcher_mod.SurfRunWatcher(
+            resolved_dir,
+            stability_polls=1,
+            min_stable_seconds=0.0,
+            snr_threshold=snr_threshold,
+            parser=parser,
+            fp64_atol=fp64_atol,
+        )
+        updates = watcher.poll_once()
+        if not updates:
+            raise ValueError(f"No valid CavityFiles/*.csv step files ingested from {resolved_dir}")
+        ordered_steps = [upd.step_data for upd in updates]
+        stitched_freq, stitched_int, ordered_steps = parser.stitch_steps(
+            ordered_steps,
+            step_direction=step_direction,
+        )
+        cavity_health = watcher.get_cavity_health(resolved_dir)
+        if reconcile and finalized_path.is_file():
+            reconciliation_report = watcher.reconcile_run(resolved_dir)
+        else:
+            reconciliation_report = watcher.get_reconciliation(resolved_dir)
+        candidate_ledger = resolved_dir / "surf_ingest_provenance.jsonl"
+        if candidate_ledger.is_file():
+            ledger_path = candidate_ledger
+            ledger_sha = _sha256_path(candidate_ledger)
+    else:
+        step_paths = sorted(cavity_dir.glob("*.csv"))
+        if not step_paths:
+            raise ValueError(f"No CavityFiles/*.csv step files found in {resolved_dir}")
+        parsed_steps = [
+            parser.parse_step_csv(
+                step_path,
+                step_size_mhz=step_size,
+                step_direction=step_direction,
+                verify_filename_stem=True,
+            )
+            for step_path in step_paths
+        ]
+        stitched_freq, stitched_int, ordered_steps = parser.stitch_steps(
+            parsed_steps,
+            step_direction=step_direction,
+        )
+        dropout_freqs = tuple(step.center_freq_mhz for step in ordered_steps if step.cavity_dropout)
+        latest = ordered_steps[-1]
+        cavity_health = watcher_mod.SurfCavityTrackHealth(
+            status="rail_dropout" if dropout_freqs else "healthy",
+            step_count=len(ordered_steps),
+            last_center_freq_mhz=latest.center_freq_mhz,
+            last_cavity_position_mm=latest.cavity_position_mm,
+            last_step_dropout=latest.cavity_dropout,
+            dropout_count=len(dropout_freqs),
+            center_freqs_mhz=tuple(step.center_freq_mhz for step in ordered_steps),
+            cavity_positions_mm=tuple(step.cavity_position_mm for step in ordered_steps),
+            dropout_flags=tuple(step.cavity_dropout for step in ordered_steps),
+            dropout_freqs_mhz=dropout_freqs,
+        )
+        if reconcile and finalized_path.is_file():
+            reconciliation_report = parser.reconcile_run(
+                finalized_csv_path=finalized_path,
+                step_files=ordered_steps,
+                scan_settings=scan_settings,
+                config_toml_path=config_path if config_path.is_file() else None,
+                scan_settings_toml_path=settings_path,
+                fp64_atol=fp64_atol,
+            )
+
+    spans = [
+        (
+            float(step.stitched_freq_mhz.min()),
+            float(step.stitched_freq_mhz.max()),
+            step.file_sha256,
+        )
+        for step in ordered_steps
+        if step.stitched_freq_mhz.size > 0
+    ]
+    effective_gas = scan_settings.experiment.gas_name if gas_name is None else gas_name
+    peak_result = ingest_mod.pick_surf_doppler_peaks(
+        stitched_freq,
+        stitched_int,
+        gas_name=effective_gas,
+        snr_threshold=snr_threshold,
+        beam_velocity_m_s=beam_velocity_m_s,
+        step_provenance_spans=spans,
+        source_file=f"{stem}.csv",
+    )
+
+    step_sha_map: Dict[str, str] = {}
+    for step in ordered_steps:
+        key = step.file_path.name if step.file_path is not None else f"{step.center_freq_mhz}.csv"
+        step_sha_map[key] = step.file_sha256
+
+    serialized_candidates: list[Dict[str, Any]] = []
+    for cand in peak_result.candidates:
+        status_str = cand.status.value if hasattr(cand.status, "value") else str(cand.status)
+        if status_str != "proposed":
+            raise ValueError(
+                f"SURF ingest candidate {cand.candidate_id!r} violated HITL gate with status {status_str!r}."
+            )
+        serialized_candidates.append(
+            {
+                "candidate_id": cand.candidate_id,
+                "rest_frequency_mhz": cand.rest_frequency_mhz,
+                "uncertainty_mhz": cand.uncertainty_mhz,
+                "intensity": cand.intensity,
+                "snr": cand.snr,
+                "feature_kind": cand.feature_kind.value,
+                "status": status_str,
+                "observed_splitting_mhz": cand.observed_splitting_mhz,
+                "expected_splitting_mhz": cand.expected_splitting_mhz,
+                "intensity_asymmetry": cand.intensity_asymmetry,
+                "gas_name": cand.gas_name,
+                "beam_velocity_m_s": cand.beam_velocity_m_s,
+                "source_step_sha256": cand.source_step_sha256,
+                "source_step_sha256s": list(cand.source_step_sha256s),
+                "source_file": cand.source_file,
+                "raw_components": [comp.model_dump(mode="json") for comp in cand.raw_components],
+            }
+        )
+
+    result: Dict[str, Any] = {
+        "run_dir": str(resolved_dir),
+        "run_id": resolved_dir.name,
+        "scan_settings_sha256": settings_sha,
+        "config_toml_sha256": config_sha,
+        "provenance_ledger_path": None if ledger_path is None else str(ledger_path),
+        "provenance_ledger_sha256": ledger_sha,
+        "step_direction": step_direction.value,
+        "step_size_mhz": step_size,
+        "gas_name": peak_result.gas_name,
+        "beam_velocity_m_s": peak_result.beam_velocity_m_s,
+        "step_count": len(ordered_steps),
+        "step_file_sha256s": step_sha_map,
+        "stitched_spectrum": {
+            "n_points": int(stitched_freq.size),
+            "dtype": str(stitched_freq.dtype),
+            "freq_min_mhz": float(stitched_freq.min()) if stitched_freq.size > 0 else None,
+            "freq_max_mhz": float(stitched_freq.max()) if stitched_freq.size > 0 else None,
+            "intensity_min": float(stitched_int.min()) if stitched_int.size > 0 else None,
+            "intensity_max": float(stitched_int.max()) if stitched_int.size > 0 else None,
+            "baseline_intensity": float(peak_result.baseline_intensity),
+            "mad_noise_sigma": float(peak_result.mad_noise_sigma),
+        },
+        "cavity_health": cavity_health.model_dump(mode="json"),
+        "reconciliation": (
+            None if reconciliation_report is None else reconciliation_report.model_dump(mode="json")
+        ),
+        "candidate_count": len(serialized_candidates),
+        "proposed_candidates": serialized_candidates,
+        "warnings": list(peak_result.warnings),
+    }
+    json.dumps(result, allow_nan=False)
+    return result
+
+
 def _publish_json(path: Path, payload: Dict[str, Any]) -> None:
     """Publish a strict JSON receipt atomically without overwriting existing files."""
     encoded = (json.dumps(payload, indent=2, allow_nan=False) + "\n").encode("utf-8")
@@ -371,7 +850,7 @@ def execute_handoff(
         not isinstance(record, dict)
         or record.get("schema_version") != "cochem.module-handoff/1"
         or record.get("module_id") != "spycfit"
-        or record.get("operation") not in _OPERATIONS
+        or record.get("operation") not in _HANDOFF_OPERATIONS
         or record.get("scientific_execution_performed") is not False
     ):
         raise ValueError("Unsupported or invalid SpycFit BASE handoff manifest.")
@@ -438,6 +917,71 @@ def execute_handoff(
             stem=str(options.get("stem", "cochem_spcat")),
         )
         scope = "Run genuine Pickett SPCAT on complete .var and .int decks and parse catalog transitions."
+    elif operation == "plan_surf_scan":
+        payload_data = json.loads(input_text)
+        export_dir = options.get("output_dir") or payload_data.get("output_dir") or str(out_dir / "surf_export")
+        op_result = plan_surf_scan(
+            output_dir=export_dir,
+            predictions=payload_data.get("predictions"),
+            transition_frequencies_mhz=payload_data.get("transition_frequencies_mhz"),
+            information_gains=payload_data.get("information_gains"),
+            start_freq_mhz=payload_data.get("start_freq_mhz"),
+            end_freq_mhz=payload_data.get("end_freq_mhz"),
+            mode=options.get("mode", payload_data.get("mode")),
+            overrides=options.get("overrides", payload_data.get("overrides")),
+            edited_by=str(options.get("edited_by", payload_data.get("edited_by", "operator"))),
+            instrument_profile=str(
+                options.get("instrument_profile", payload_data.get("instrument_profile", "grulab_surf"))
+            ),
+            molecule_name=str(options.get("molecule_name", payload_data.get("molecule_name", "HCOOH_DME"))),
+            specimen_temp_c=float(options.get("specimen_temp_c", payload_data.get("specimen_temp_c", 22.0))),
+            gas_name=str(options.get("gas_name", payload_data.get("gas_name", "Ne"))),
+            step_size_mhz=options.get("step_size_mhz", payload_data.get("step_size_mhz")),
+            acq_num=options.get("acq_num", payload_data.get("acq_num")),
+            rep_rate_hz=int(options.get("rep_rate_hz", payload_data.get("rep_rate_hz", 5))),
+            max_chunk_bandwidth_mhz=float(
+                options.get("max_chunk_bandwidth_mhz", payload_data.get("max_chunk_bandwidth_mhz", 50.0))
+            ),
+            top_n=int(options.get("top_n", payload_data.get("top_n", 3))),
+            proposal_index=int(options.get("proposal_index", payload_data.get("proposal_index", 0))),
+            target_constants=payload_data.get("target_constants", ()),
+            resolvability_penalties=payload_data.get("resolvability_penalties"),
+            line_strengths=payload_data.get("line_strengths"),
+            ml_uncertainties_mhz=payload_data.get("ml_uncertainties_mhz"),
+            cavity_map_dir=options.get("cavity_map_dir", payload_data.get("cavity_map_dir")),
+            cavity_map_csv=options.get("cavity_map_csv", payload_data.get("cavity_map_csv")),
+            fit_state_id=options.get("fit_state_id", payload_data.get("fit_state_id")),
+            spcat_catalog_path=options.get("spcat_catalog_path", payload_data.get("spcat_catalog_path")),
+            spcat_catalog_sha256=options.get("spcat_catalog_sha256", payload_data.get("spcat_catalog_sha256")),
+            gp_hyperparameters=payload_data.get("gp_hyperparameters"),
+            region_stem=options.get("region_stem", payload_data.get("region_stem")),
+            scan_date=options.get("scan_date", payload_data.get("scan_date")),
+            surf_output_location=options.get("surf_output_location", payload_data.get("surf_output_location")),
+        )
+        scope = (
+            "Plan GruLab SURF cavity scan region via SurfScanPlanner, apply optional HITL overrides, "
+            "and export validated SURF TOMLs with SHA-256 manifest."
+        )
+    elif operation == "ingest_surf_run":
+        payload_data = json.loads(input_text)
+        target_run_dir = options.get("run_dir") or payload_data.get("run_dir")
+        if not target_run_dir:
+            raise ValueError("ingest_surf_run handoff requires 'run_dir' in artifact payload or options.")
+        op_result = ingest_surf_run(
+            run_dir=target_run_dir,
+            snr_threshold=float(options.get("snr_threshold", payload_data.get("snr_threshold", 5.0))),
+            gas_name=options.get("gas_name", payload_data.get("gas_name")),
+            beam_velocity_m_s=options.get("beam_velocity_m_s", payload_data.get("beam_velocity_m_s")),
+            reconcile=bool(options.get("reconcile", payload_data.get("reconcile", True))),
+            write_provenance_ledger=bool(
+                options.get("write_provenance_ledger", payload_data.get("write_provenance_ledger", True))
+            ),
+            fp64_atol=float(options.get("fp64_atol", payload_data.get("fp64_atol", 1e-9))),
+        )
+        scope = (
+            "Ingest GruLab SURF run directory via SurfRunWatcher/SurfOutputParser and coaxial "
+            "Doppler doublet peak picker, emitting strictly PROPOSED candidates with SHA-256 provenance."
+        )
     else:
         raise ValueError(f"Unsupported operation: {operation!r}")
 
@@ -519,6 +1063,29 @@ def spycfit_provider() -> Dict[str, Any]:
         ),
     }
 
+    plan_surf_def: Dict[str, Any] = {
+        "available": True,
+        "required_engines": [],
+        "supported_engines": [],
+        "handler": "cochem_spycfit.module_provider:plan_surf_scan",
+        "scope": (
+            "Plan GruLab SURF cavity scan regions with SurfScanPlanner, apply optional "
+            "HITL operator overrides, and export validated SURF TOMLs and SHA-256 manifest."
+        ),
+    }
+
+    ingest_surf_def: Dict[str, Any] = {
+        "available": True,
+        "required_engines": [],
+        "supported_engines": [],
+        "handler": "cochem_spycfit.module_provider:ingest_surf_run",
+        "scope": (
+            "Ingest a GruLab SURF run directory via SurfRunWatcher/SurfOutputParser and "
+            "coaxial Doppler doublet peak picker, returning strictly PROPOSED candidates "
+            "with per-file SHA-256 provenance."
+        ),
+    }
+
     profiles_mod = _load_instrument_profiles()
     metadata: Dict[str, Any] = {
         "module_id": "spycfit",
@@ -531,11 +1098,14 @@ def spycfit_provider() -> Dict[str, Any]:
         "instrument_profiles": profiles_mod.list_instrument_profiles(),
         "surf_compatibility": profiles_mod.surf_compatibility_metadata(),
         "operations": list(_OPERATIONS),
+        "surf_operations": list(_SURF_OPERATIONS),
         "scientific_apis": {
             "predict_spectrum": predict_def,
             "fit_pickett": fit_def,
             "parse_pickett": parse_def,
             "audit_fit": audit_def,
+            "plan_surf_scan": plan_surf_def,
+            "ingest_surf_run": ingest_surf_def,
         },
     }
     json.dumps(metadata, allow_nan=False)
@@ -548,8 +1118,10 @@ __all__ = [
     "audit_fit",
     "execute_handoff",
     "fit_pickett",
+    "ingest_surf_run",
     "module_provider",
     "parse_pickett",
+    "plan_surf_scan",
     "predict_spectrum",
     "spycfit_provider",
 ]
