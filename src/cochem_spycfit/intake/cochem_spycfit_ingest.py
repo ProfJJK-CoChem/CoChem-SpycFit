@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
+import csv
 import hashlib
 import io
 import logging
@@ -93,6 +94,7 @@ class FileFormat(str, Enum):
     LIN = "lin"
     PAR = "par"
     CAT = "cat"
+    SURF_CSV = "surf_csv"
     UNKNOWN = "unknown"
 
 
@@ -1130,6 +1132,134 @@ def parse_pickett_par(
     )
 
 
+def _read_first_header_columns(
+    content_or_path: Union[str, Path, bytes, io.StringIO],
+) -> Optional[List[str]]:
+    """Peek the first non-empty CSV header row without disturbing StringIO stream position."""
+    first_line: Optional[str] = None
+    if isinstance(content_or_path, io.StringIO):
+        pos = content_or_path.tell()
+        try:
+            for line in content_or_path:
+                if line.strip():
+                    first_line = line
+                    break
+        finally:
+            content_or_path.seek(pos)
+    elif isinstance(content_or_path, bytes):
+        text = content_or_path.decode("utf-8", errors="replace")
+        for line in text.splitlines():
+            if line.strip():
+                first_line = line
+                break
+    elif isinstance(content_or_path, Path):
+        if not content_or_path.is_file() or content_or_path.suffix.lower() in {".parquet", ".json"}:
+            return None
+        with content_or_path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if line.strip():
+                    first_line = line
+                    break
+    elif isinstance(content_or_path, str):
+        if "\n" not in content_or_path and os.path.isfile(content_or_path):
+            if content_or_path.lower().endswith((".parquet", ".json")):
+                return None
+            with open(content_or_path, "r", encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    if line.strip():
+                        first_line = line
+                        break
+        elif "\n" in content_or_path:
+            for line in content_or_path.splitlines():
+                if line.strip():
+                    first_line = line
+                    break
+        else:
+            return None
+    else:
+        return None
+
+    if not first_line:
+        return None
+    parsed = next(csv.reader([first_line]), [])
+    return [col.lstrip("\ufeff").strip() for col in parsed]
+
+
+def is_surf_fft_csv(
+    content_or_path: Union[str, Path, bytes, io.StringIO],
+) -> bool:
+    """Return True if the input carries the native SURF 4-column FFT spectrum CSV header."""
+    header = _read_first_header_columns(content_or_path)
+    if header is None:
+        return False
+    return tuple(header) == ("Frequency (MHz)", "Intensity", "Center Freq", "Cavity Position")
+
+
+def parse_surf_csv_spectroscopy(
+    content_or_path: Union[str, Path, bytes, io.StringIO],
+    config: Optional[IngestConfig] = None,
+) -> pd.DataFrame:
+    """Parse a native SURF FFT CSV (step or finalized) via ``SurfOutputParser`` into an FP64 DataFrame."""
+    from cochem_spycfit.instruments.surf_ingest import SurfOutputParser
+
+    _ = config or IngestConfig()
+    parser = SurfOutputParser()
+    source_path: Optional[Path] = None
+
+    if isinstance(content_or_path, io.StringIO):
+        pos = content_or_path.tell()
+        raw_bytes = content_or_path.read().encode("utf-8")
+        content_or_path.seek(pos)
+    elif isinstance(content_or_path, bytes):
+        raw_bytes = content_or_path
+    elif isinstance(content_or_path, Path):
+        if not content_or_path.is_file():
+            raise FileNotFoundError(f"Spectroscopy file not found: {content_or_path}")
+        source_path = content_or_path
+        raw_bytes = content_or_path.read_bytes()
+    elif isinstance(content_or_path, str):
+        if "\n" not in content_or_path and os.path.exists(content_or_path):
+            source_path = Path(content_or_path)
+            raw_bytes = source_path.read_bytes()
+        elif "\n" not in content_or_path and (
+            content_or_path.endswith((".csv", ".tsv", ".txt")) or "/" in content_or_path or "\\" in content_or_path
+        ):
+            raise FileNotFoundError(f"Spectroscopy file not found: {content_or_path}")
+        else:
+            raw_bytes = content_or_path.encode("utf-8")
+    else:
+        raise ValueError(f"Unsupported content type: {type(content_or_path)}")
+
+    parsed = parser.parse_finalized_csv_bytes(raw_bytes, source_path=source_path)
+
+    center_col = np.full(parsed.row_count, np.nan, dtype=np.float64)
+    cavity_col = np.full(parsed.row_count, np.nan, dtype=np.float64)
+    for row_idx, cf_val, cp_val in zip(
+        parsed.metadata_row_indices,
+        parsed.center_freqs_mhz,
+        parsed.cavity_positions_mm,
+    ):
+        center_col[row_idx] = cf_val
+        cavity_col[row_idx] = cp_val
+
+    df_surf = pd.DataFrame(
+        {
+            "Frequency_MHz": parsed.freq_mhz.astype(np.float64, copy=False),
+            "Intensity": parsed.intensity.astype(np.float64, copy=False),
+            "Center_Freq_MHz": center_col,
+            "Cavity_Position_mm": cavity_col,
+        }
+    )
+    df_out = enforce_fp64_boundary(df_surf)
+    df_out.attrs["source_format"] = FileFormat.SURF_CSV.value
+    df_out.attrs["surf_file_sha256"] = parsed.file_sha256
+    df_out.attrs["surf_center_freqs_mhz"] = parsed.center_freqs_mhz
+    df_out.attrs["surf_cavity_positions_mm"] = parsed.cavity_positions_mm
+    df_out.attrs["surf_is_compacted"] = parsed.is_compacted
+    df_out.attrs["surf_cavity_dropout_steps_mhz"] = parsed.cavity_dropout_steps_mhz
+    return df_out
+
+
 def parse_csv_spectroscopy(
     content_or_path: Union[str, Path, bytes, io.StringIO],
     config: Optional[IngestConfig] = None,
@@ -1140,6 +1270,10 @@ def parse_csv_spectroscopy(
     Standardizes column name variations to canonical naming convention:
     ['Frequency_MHz', 'Uncertainty', 'Intensity', 'J_upper', 'Ka_upper', 'Kc_upper',
      'J_lower', 'Ka_lower', 'Kc_lower'].
+
+    Automatically detects native GruLabRotSpec/SURF 4-column FFT spectrum CSVs
+    (``Frequency (MHz),Intensity,Center Freq,Cavity Position``) and dispatches
+    them to ``SurfOutputParser`` without altering assigned-transition CSV handling.
 
     Args:
         content_or_path: File path, string content, bytes, or StringIO.
@@ -1158,21 +1292,30 @@ def parse_csv_spectroscopy(
         if not os.path.exists(str(content_or_path)):
             raise FileNotFoundError(f"JSON file not found: {content_or_path}")
         df_raw = pd.read_json(str(content_or_path))
+    elif isinstance(content_or_path, Path) and not content_or_path.is_file():
+        raise FileNotFoundError(f"Spectroscopy file not found: {content_or_path}")
+    elif (
+        isinstance(content_or_path, str)
+        and "\n" not in content_or_path
+        and not os.path.exists(content_or_path)
+        and (
+            content_or_path.endswith((".csv", ".tsv", ".txt"))
+            or "/" in content_or_path
+            or "\\" in content_or_path
+        )
+    ):
+        raise FileNotFoundError(f"Spectroscopy file not found: {content_or_path}")
+    elif is_surf_fft_csv(content_or_path):
+        return parse_surf_csv_spectroscopy(content_or_path, config=cfg)
     elif isinstance(content_or_path, io.StringIO):
         df_raw = pd.read_csv(content_or_path, sep=None, engine="python")
     elif isinstance(content_or_path, bytes):
         df_raw = pd.read_csv(io.BytesIO(content_or_path), sep=None, engine="python")
     elif isinstance(content_or_path, Path):
-        if not content_or_path.is_file():
-            raise FileNotFoundError(f"Spectroscopy file not found: {content_or_path}")
         df_raw = pd.read_csv(str(content_or_path), sep=None, engine="python")
     elif isinstance(content_or_path, str):
         if "\n" not in content_or_path and os.path.exists(content_or_path):
             df_raw = pd.read_csv(content_or_path, sep=None, engine="python")
-        elif "\n" not in content_or_path and (
-            content_or_path.endswith((".csv", ".tsv", ".txt")) or "/" in content_or_path or "\\" in content_or_path
-        ):
-            raise FileNotFoundError(f"Spectroscopy file not found: {content_or_path}")
         else:
             df_raw = pd.read_csv(io.StringIO(content_or_path), sep=None, engine="python")
     else:
@@ -1347,6 +1490,41 @@ def parse_spectroscopy_data(
             physics_violations=[],
         )
         return IngestResult(df=df_par, report=report, sha256_fingerprint=fp, success=True)
+    elif fmt == "surf_csv" or (fmt in {"", "csv", "tsv"} and is_surf_fft_csv(file_path_or_content)):
+        surf_df = parse_surf_csv_spectroscopy(file_path_or_content, config=cfg)
+        fingerprint = calculate_frequency_fingerprint(surf_df["Frequency_MHz"])
+        if effective_zarr_path:
+            append_to_spectra_fit_zarr(
+                zarr_path=effective_zarr_path,
+                frequencies=surf_df["Frequency_MHz"],
+                sha256_hash=fingerprint,
+                group_name="surf_spectrum",
+                metadata={
+                    "source_format": FileFormat.SURF_CSV.value,
+                    "surf_file_sha256": str(surf_df.attrs.get("surf_file_sha256", "")),
+                },
+            )
+        dropout_steps = surf_df.attrs.get("surf_cavity_dropout_steps_mhz", ())
+        if dropout_steps:
+            warnings_list.append(
+                f"SURF cavity-tracking rail drop-out detected at step(s): {list(dropout_steps)} MHz."
+            )
+        report = ValidationReport(
+            total_lines_read=len(surf_df),
+            valid_lines_count=len(surf_df),
+            syntax_dropped_count=0,
+            physics_dropped_count=0,
+            sha256_fingerprint=fingerprint,
+            warnings=warnings_list,
+            syntax_violations=[],
+            physics_violations=[],
+        )
+        return IngestResult(
+            df=surf_df,
+            report=report,
+            sha256_fingerprint=fingerprint,
+            success=(len(surf_df) > 0),
+        )
     elif fmt in ["parquet", "json", "csv", "tsv"]:
         raw_df = parse_csv_spectroscopy(file_path_or_content, config=cfg)
     else:
@@ -1442,9 +1620,11 @@ __all__ = [
     "validate_quantum_numbers",
     "classify_transition_parity_and_dipole",
     "apply_selection_rules",
+    "is_surf_fft_csv",
     "parse_legacy_pickett",
     "parse_pickett_lin",
     "parse_pickett_par",
     "parse_csv_spectroscopy",
+    "parse_surf_csv_spectroscopy",
     "parse_spectroscopy_data",
 ]

@@ -64,7 +64,22 @@ from scipy.optimize import linear_sum_assignment
 import zmq
 
 # ipywidgets for Jupyter and Voila interactive controls
-from ipywidgets import Button, FloatSlider, HBox, Label, Output, VBox
+from ipywidgets import Button, Dropdown, FloatSlider, HBox, Label, Output, VBox
+
+# Instrument profiles and SURF planner/exporter integration
+from ..instruments.profiles import (
+    DEFAULT_INSTRUMENT_PROFILE,
+    InstrumentProfile,
+    get_instrument_profile,
+    list_instrument_profiles,
+)
+from ..instruments.surf_exporter import SurfExporter, SurfExportResult
+from ..instruments.surf_planner import (
+    SurfParameterOverrideTable,
+    SurfScanPlanner,
+    SurfScanProposal,
+)
+from ..instruments.surf_schemas import SurfOverrideRecord
 
 # JAX Convolver integration
 from ..physics_core.cochem_convolver import (
@@ -75,6 +90,12 @@ from ..physics_core.cochem_convolver import (
     gaussian_kernel_jax,
     lorentzian_kernel_jax,
 )
+
+INSTRUMENT_PROFILE_LABELS: Dict[str, str] = {
+    "grulab_surf": "GruLab SURF (8–18 GHz Cavity FTMW)",
+    "generic_cp_ftmw": "Generic CP-FTMW (2–18 GHz Broadband)",
+    "generic_ir_raman": "Generic IR / Raman Spectrometer",
+}
 
 logger = logging.getLogger("CoChem-SpycFit.UI")
 
@@ -190,6 +211,16 @@ class DashboardConfig(BaseModel):
     rejected_line_color: str = Field(default="rgba(239, 83, 80, 0.5)", description="Color for rejected assignment lines")
     huber_delta_mhz: Optional[float] = Field(default=None, description="Huber robust loss delta threshold in MHz")
     sigma_tolerance_bands: List[float] = Field(default_factory=lambda: [1.0, 3.0], description="Sigma multiplier error bands")
+    instrument_profile: str = Field(
+        default=DEFAULT_INSTRUMENT_PROFILE,
+        description="Active instrument profile identifier (defaults to grulab_surf)",
+    )
+
+    @field_validator("instrument_profile")
+    @classmethod
+    def _validate_instrument_profile(cls, value: str) -> str:
+        get_instrument_profile(value)
+        return value
 
 
 class WhatIfParameterState(BaseModel):
@@ -1465,10 +1496,30 @@ class SpycFitInteractiveDashboard:
         manager: HITLAssignmentManager,
         spectrum_engine: Optional[WhatIfSpectrumEngine] = None,
         config: Optional[DashboardConfig] = None,
+        surf_override_table: Optional[SurfParameterOverrideTable] = None,
     ) -> None:
         self.manager = manager
         self.engine = spectrum_engine
         self.config = config or DashboardConfig()
+        self._active_profile: InstrumentProfile = get_instrument_profile(self.config.instrument_profile)
+        self.surf_override_table: SurfParameterOverrideTable = (
+            surf_override_table
+            if surf_override_table is not None
+            else SurfScanPlanner(instrument_profile=DEFAULT_INSTRUMENT_PROFILE).create_default_override_table()
+        )
+        self.surf_exporter: SurfExporter = SurfExporter(instrument_profile=DEFAULT_INSTRUMENT_PROFILE)
+        self.last_surf_export: Optional[SurfExportResult] = None
+
+        profile_options = [
+            (INSTRUMENT_PROFILE_LABELS.get(pid, get_instrument_profile(pid).display_name), pid)
+            for pid in list_instrument_profiles()
+        ]
+        self.profile_dropdown = Dropdown(
+            options=profile_options,
+            value=self._active_profile.profile_id,
+            description="Instrument:",
+            layout={"width": "380px"},
+        )
 
         # UI Widgets
         self.slider_A = FloatSlider(
@@ -1522,6 +1573,7 @@ class SpycFitInteractiveDashboard:
         self.btn_approve_all = Button(description="Approve All", button_style="success", icon="check")
         self.btn_reject_outliers = Button(description="Reject Outliers (>3σ)", button_style="warning", icon="filter")
         self.btn_recalc = Button(description="Recalculate Spectrum", button_style="primary", icon="sync")
+        self.btn_export_surf = Button(description="Export SURF TOMLs", button_style="info", icon="download")
 
         # Output Containers
         self.plot_output = Output()
@@ -1532,8 +1584,10 @@ class SpycFitInteractiveDashboard:
         self.btn_approve_all.on_click(self._on_approve_all_clicked)
         self.btn_reject_outliers.on_click(self._on_reject_outliers_clicked)
         self.btn_recalc.on_click(self._on_recalc_clicked)
+        self.btn_export_surf.on_click(self._on_export_surf_clicked)
 
-        # Connect slider observe handlers
+        # Connect slider & profile observe handlers
+        self.profile_dropdown.observe(self._on_profile_change, names="value")
         self.slider_A.observe(self._on_slider_change, names="value")
         self.slider_B.observe(self._on_slider_change, names="value")
         self.slider_C.observe(self._on_slider_change, names="value")
@@ -1542,9 +1596,16 @@ class SpycFitInteractiveDashboard:
 
         # Build composite layout
         self.controls_box = VBox([
+            HBox([self.profile_dropdown]),
             HBox([self.slider_A, self.slider_B, self.slider_C]),
             HBox([self.slider_temp, self.slider_huber]),
-            HBox([self.btn_auto_propose, self.btn_approve_all, self.btn_reject_outliers, self.btn_recalc]),
+            HBox([
+                self.btn_auto_propose,
+                self.btn_approve_all,
+                self.btn_reject_outliers,
+                self.btn_recalc,
+                self.btn_export_surf,
+            ]),
         ])
         self.widget = VBox([
             self.controls_box,
@@ -1553,6 +1614,64 @@ class SpycFitInteractiveDashboard:
         ])
 
         self.refresh_view()
+
+    def get_active_instrument_profile(self) -> InstrumentProfile:
+        """Return currently selected frozen ``InstrumentProfile``."""
+        return self._active_profile
+
+    def set_instrument_profile(self, profile_id: str) -> InstrumentProfile:
+        """Switch active instrument profile and synchronize the selector dropdown."""
+        profile = get_instrument_profile(profile_id)
+        self._active_profile = profile
+        self.config.instrument_profile = profile.profile_id
+        if self.profile_dropdown.value != profile.profile_id:
+            self.profile_dropdown.value = profile.profile_id
+        return profile
+
+    def load_surf_proposal(self, proposal: SurfScanProposal) -> SurfParameterOverrideTable:
+        """Load a planned ``SurfScanProposal`` into the HITL override table."""
+        self.surf_override_table = SurfParameterOverrideTable(
+            proposed_scan_settings=proposal.scan_settings,
+            proposed_control_config=proposal.control_config,
+            proposal=proposal,
+            retune_overhead_s=get_instrument_profile(DEFAULT_INSTRUMENT_PROFILE).zaber_retune_overhead_s,
+        )
+        return self.surf_override_table
+
+    def set_surf_override(
+        self,
+        field_path: str,
+        user_value: Any,
+        *,
+        edited_by: str = "operator",
+    ) -> Optional[SurfOverrideRecord]:
+        """Validate and apply a SURF scan parameter override in the HITL table."""
+        return self.surf_override_table.set_override(field_path, user_value, edited_by=edited_by)
+
+    def get_surf_override_rows(self) -> List[Dict[str, Any]]:
+        """Return structured rows representing the active SURF HITL override table."""
+        return self.surf_override_table.to_table_rows()
+
+    def export_surf_artifacts(
+        self,
+        output_dir: Union[str, Path],
+        *,
+        region_stem: Optional[str] = None,
+        fit_state_id: Optional[str] = None,
+        spcat_catalog_sha256: Optional[str] = None,
+        gp_hyperparameters: Optional[Dict[str, Any]] = None,
+    ) -> SurfExportResult:
+        """Export validated native SURF TOMLs and strict manifest JSON."""
+        result = self.surf_exporter.export_region(
+            output_dir=output_dir,
+            override_table=self.surf_override_table,
+            region_stem=region_stem,
+            fit_state_id=fit_state_id,
+            spcat_catalog_sha256=spcat_catalog_sha256,
+            gp_hyperparameters=gp_hyperparameters,
+        )
+        self.last_surf_export = result
+        return result
 
     def get_current_parameter_state(self) -> WhatIfParameterState:
         """Returns the current WhatIfParameterState based on slider values."""
@@ -1625,6 +1744,18 @@ class SpycFitInteractiveDashboard:
         self.refresh_view()
 
     def _on_slider_change(self, _change: dict) -> None:
+        self.refresh_view()
+
+    def _on_profile_change(self, change: dict) -> None:
+        new_pid = change.get("new")
+        if isinstance(new_pid, str):
+            self._active_profile = get_instrument_profile(new_pid)
+            self.config.instrument_profile = self._active_profile.profile_id
+            self.refresh_view()
+
+    def _on_export_surf_clicked(self, _btn: Button) -> None:
+        export_dir = Path(os.getenv("COCHEM_ARTIFACTS_DIR", Path.home() / ".cochem" / "surf_exports"))
+        self.export_surf_artifacts(output_dir=export_dir)
         self.refresh_view()
 
 
@@ -1812,6 +1943,7 @@ __all__ = [
     "DashboardConfig",
     "HITLApprovalError",
     "HITLAssignmentManager",
+    "INSTRUMENT_PROFILE_LABELS",
     "OfflineRenderError",
     "PeakAssignment",
     "RenderBackend",

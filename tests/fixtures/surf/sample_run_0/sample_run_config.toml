@@ -1,0 +1,50 @@
+[valon_controller]
+rf_output = true
+rf_level = 10
+valon_port = "COM3"
+synth_power = true
+ref_source = "Internal"
+ref_freq = 10.0
+freq = 10869.0
+
+[zaber_controller]
+zaber_scanning_speed = 0.003
+zaber_moving_speed = 2.0
+zaber_step_size = 0.03
+zaber_port = "COM5"
+
+[awg_controller]
+awg_status = true
+awg_freq = 30
+awg_run_mode = "Triggered"
+awg_ch_1_output = false
+awg_ch_2_output = true
+
+[oscilloscope_controller]
+channel = "CH4"
+acq_rate = 100
+sample_rate = 500
+math_averages = 1000000
+visa_address = "TCPIP0::169.254.23.223::inst0::INSTR"
+
+[oscilloscope_controller.math3]
+window = "Hanning"
+resolution = 720.0
+gate_position = 1.0
+scale = 100.0
+
+[oscilloscope_controller.math4]
+window = "Hanning"
+resolution = 100.0
+gate_position = 22.5
+scale = 0.1
+
+[oscilloscope_controller.math3_cont]
+window = "Hanning"
+resolution = 720.0
+gate_position = 1.0
+scale = 300.0
+
+[delay_generator_controller]
+trigger_rate = 5.0
+trigger_state = "INT"
