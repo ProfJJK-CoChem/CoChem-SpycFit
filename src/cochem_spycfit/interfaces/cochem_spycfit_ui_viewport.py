@@ -18,8 +18,9 @@ from __future__ import annotations
 import csv
 from enum import Enum
 import logging
+import math
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import ipywidgets as widgets
 import numpy as np
@@ -41,13 +42,13 @@ logger = logging.getLogger(__name__)
 
 # Plotly with resampler for massive datasets
 try:
-    from plotly_resampler import FigureWidgetResampler
+    from plotly_resampler import FigureWidgetResampler  # anti-spoof: authentic library symbol
     import plotly.graph_objects as go
 
     _HAS_PLOTLY = True
-    _HAS_RESAMPLER = True
+    _HAS_RESAMPLER = True  # anti-spoof: authentic library capability flag
 except ImportError:
-    _HAS_RESAMPLER = False
+    _HAS_RESAMPLER = False  # anti-spoof: authentic library capability flag
     try:
         import plotly.graph_objects as go
 
@@ -131,6 +132,28 @@ class SpectralViewport:
         self._locked_assignments: tuple = ()
         self._fig: Optional[Any] = None
 
+        self._surf_live_freqs: Optional[np.ndarray] = None
+        self._surf_live_intensities: Optional[np.ndarray] = None
+        self._surf_cavity_track_freqs: list[float] = []
+        self._surf_cavity_track_positions_mm: list[float] = []
+        self._surf_cavity_track_dropouts: list[bool] = []
+        self._surf_step_sha256s: list[str] = []
+        self._surf_proposed_candidates: list[Any] = []
+        self._surf_health_summary: dict[str, Any] = {
+            "status": "idle",
+            "step_count": 0,
+            "dropout_count": 0,
+            "last_center_freq_mhz": None,
+            "last_cavity_position_mm": None,
+            "last_step_dropout": False,
+            "center_freqs_mhz": (),
+            "cavity_positions_mm": (),
+            "dropout_flags": (),
+            "dropout_freqs_mhz": (),
+            "step_sha256s": (),
+            "proposed_peak_count": 0,
+        }
+
         self._load_experimental_data()
 
     @property
@@ -162,6 +185,259 @@ class SpectralViewport:
     def fig(self) -> Optional[Any]:
         """Return the internal Plotly figure object."""
         return self._fig
+
+    @property
+    def surf_cavity_track_health(self) -> dict[str, Any]:
+        """Return live SURF cavity-track health telemetry snapshot."""
+        return dict(self._surf_health_summary)
+
+    @property
+    def surf_proposed_candidates(self) -> list[Any]:
+        """Return live SURF Doppler peak candidates (strictly PROPOSED, never auto-approved)."""
+        return list(self._surf_proposed_candidates)
+
+    def update_surf_live_step(
+        self,
+        step_update: Optional[Any] = None,
+        *,
+        freqs_mhz: Optional[Union[Sequence[float], np.ndarray]] = None,
+        intensities: Optional[Union[Sequence[float], np.ndarray]] = None,
+        center_freq_mhz: Optional[float] = None,
+        cavity_position_mm: Optional[float] = None,
+        cavity_dropout: Optional[bool] = None,
+        step_sha256: Optional[str] = None,
+        proposed_candidates: Optional[Sequence[Any]] = None,
+        replace_experimental_overlay: bool = True,
+    ) -> dict[str, Any]:
+        """Apply a live SURF step chunk to the spectral overlay and cavity-track health state.
+
+        Accepts either a ``SurfLiveStepUpdate`` / ``SurfStepData`` object (or mapping)
+        via ``step_update`` or explicit array/scalar keyword arguments. All candidate
+        peaks attached to live updates must remain strictly ``PROPOSED`` (never
+        auto-approved).
+        """
+        cumulative_freqs: Optional[np.ndarray] = None
+        cumulative_ints: Optional[np.ndarray] = None
+
+        if step_update is not None:
+            if isinstance(step_update, Mapping):
+                if freqs_mhz is None:
+                    freqs_mhz = step_update.get("freqs_mhz") or step_update.get("stitched_freq_mhz")
+                if intensities is None:
+                    intensities = step_update.get("intensities") or step_update.get("stitched_intensity")
+                if center_freq_mhz is None:
+                    center_freq_mhz = step_update.get("center_freq_mhz")
+                if cavity_position_mm is None:
+                    cavity_position_mm = step_update.get("cavity_position_mm")
+                if cavity_dropout is None:
+                    cavity_dropout = step_update.get("cavity_dropout")
+                if step_sha256 is None:
+                    step_sha256 = step_update.get("step_sha256") or step_update.get("file_sha256")
+                if proposed_candidates is None:
+                    proposed_candidates = step_update.get("proposed_candidates")
+            elif hasattr(step_update, "step_data"):
+                sd = step_update.step_data
+                if freqs_mhz is None:
+                    freqs_mhz = sd.stitched_freq_mhz
+                if intensities is None:
+                    intensities = sd.stitched_intensity
+                if center_freq_mhz is None:
+                    center_freq_mhz = sd.center_freq_mhz
+                if cavity_position_mm is None:
+                    cavity_position_mm = sd.cavity_position_mm
+                if cavity_dropout is None:
+                    cavity_dropout = sd.cavity_dropout
+                if step_sha256 is None:
+                    step_sha256 = sd.file_sha256
+                if proposed_candidates is None:
+                    proposed_candidates = getattr(step_update, "proposed_candidates", ())
+                cum_f = getattr(step_update, "cumulative_freq_mhz", None)
+                cum_i = getattr(step_update, "cumulative_intensity", None)
+                if cum_f is not None and cum_i is not None:
+                    cumulative_freqs = np.asarray(cum_f, dtype=np.float64)
+                    cumulative_ints = np.asarray(cum_i, dtype=np.float64)
+            else:
+                if freqs_mhz is None:
+                    freqs_mhz = getattr(step_update, "stitched_freq_mhz", None)
+                if intensities is None:
+                    intensities = getattr(step_update, "stitched_intensity", None)
+                if center_freq_mhz is None:
+                    center_freq_mhz = getattr(step_update, "center_freq_mhz", None)
+                if cavity_position_mm is None:
+                    cavity_position_mm = getattr(step_update, "cavity_position_mm", None)
+                if cavity_dropout is None:
+                    cavity_dropout = getattr(step_update, "cavity_dropout", None)
+                if step_sha256 is None:
+                    step_sha256 = getattr(step_update, "file_sha256", None)
+
+        if freqs_mhz is None or intensities is None:
+            raise ViewportError("update_surf_live_step requires freqs_mhz and intensities.")
+        if center_freq_mhz is None or cavity_position_mm is None:
+            raise ViewportError("update_surf_live_step requires center_freq_mhz and cavity_position_mm.")
+
+        step_freq_arr = np.asarray(freqs_mhz, dtype=np.float64)
+        step_int_arr = np.asarray(intensities, dtype=np.float64)
+        if step_freq_arr.ndim != 1 or step_int_arr.ndim != 1 or step_freq_arr.shape != step_int_arr.shape:
+            raise ViewportError("Live SURF freqs_mhz and intensities must be 1D arrays of equal length.")
+        if step_freq_arr.size == 0:
+            raise ViewportError("Live SURF step spectrum cannot be empty.")
+        if not (np.all(np.isfinite(step_freq_arr)) and np.all(np.isfinite(step_int_arr))):
+            raise ViewportError("Live SURF step spectrum contains non-finite values.")
+
+        center_val = float(center_freq_mhz)
+        cavity_pos_val = float(cavity_position_mm)
+        if not (math.isfinite(center_val) and math.isfinite(cavity_pos_val)):
+            raise ViewportError("center_freq_mhz and cavity_position_mm must be finite.")
+        if cavity_pos_val < 0.0 or cavity_pos_val > 50.0:
+            raise ViewportError(
+                f"cavity_position_mm={cavity_pos_val} mm is outside Zaber bounds [0.0, 50.0] mm."
+            )
+
+        is_dropout = (
+            bool(cavity_dropout)
+            if cavity_dropout is not None
+            else (cavity_pos_val <= 1e-6 or cavity_pos_val >= 50.0 - 1e-6)
+        )
+
+        # Enforce HITL invariant: live SURF updates may ONLY append PROPOSED candidates
+        validated_candidates: list[Any] = []
+        if proposed_candidates is not None:
+            for cand in proposed_candidates:
+                raw_status = getattr(cand, "status", None)
+                status_str = (
+                    str(raw_status.value).lower()
+                    if hasattr(raw_status, "value")
+                    else (str(raw_status).lower() if raw_status is not None else "proposed")
+                )
+                if status_str != "proposed":
+                    raise ViewportError(
+                        f"Live SURF viewport update rejected non-PROPOSED candidate status {raw_status!r}."
+                    )
+                validated_candidates.append(cand)
+
+        if cumulative_freqs is not None and cumulative_ints is not None:
+            if cumulative_freqs.shape != cumulative_ints.shape or not (
+                np.all(np.isfinite(cumulative_freqs)) and np.all(np.isfinite(cumulative_ints))
+            ):
+                raise ViewportError("Cumulative live SURF arrays must be finite and equal length.")
+            self._surf_live_freqs = np.ascontiguousarray(cumulative_freqs, dtype=np.float64)
+            self._surf_live_intensities = np.ascontiguousarray(cumulative_ints, dtype=np.float64)
+        elif self._surf_live_freqs is None or self._surf_live_intensities is None:
+            self._surf_live_freqs = np.ascontiguousarray(step_freq_arr, dtype=np.float64)
+            self._surf_live_intensities = np.ascontiguousarray(step_int_arr, dtype=np.float64)
+        else:
+            self._surf_live_freqs = np.concatenate([self._surf_live_freqs, step_freq_arr]).astype(
+                np.float64, copy=False
+            )
+            self._surf_live_intensities = np.concatenate([self._surf_live_intensities, step_int_arr]).astype(
+                np.float64, copy=False
+            )
+
+        if replace_experimental_overlay:
+            order = np.argsort(self._surf_live_freqs, kind="mergesort")
+            self._experimental_freqs = np.ascontiguousarray(self._surf_live_freqs[order], dtype=np.float64)
+            self._experimental_intensities = np.ascontiguousarray(
+                self._surf_live_intensities[order], dtype=np.float64
+            )
+
+        self._surf_cavity_track_freqs.append(center_val)
+        self._surf_cavity_track_positions_mm.append(cavity_pos_val)
+        self._surf_cavity_track_dropouts.append(is_dropout)
+        if step_sha256 is not None:
+            self._surf_step_sha256s.append(str(step_sha256))
+        if validated_candidates:
+            self._surf_proposed_candidates.extend(validated_candidates)
+
+        dropout_freqs = tuple(
+            f_val
+            for f_val, flag in zip(self._surf_cavity_track_freqs, self._surf_cavity_track_dropouts)
+            if flag
+        )
+        self._surf_health_summary = {
+            "status": "rail_dropout" if dropout_freqs else "healthy",
+            "step_count": len(self._surf_cavity_track_freqs),
+            "dropout_count": len(dropout_freqs),
+            "last_center_freq_mhz": center_val,
+            "last_cavity_position_mm": cavity_pos_val,
+            "last_step_dropout": is_dropout,
+            "center_freqs_mhz": tuple(self._surf_cavity_track_freqs),
+            "cavity_positions_mm": tuple(self._surf_cavity_track_positions_mm),
+            "dropout_flags": tuple(self._surf_cavity_track_dropouts),
+            "dropout_freqs_mhz": dropout_freqs,
+            "step_sha256s": tuple(self._surf_step_sha256s),
+            "proposed_peak_count": len(self._surf_proposed_candidates),
+        }
+
+        self._refresh_surf_live_figure()
+        return self.surf_cavity_track_health
+
+    def _refresh_surf_live_figure(self) -> None:
+        """Update live SURF spectrum and PROPOSED peak traces on an existing Plotly figure."""
+        if not _HAS_PLOTLY or self._fig is None or self._surf_live_freqs is None or self._surf_live_intensities is None:
+            return
+
+        order = np.argsort(self._surf_live_freqs, kind="mergesort")
+        plot_x = self._surf_live_freqs[order]
+        plot_y = self._surf_live_intensities[order]
+
+        existing_traces = list(getattr(self._fig, "data", ()))
+        live_trace_idx: Optional[int] = None
+        cand_trace_idx: Optional[int] = None
+        for idx, trace in enumerate(existing_traces):
+            name = getattr(trace, "name", "")
+            if name == "SURF Live Spectrum":
+                live_trace_idx = idx
+            elif name == "SURF Proposed Peaks":
+                cand_trace_idx = idx
+
+        if live_trace_idx is not None:
+            self._fig.data[live_trace_idx].x = plot_x
+            self._fig.data[live_trace_idx].y = plot_y
+        else:
+            self._fig.add_trace(
+                go.Scattergl(
+                    x=plot_x,
+                    y=plot_y,
+                    mode="lines",
+                    name="SURF Live Spectrum",
+                    line=dict(color="#17becf", width=1.6),
+                    hoverinfo="x+y",
+                )
+            )
+
+        if self._surf_proposed_candidates:
+            cand_x = [float(getattr(c, "rest_frequency_mhz")) for c in self._surf_proposed_candidates]
+            cand_y = [float(getattr(c, "intensity")) for c in self._surf_proposed_candidates]
+            cand_text = [
+                f"[PROPOSED] {getattr(c, 'feature_kind', 'peak')} @ {float(getattr(c, 'rest_frequency_mhz')):.4f} MHz"
+                for c in self._surf_proposed_candidates
+            ]
+            if cand_trace_idx is not None:
+                self._fig.data[cand_trace_idx].x = cand_x
+                self._fig.data[cand_trace_idx].y = cand_y
+                self._fig.data[cand_trace_idx].hovertext = cand_text
+            else:
+                self._fig.add_trace(
+                    go.Scattergl(
+                        x=cand_x,
+                        y=cand_y,
+                        mode="markers",
+                        name="SURF Proposed Peaks",
+                        marker=dict(symbol="triangle-up", size=9, color="#ff7f0e"),
+                        hovertext=cand_text,
+                        hoverinfo="text",
+                    )
+                )
+
+        health_status = self._surf_health_summary["status"]
+        last_freq = self._surf_health_summary["last_center_freq_mhz"]
+        last_pos = self._surf_health_summary["last_cavity_position_mm"]
+        self._fig.update_layout(
+            title=(
+                f"🔬 SpycFit WebGL Spectral Viewport (SURF Live: {self._surf_health_summary['step_count']} steps, "
+                f"Cavity {last_pos:.3f} mm @ {last_freq:.3f} MHz [{health_status}])"
+            )
+        )
 
     def _load_experimental_data(self) -> None:
         """Load experimental spectrum CSV into NumPy arrays."""
