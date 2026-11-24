@@ -1,0 +1,29 @@
+theme = "auto"
+
+[output]
+location = "C:\\Users\\GRU LAB\\Documents\\github_2\\GRULab_pythoncode\\test"
+filename = "my_scan"
+
+[logging]
+enabled = true
+location = "./testing/"
+
+[scope_preset]
+root_path = "C:\\Documents and Settings\\Administrator\\My Documents\\Setups_for_lab"
+
+[scope_preset.presets.cavity]
+name = "Cont_Cavity"
+path = "1cavity_map_cavity.set"
+
+[scope_preset.presets.scan_peak]
+name = "Acquisition"
+path = "2cavity_scan_peak001.set"
+
+[scope_preset.presets.pulse]
+name = "Pulsed_Cavity"
+path = "3cavitypulsed.set"
+
+[analysis]
+show_points = true
+show_grid = true
+show_crosshair = true

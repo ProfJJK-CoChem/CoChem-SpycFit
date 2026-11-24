@@ -72,6 +72,13 @@ def _load_auditor() -> Any:
     )
 
 
+def _load_instrument_profiles() -> Any:
+    return _load_submodule(
+        "cochem_spycfit.instruments.profiles",
+        "instruments/profiles.py",
+    )
+
+
 def _sha256_path(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -512,6 +519,7 @@ def spycfit_provider() -> Dict[str, Any]:
         ),
     }
 
+    profiles_mod = _load_instrument_profiles()
     metadata: Dict[str, Any] = {
         "module_id": "spycfit",
         "distribution": "CoChem-SpycFit",
@@ -519,6 +527,9 @@ def spycfit_provider() -> Dict[str, Any]:
         "integration_contract": "cochem.module-handoff/1",
         "scientific_api_version": "cochem.module-provider/1",
         "execute_handoff": "cochem_spycfit.module_provider:execute_handoff",
+        "default_instrument_profile": profiles_mod.DEFAULT_INSTRUMENT_PROFILE,
+        "instrument_profiles": profiles_mod.list_instrument_profiles(),
+        "surf_compatibility": profiles_mod.surf_compatibility_metadata(),
         "operations": list(_OPERATIONS),
         "scientific_apis": {
             "predict_spectrum": predict_def,
