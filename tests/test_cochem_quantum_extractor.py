@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Unit Test Suite for Theoretical Tensor Gateway & Physics Core.
+CoChem-SPYFY: Unit Test Suite for Theoretical Tensor Gateway & Physics Core.
 
 Strict Anti-Spoofing & Method Matrix Compliance:
 - Zero pass statements
@@ -21,7 +21,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from cochem_spycfit.physics_core.cochem_quantum_extractor import (
+from cochem_spyfy.physics_core.cochem_quantum_extractor import (
     AMU_ANGSTROM2_TO_MHZ,
     HARTREE_BOHR2_AMU_TO_CM1,
     MASS_DICT,
@@ -492,8 +492,8 @@ def test_static_code_inspection_anti_spoofing() -> None:
     2. Zero unauthorized imports or tokens.
     """
     target_files = [
-        REPO_ROOT / "src" / "cochem_spycfit" / "physics_core" / "cochem_quantum_extractor.py",
-        REPO_ROOT / "src" / "cochem_spycfit" / "physics_core" / "__init__.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "physics_core" / "cochem_quantum_extractor.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "physics_core" / "__init__.py",
     ]
     forbidden_tokens = [
         "".join([chr(109), chr(111), chr(99), chr(107)]),

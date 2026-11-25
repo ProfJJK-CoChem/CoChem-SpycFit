@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Comprehensive Physical Unit Test Suite for Catalog Compiler & Out-of-Core Serialization.
+CoChem-SPYFY: Comprehensive Physical Unit Test Suite for Catalog Compiler & Out-of-Core Serialization.
 
 Strict Zero-Mock & Method Matrix Compliance:
 - Zero pass statements
@@ -31,7 +31,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from cochem_spycfit.serialization.cochem_catalog_compiler import (
+from cochem_spyfy.serialization.cochem_catalog_compiler import (
     CatalogCompilerConfig,
     CatalogCompilerError,
     CatalogCorruptionError,
@@ -256,7 +256,7 @@ class TestFilesystemDetection:
 
     def test_compute_sha256(self, temp_workspace: Path) -> None:
         test_file = temp_workspace / "sample_binary.bin"
-        test_content = b"CoChem-SpycFit Physical Spectral Array Data 2026"
+        test_content = b"CoChem-SPYFY Physical Spectral Array Data 2026"
         test_file.write_bytes(test_content)
 
         digest = compute_sha256(test_file)
@@ -963,12 +963,12 @@ class TestChunkDataNormalization:
 # 9. AST & ZERO-MOCK COMPLIANCE STATIC ANALYSIS
 # =============================================================================
 
-class TestZeroMockASTCompliance:
+class TestZeroDoubleASTCompliance:
     """Enforces zero pass statements and zero banned tokens across the codebase."""
 
     def test_cochem_catalog_compiler_ast_compliance(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
-        module_path = repo_root / "src" / "cochem_spycfit" / "serialization" / "cochem_catalog_compiler.py"
+        module_path = repo_root / "src" / "cochem_spyfy" / "serialization" / "cochem_catalog_compiler.py"
         assert module_path.is_file()
 
         source = module_path.read_text(encoding="utf-8")
@@ -997,7 +997,7 @@ class TestZeroMockASTCompliance:
 
     def test_no_banned_tokens_in_production_code(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
-        module_path = repo_root / "src" / "cochem_spycfit" / "serialization" / "cochem_catalog_compiler.py"
+        module_path = repo_root / "src" / "cochem_spyfy" / "serialization" / "cochem_catalog_compiler.py"
         source = module_path.read_text(encoding="utf-8")
         tree = ast.parse(source)
 

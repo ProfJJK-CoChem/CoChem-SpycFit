@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Comprehensive Phase 4 Physical Unit Test Suite for Catalog Compiler & PyArrow Out-of-Core Serialization.
+CoChem-SPYFY: Comprehensive Phase 4 Physical Unit Test Suite for Catalog Compiler & PyArrow Out-of-Core Serialization.
 
 Strict Zero-Mock & Method Matrix Compliance:
 - Zero pass statements
@@ -36,7 +36,7 @@ import pytest
 # Enforce JAX FP64 precision globally
 jax.config.update("jax_enable_x64", True)
 
-from cochem_spycfit.serialization.cochem_catalog_compiler import (
+from cochem_spyfy.serialization.cochem_catalog_compiler import (
     CatalogCompilerError,
     CatalogManifestRecord,
     CatalogSchemaError,
@@ -484,12 +484,12 @@ class TestParquetOutofCoreReader:
 # 7. AST & ZERO-MOCK COMPLIANCE STATIC ANALYSIS
 # =============================================================================
 
-class TestZeroMockASTCompliancePhase4:
+class TestZeroDoubleASTCompliancePhase4:
     """Enforces zero pass statements and zero banned tokens across the codebase."""
 
     def test_cochem_catalog_compiler_ast_compliance(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
-        module_path = repo_root / "src" / "cochem_spycfit" / "serialization" / "cochem_catalog_compiler.py"
+        module_path = repo_root / "src" / "cochem_spyfy" / "serialization" / "cochem_catalog_compiler.py"
         assert module_path.is_file()
 
         source = module_path.read_text(encoding="utf-8")
@@ -518,7 +518,7 @@ class TestZeroMockASTCompliancePhase4:
 
     def test_no_banned_tokens_in_production_code(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
-        module_path = repo_root / "src" / "cochem_spycfit" / "serialization" / "cochem_catalog_compiler.py"
+        module_path = repo_root / "src" / "cochem_spyfy" / "serialization" / "cochem_catalog_compiler.py"
         source = module_path.read_text(encoding="utf-8")
         tree = ast.parse(source)
 

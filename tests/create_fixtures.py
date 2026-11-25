@@ -4,7 +4,7 @@ import h5py
 import numpy as np
 from pathlib import Path
 
-tests_dir = Path(r"D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests")
+tests_dir = Path(r"D:\__CoChem\GitHub-Repo\CoChem-SPYFY\tests")
 fixtures_dir = tests_dir / "fixtures"
 fixtures_dir.mkdir(exist_ok=True)
 

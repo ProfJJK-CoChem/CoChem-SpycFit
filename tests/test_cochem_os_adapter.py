@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit Operating System Adapter & Immutable File Lock Zero-Mock Unit Test Suite.
+CoChem-SPYFY Operating System Adapter & Immutable File Lock Zero-Mock Unit Test Suite.
 
 Mandated by SRS Task 10 (Section 3.2 Immutable File Lock) to validate cross-platform
 archive read-only sealing, OS syscall translation, and Tripartite Air-Gap isolation.
@@ -29,7 +29,7 @@ from typing import Dict
 import mendeleev
 import pytest
 
-from cochem_spycfit.core_engine.cochem_os_adapter import (
+from cochem_spyfy.core_engine.cochem_os_adapter import (
     AIRGAP_TIER_A_CORE,
     AIRGAP_TIER_B_SCRATCH,
     AIRGAP_TIER_C_SEALED,
@@ -254,7 +254,7 @@ class TestTripartiteAirGapValidation:
         """Verify classification of paths into Domain A, B, and C tiers."""
         scratch_path = Path("/workspace/scratch/run_01/spectra.zarr")
         sealed_path = Path("/workspace/artifacts/snapshots/run_01.h5")
-        core_path = Path("/workspace/core_engine/cochem_spycfit.py")
+        core_path = Path("/workspace/core_engine/cochem_spyfy.py")
 
         assert classify_airgap_tier(scratch_path) == AIRGAP_TIER_B_SCRATCH
         assert classify_airgap_tier(sealed_path) == AIRGAP_TIER_C_SEALED
@@ -336,8 +336,8 @@ class TestExportParity:
 
     def test_dual_tree_exports(self) -> None:
         """Verify identical exports between src and root core_engine module."""
-        import cochem_spycfit.core_engine.cochem_os_adapter as root_adapter
-        import src.cochem_spycfit.core_engine.cochem_os_adapter as src_adapter
+        import cochem_spyfy.core_engine.cochem_os_adapter as root_adapter
+        import src.cochem_spyfy.core_engine.cochem_os_adapter as src_adapter
 
         root_all = set(root_adapter.__all__)
         src_all = set(src_adapter.__all__)

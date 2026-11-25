@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Unit and Integration Test Suite for Polyad Resonance Matrix Engine.
+CoChem-SPYFY: Unit and Integration Test Suite for Polyad Resonance Matrix Engine.
 
 Strict Anti-Spoofing & Method Matrix Compliance:
 - Zero pass statements
@@ -26,11 +26,11 @@ import mendeleev
 import numpy as np
 import pytest
 
-from cochem_spycfit.physics_core.cochem_jax_builder import (
+from cochem_spyfy.physics_core.cochem_jax_builder import (
     WatsonConstants,
     construct_watson_a_matrix_jax,
 )
-from cochem_spycfit.physics_core.cochem_jax_coupling import (
+from cochem_spyfy.physics_core.cochem_jax_coupling import (
     CM1_TO_MHZ,
     MHZ_TO_CM1,
     CoriolisCouplingParam,
@@ -56,7 +56,7 @@ from cochem_spycfit.physics_core.cochem_jax_coupling import (
     extract_pytree_dlpack,
     import_pytree_dlpack,
 )
-from cochem_spycfit.physics_core.cochem_quantum_extractor import (
+from cochem_spyfy.physics_core.cochem_quantum_extractor import (
     ResonanceMatch,
     ResonanceReport,
 )
@@ -718,7 +718,7 @@ def test_mendeleev_dynamic_mass_compliance() -> None:
 
 def test_anti_spoofing_no_pass_and_no_mock() -> None:
     """Static AST check verifying zero pass statements and zero banned tokens in cochem_jax_coupling.py."""
-    module_path = Path(__file__).resolve().parent.parent / "src" / "cochem_spycfit" / "physics_core" / "cochem_jax_coupling.py"
+    module_path = Path(__file__).resolve().parent.parent / "src" / "cochem_spyfy" / "physics_core" / "cochem_jax_coupling.py"
 
     assert module_path.exists(), f"Target module not found at {module_path}"
 
@@ -747,7 +747,7 @@ def test_anti_spoofing_no_pass_and_no_mock() -> None:
 def test_get_type_hints_compliance() -> None:
     """Verifies that typing.get_type_hints succeeds without NameError across all module functions."""
     import typing
-    import cochem_spycfit.physics_core.cochem_jax_coupling as mod
+    import cochem_spyfy.physics_core.cochem_jax_coupling as mod
 
     for name, obj in inspect.getmembers(mod, inspect.isfunction):
         if obj.__module__ == mod.__name__:

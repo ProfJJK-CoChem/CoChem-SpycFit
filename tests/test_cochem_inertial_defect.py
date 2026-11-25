@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pytest
 
-from cochem_spycfit.physics_core.cochem_inertial_defect import (
+from cochem_spyfy.physics_core.cochem_inertial_defect import (
     AMU_ANGSTROM2_TO_MHZ,
     DEFAULT_CONV_FACTOR_MHZ,
     DEFAULT_MIN_PCC_FLOOR,

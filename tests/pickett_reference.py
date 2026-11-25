@@ -48,7 +48,7 @@ def calpgm_dir() -> Path:
     if not value:
         pytest.skip(
             f"{CALPGM_ENV} is not set; skipping JPL HCO reference-deck test "
-            "(live spfit/spcat tests run via test_cochem_spycfit_provider_and_calpgm.py)."
+            "(live spfit/spcat tests run via test_cochem_spyfy_provider_and_calpgm.py)."
         )
     path = Path(value).resolve()
     if not path.is_dir():
@@ -58,7 +58,7 @@ def calpgm_dir() -> Path:
 
 def program(name: str) -> Path:
     """Return the path of the genuine ``spfit`` or ``spcat`` executable."""
-    from cochem_spycfit.serialization.cochem_spycfit_spcat_wrapper import SpfitSandbox
+    from cochem_spyfy.serialization.cochem_spyfy_spcat_wrapper import SpfitSandbox
 
     try:
         return SpfitSandbox._resolve_binary(name)
@@ -66,8 +66,8 @@ def program(name: str) -> Path:
         pytest.skip(f"calpgm {name} executable not installed on this platform: {exc}")
 
 
-def hco_example() -> Dict[str, str]:
-    """Return the text of the pristine JPL HCO example files after checking their hashes."""
+def hco_reference() -> Dict[str, str]:
+    """Return the text of the pristine JPL HCO reference files after checking their hashes."""
     directory = calpgm_dir()
     if not MANIFEST.is_file():
         pytest.skip(f"JPL reference manifest {MANIFEST.name} not present in this checkout")

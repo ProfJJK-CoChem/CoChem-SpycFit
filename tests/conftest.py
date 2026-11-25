@@ -1,4 +1,4 @@
-"""Pytest configuration and environment hygiene for CoChem-SpycFit."""
+"""Pytest configuration and environment hygiene for CoChem-SPYFY."""
 
 from __future__ import annotations
 

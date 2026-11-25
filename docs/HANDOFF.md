@@ -43,7 +43,7 @@ No new scientific suite or live SPCAT/SPFIT comparison was run. No implementatio
 
 Use the existing isolated checkout; do not create a Git worktree unless requested. Preserve unrelated changes.
 
-Inspect current package/import paths and dependencies before installation. This repository contains both root-level and src/cochem_spycfit trees; confirm which implementation each test imports. The earlier cloud setup and retained virtual environment predate the source reorganization and must not be assumed current.
+Inspect current package/import paths and dependencies before installation. This repository contains both root-level and src/cochem_spyfy trees; confirm which implementation each test imports. The earlier cloud setup and retained virtual environment predate the source reorganization and must not be assumed current.
 
 The current pytest.ini defaults to a single provenance/security test file; a bare pytest command is not a complete spectroscopy test run. Name intended targets explicitly and record collection/execution counts. The existing GitHub workflow scans artifact placement; it is not evidence of numerical or scientific acceptance.
 

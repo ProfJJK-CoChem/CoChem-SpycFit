@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Unit and Integration Test Suite for Native JAX Hamiltonian Builder.
+CoChem-SPYFY: Unit and Integration Test Suite for Native JAX Hamiltonian Builder.
 
 Strict Anti-Spoofing & Method Matrix Compliance:
 - Zero pass statements
@@ -26,7 +26,7 @@ import numpy as np
 import pytest
 import scipy.linalg
 
-from cochem_spycfit.physics_core.cochem_jax_builder import (
+from cochem_spyfy.physics_core.cochem_jax_builder import (
     DEFAULT_BUCKET_SIZE,
     DEFAULT_HYSTERESIS_DELTA,
     DEFAULT_LAM_BARRIER_THRESHOLD_CM1,
@@ -494,7 +494,7 @@ def test_mendeleev_dynamic_mass_resolution() -> None:
 
 def test_zero_pass_and_banned_tokens_in_jax_builder() -> None:
     """Verifies that cochem_jax_builder.py contains 0 pass statements and 0 banned tokens."""
-    builder_path = Path(__file__).resolve().parent.parent / "src" / "cochem_spycfit" / "physics_core" / "cochem_jax_builder.py"
+    builder_path = Path(__file__).resolve().parent.parent / "src" / "cochem_spyfy" / "physics_core" / "cochem_jax_builder.py"
     assert builder_path.exists(), f"Source file {builder_path} must physically exist."
 
     source = builder_path.read_text(encoding="utf-8")
@@ -558,20 +558,28 @@ def test_invalid_representation_and_reduction_in_construct_j_block() -> None:
         construct_j_block(constants, J=-5)
 
 
-def test_hpc_environment_detection(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hpc_environment_detection() -> None:
     """Verifies that HPC environment flags are correctly detected."""
-    monkeypatch.setenv("COCHEM_HPC", "1")
-    assert is_hpc_environment()
+    tracked = ("COCHEM_HPC", "COCHEM_USE_MPI4JAX", "SLURM_JOB_ID", "PBS_JOBID", "OMPI_COMM_WORLD_SIZE")
+    saved = {k: os.environ.get(k) for k in tracked}
+    try:
+        os.environ["COCHEM_HPC"] = "1"
+        assert is_hpc_environment()
 
-    monkeypatch.setenv("COCHEM_HPC", "0")
-    monkeypatch.setenv("COCHEM_USE_MPI4JAX", "1")
-    assert is_hpc_environment()
+        os.environ["COCHEM_HPC"] = "0"
+        os.environ["COCHEM_USE_MPI4JAX"] = "1"
+        assert is_hpc_environment()
 
-    monkeypatch.setenv("COCHEM_USE_MPI4JAX", "0")
-    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
-    monkeypatch.delenv("PBS_JOBID", raising=False)
-    monkeypatch.delenv("OMPI_COMM_WORLD_SIZE", raising=False)
-    assert not is_hpc_environment()
+        os.environ["COCHEM_USE_MPI4JAX"] = "0"
+        for k in ("SLURM_JOB_ID", "PBS_JOBID", "OMPI_COMM_WORLD_SIZE"):
+            os.environ.pop(k, None)
+        assert not is_hpc_environment()
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def test_high_j_matrix_construction_and_eigenvalues() -> None:

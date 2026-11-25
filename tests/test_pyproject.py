@@ -1,4 +1,4 @@
-"""Physical unit tests for CoChem-SpycFit pyproject.toml configuration.
+"""Physical unit tests for CoChem-SPYFY pyproject.toml configuration.
 
 Validates:
 - Physical presence of pyproject.toml at repository root.
@@ -27,7 +27,7 @@ PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 EXPECTED_BUILD_SYSTEM_REQUIRES = ["setuptools>=61.0", "wheel"]
 EXPECTED_BUILD_BACKEND = "setuptools.build_meta"
 
-EXPECTED_PROJECT_NAME = "CoChem-SpycFit"
+EXPECTED_PROJECT_NAME = "CoChem-SPYFY"
 EXPECTED_PROJECT_VERSION = "0.1.0"
 EXPECTED_PROJECT_DESCRIPTION = (
     "Tripartite Workspace Air-Gap enabled computational spectroscopy fitter."
@@ -208,11 +208,11 @@ def test_pyproject_optional_dependencies_dev(parsed_pyproject: dict) -> None:
 
 
 def test_pyproject_cochem_modules_entry_point(parsed_pyproject: dict) -> None:
-    """Verify [project.entry-points.'cochem.modules'] registers spycfit."""
+    """Verify [project.entry-points.'cochem.modules'] registers spyfy."""
     entry_points = parsed_pyproject["project"].get("entry-points", {})
     assert "cochem.modules" in entry_points
-    assert entry_points["cochem.modules"].get("spycfit") == (
-        "cochem_spycfit.module_provider:spycfit_provider"
+    assert entry_points["cochem.modules"].get("spyfy") == (
+        "cochem_spyfy.module_provider:spyfy_provider"
     )
 
 

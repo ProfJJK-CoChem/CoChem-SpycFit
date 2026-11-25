@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Comprehensive Physical Unit Test Suite for Macroscopic Spectral Broadener.
+CoChem-SPYFY: Comprehensive Physical Unit Test Suite for Macroscopic Spectral Broadener.
 
 Strict Anti-Spoofing & Method Matrix Compliance:
 - Zero pass statements
@@ -24,7 +24,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from cochem_spycfit.physics_core.cochem_convolver import (
+from cochem_spyfy.physics_core.cochem_convolver import (
     C2_RADIATION_CONST,
     DEFAULT_MAX_VRAM_MB,
     FOUR_LN_2,
@@ -448,7 +448,7 @@ def test_ast_scan_kernels_contain_no_forbidden_python_loops() -> None:
     AST inspection test verifying that micro-batch scan kernels do NOT contain
     Python for/while loops and invoke jax.lax.scan directly.
     """
-    import cochem_spycfit.physics_core.cochem_convolver as conv_module
+    import cochem_spyfy.physics_core.cochem_convolver as conv_module
 
     scan_functions = [
         conv_module.convolve_frequency_chunks_scan_1d_jax,

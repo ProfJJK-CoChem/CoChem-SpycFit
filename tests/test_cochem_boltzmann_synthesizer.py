@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Comprehensive Physical Unit Test Suite for Boltzmann Synthesizer.
+CoChem-SPYFY: Comprehensive Physical Unit Test Suite for Boltzmann Synthesizer.
 
 Strict Anti-Spoofing & Method Matrix Compliance:
 - Zero pass statements
@@ -25,7 +25,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from cochem_spycfit.physics_core.cochem_boltzmann_synthesizer import (
+from cochem_spyfy.physics_core.cochem_boltzmann_synthesizer import (
     BOLTZMANN_CONSTANT_MHZ_K,
     DEFAULT_DELTA_G_CUTOFF_KCAL_MOL,
     DEFAULT_T_CONF_K,
@@ -63,7 +63,7 @@ from cochem_spycfit.physics_core.cochem_boltzmann_synthesizer import (
     synthesize_broadband_from_store,
     synthesize_composite_broadband_spectrum,
 )
-from cochem_spycfit.physics_core.cochem_quantum_extractor import (
+from cochem_spyfy.physics_core.cochem_quantum_extractor import (
     PESStore,
     RotationalConstants,
     compute_rotational_constants_from_coords,

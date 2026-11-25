@@ -2,7 +2,7 @@
 # Copyright 2026 CoChem Project Family. All rights reserved.
 # Apache License 2.0
 """
-PyTest Suite for CoChem-SpycFit Jensen Averager.
+PyTest Suite for CoChem-SPYFY Jensen Averager.
 
 Validates:
 1. Method Matrix §5.1 / §3.0 & WBS Phase 1.1: 1D Intermolecular Stretch Jensen Model.
@@ -24,7 +24,7 @@ import h5py
 import numpy as np
 import pytest
 
-from cochem_spycfit.physics_core.cochem_jensen_averager import (
+from cochem_spyfy.physics_core.cochem_jensen_averager import (
     AMU_ANGSTROM2_TO_MHZ,
     CONV_MHZ_AMU_ANG2,
     EckartAlignmentError,
@@ -172,7 +172,19 @@ def test_3d_polyatomic_ensemble_tensor_averaging_vdw_complex() -> None:
     c1: np.ndarray = np.array([[0.0, 0.0, 0.0]])
     c2: np.ndarray = np.array([[0.0, 0.0, 0.0], [0.0, 1.16, 0.0], [0.0, -1.16, 0.0]])
 
-    ens, total_masses, syms = generate_vdw_stretch_distribution(c1, c2, m1, m2, R0=3.80, sigma_R=0.15, n_snapshots=500, seed=42)
+    ens, total_masses, syms = generate_vdw_stretch_distribution(
+        c1,
+        c2,
+        m1,
+        m2,
+        monomer1_symbols=["Ar"],
+        monomer2_symbols=["C", "O", "O"],
+        R0=3.80,
+        sigma_R=0.15,
+        n_snapshots=500,
+        seed=42,
+    )
+    assert syms == ["Ar", "C", "O", "O"]
     res_3d: Jensen3DResult = average_inverse_inertia_ensemble(ens, total_masses, syms)
 
     # Jensen's inequality: B_correct > B_flawed and C_correct > C_flawed
@@ -180,6 +192,92 @@ def test_3d_polyatomic_ensemble_tensor_averaging_vdw_complex() -> None:
     assert res_3d.bias_C_MHz > 0.0
     assert res_3d.bias_pct_B > 0.1
     assert res_3d.is_valid_jensen is True
+
+
+def test_generate_vdw_stretch_distribution_preserves_non_ar_co2_symbols() -> None:
+    """Verifies non-Ar/CO2 complexes (H2O...HF and NH3...HF) preserve exact element symbols."""
+    # 1. H2O...HF via monomer1_symbols + monomer2_symbols
+    h2o_syms = ["O", "H", "H"]
+    hf_syms = ["H", "F"]
+    h2o_coords = np.array(
+        [[0.0, 0.0, 0.0], [0.757, 0.586, 0.0], [-0.757, 0.586, 0.0]],
+        dtype=np.float64,
+    )
+    hf_coords = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.917]], dtype=np.float64)
+    h2o_masses = resolve_mass_array(h2o_syms)
+    hf_masses = resolve_mass_array(hf_syms)
+
+    ens_h2o_hf, masses_h2o_hf, syms_h2o_hf = generate_vdw_stretch_distribution(
+        h2o_coords,
+        hf_coords,
+        h2o_masses,
+        hf_masses,
+        monomer1_symbols=h2o_syms,
+        monomer2_symbols=hf_syms,
+        R0=2.70,
+        sigma_R=0.10,
+        n_snapshots=200,
+        seed=7,
+    )
+    assert syms_h2o_hf == ["O", "H", "H", "H", "F"]
+    assert ens_h2o_hf.shape == (200, 5, 3)
+    res_h2o_hf = average_inverse_inertia_ensemble(ens_h2o_hf, masses_h2o_hf, syms_h2o_hf)
+    assert res_h2o_hf.is_valid_jensen is True
+
+    # 2. NH3...HF via combined symbols
+    nh3_syms = ["N", "H", "H", "H"]
+    nh3_coords = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [0.94, 0.0, -0.38],
+            [-0.47, 0.814, -0.38],
+            [-0.47, -0.814, -0.38],
+        ],
+        dtype=np.float64,
+    )
+    nh3_masses = resolve_mass_array(nh3_syms)
+    combined_syms = nh3_syms + hf_syms
+
+    ens_nh3_hf, masses_nh3_hf, syms_nh3_hf = generate_vdw_stretch_distribution(
+        nh3_coords,
+        hf_coords,
+        nh3_masses,
+        hf_masses,
+        symbols=combined_syms,
+        R0=2.65,
+        sigma_R=0.10,
+        n_snapshots=200,
+        seed=11,
+    )
+    assert syms_nh3_hf == ["N", "H", "H", "H", "H", "F"]
+    assert ens_nh3_hf.shape == (200, 6, 3)
+    res_nh3_hf = average_inverse_inertia_ensemble(ens_nh3_hf, masses_nh3_hf, syms_nh3_hf)
+    assert res_nh3_hf.is_valid_jensen is True
+
+    # 3. Missing or mismatched symbols must raise ValueError
+    with pytest.raises(ValueError, match="Explicit element symbols are required"):
+        generate_vdw_stretch_distribution(h2o_coords, hf_coords, h2o_masses, hf_masses, n_snapshots=10)
+
+    with pytest.raises(ValueError, match="symbols length"):
+        generate_vdw_stretch_distribution(
+            h2o_coords,
+            hf_coords,
+            h2o_masses,
+            hf_masses,
+            symbols=["O", "H", "H"],
+            n_snapshots=10,
+        )
+
+    with pytest.raises(ValueError, match="monomer1_symbols length"):
+        generate_vdw_stretch_distribution(
+            h2o_coords,
+            hf_coords,
+            h2o_masses,
+            hf_masses,
+            monomer1_symbols=["O", "H"],
+            monomer2_symbols=hf_syms,
+            n_snapshots=10,
+        )
 
 
 def test_compute_vibrationally_averaged_constants_direct_array() -> None:

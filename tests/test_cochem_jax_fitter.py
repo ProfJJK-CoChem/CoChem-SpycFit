@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Unit Test Suite for JAX Autodiff Fitter & High-J Physics Engine.
+CoChem-SPYFY: Unit Test Suite for JAX Autodiff Fitter & High-J Physics Engine.
 
 Strict Anti-Spoofing & Method Matrix Compliance:
 - Zero pass statements
@@ -28,7 +28,7 @@ import h5py
 from pathlib import Path
 import scipy.linalg
 
-from cochem_spycfit.physics_core.cochem_jax_fitter import (
+from cochem_spyfy.physics_core.cochem_jax_fitter import (
     ActivePESRefinementConfig,
     AirGappedTransportSpool,
     BlockDiagonalizationConfig,
@@ -290,7 +290,7 @@ def test_block_diagonalization_chunking_and_vram_capping() -> None:
 
 def test_block_diagonalization_ast_no_python_loops() -> None:
     """AST inspection verifying absolute absence of Python for/while loops in scan routines."""
-    import cochem_spycfit.physics_core.cochem_jax_fitter as fitter_mod
+    import cochem_spyfy.physics_core.cochem_jax_fitter as fitter_mod
 
     source_code = inspect.getsource(fitter_mod)
     tree = ast.parse(source_code)
@@ -671,7 +671,7 @@ def test_levenberg_marquardt_step_huber_loss_noise_robustness() -> None:
 
 def test_cochem_jax_fitter_zero_pass_statements() -> None:
     """Strict AST audit verifying zero pass statements in cochem_jax_fitter.py."""
-    import cochem_spycfit.physics_core.cochem_jax_fitter as fitter_mod
+    import cochem_spyfy.physics_core.cochem_jax_fitter as fitter_mod
 
     source = inspect.getsource(fitter_mod)
     tree = ast.parse(source)

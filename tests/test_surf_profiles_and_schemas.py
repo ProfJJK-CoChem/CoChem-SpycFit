@@ -1,7 +1,7 @@
 """Zero-mock verification suite for SPYC-SURF-01 instrument profiles and SURF schemas.
 
 Verifies:
-1. ``spycfit_provider()`` publishes ``default_instrument_profile == "grulab_surf"``,
+1. ``spyfy_provider()`` publishes ``default_instrument_profile == "grulab_surf"``,
    all registered ``instrument_profiles``, and verified ``surf_compatibility`` metadata.
 2. Frozen ``InstrumentProfile`` registry defaults, secondary profiles, and custom registration.
 3. Exact round-trip parse -> model -> ``.to_surf_toml()`` -> ``tomllib.loads`` of authentic
@@ -29,7 +29,7 @@ import pytest
 from pydantic import ValidationError
 
 from ci_tools.anti_spoof_linter import check_script
-from cochem_spycfit.instruments import (
+from cochem_spyfy.instruments import (
     DEFAULT_INSTRUMENT_PROFILE,
     GENERIC_CP_FTMW_PROFILE,
     GENERIC_IR_RAMAN_PROFILE,
@@ -68,8 +68,8 @@ from cochem_spycfit.instruments import (
     loads_surf_toml,
     register_instrument_profile,
 )
-from cochem_spycfit.instruments.profiles import _INSTRUMENT_PROFILE_REGISTRY
-from cochem_spycfit.module_provider import spycfit_provider
+from cochem_spyfy.instruments.profiles import _INSTRUMENT_PROFILE_REGISTRY
+from cochem_spyfy.module_provider import spyfy_provider
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "surf"
@@ -124,9 +124,9 @@ def _build_valid_scan_settings(
     )
 
 
-def test_spycfit_provider_publishes_grulab_surf_metadata() -> None:
-    """spycfit_provider() publishes grulab_surf default, profile list, and SURF compatibility."""
-    meta = spycfit_provider()
+def test_spyfy_provider_publishes_grulab_surf_metadata() -> None:
+    """spyfy_provider() publishes grulab_surf default, profile list, and SURF compatibility."""
+    meta = spyfy_provider()
     encoded = json.dumps(meta, allow_nan=False)
     assert isinstance(encoded, str) and len(encoded) > 0
 
@@ -575,10 +575,10 @@ def test_cavity_search_override_and_manifest_strict_json() -> None:
 def test_owned_files_utf8_lf_zero_pass_and_anti_spoof_clean() -> None:
     """Verify strict UTF-8 LF, zero pass statements, and strict anti-spoof lint on all owned files."""
     owned_python_files = [
-        REPO_ROOT / "src" / "cochem_spycfit" / "instruments" / "__init__.py",
-        REPO_ROOT / "src" / "cochem_spycfit" / "instruments" / "profiles.py",
-        REPO_ROOT / "src" / "cochem_spycfit" / "instruments" / "surf_schemas.py",
-        REPO_ROOT / "src" / "cochem_spycfit" / "module_provider.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "instruments" / "__init__.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "instruments" / "profiles.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "instruments" / "surf_schemas.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "module_provider.py",
         Path(__file__).resolve(),
     ]
     owned_toml_files = [

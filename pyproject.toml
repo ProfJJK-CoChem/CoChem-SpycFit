@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "CoChem-SpycFit"
+name = "CoChem-SPYFY"
 version = "0.1.0"
 description = "Tripartite Workspace Air-Gap enabled computational spectroscopy fitter."
 authors = [{name = "CoChem Swarm"}]
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.entry-points."cochem.modules"]
-spycfit = "cochem_spycfit.module_provider:spycfit_provider"
+spyfy = "cochem_spyfy.module_provider:spyfy_provider"
 
 [project.optional-dependencies]
 dev = ["pytest", "flake8"]
@@ -30,4 +30,4 @@ gpu = ["cupy-cuda12x"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["cochem_spycfit*"]
+include = ["cochem_spyfy*"]

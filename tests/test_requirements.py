@@ -1,4 +1,4 @@
-"""Physical unit tests for CoChem-SpycFit requirements.txt dependency specification.
+"""Physical unit tests for CoChem-SPYFY requirements.txt dependency specification.
 
 Validates:
 - Physical presence of requirements.txt at repository root.

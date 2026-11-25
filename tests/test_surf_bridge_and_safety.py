@@ -30,7 +30,7 @@ import pytest
 from pydantic import ValidationError
 
 from ci_tools.anti_spoof_linter import check_script
-from cochem_spycfit.instruments.surf_bridge_client import (
+from cochem_spyfy.instruments.surf_bridge_client import (
     BRIDGE_PROTOCOL_VERSION,
     RegionRunStatus,
     SurfControllerRuntimeState,
@@ -40,7 +40,7 @@ from cochem_spycfit.instruments.surf_bridge_client import (
     read_bridge_discovery_file,
     write_bridge_discovery_file,
 )
-from cochem_spycfit.instruments.surf_safety import (
+from cochem_spyfy.instruments.surf_safety import (
     REQUIRED_CLEANUP_SEQUENCE,
     BridgeSecurityError,
     DeadManHeartbeatMonitor,
@@ -53,7 +53,7 @@ from cochem_spycfit.instruments.surf_safety import (
     validate_loopback_host,
     validate_surf_hardware_envelope,
 )
-from cochem_spycfit.instruments.surf_schemas import (
+from cochem_spyfy.instruments.surf_schemas import (
     DigitizerSettings,
     ExperimentSettings,
     OutputSettings,
@@ -67,8 +67,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "surf" / "default_config.toml"
 
 OWNED_PYTHON_FILES = (
-    REPO_ROOT / "src" / "cochem_spycfit" / "instruments" / "surf_safety.py",
-    REPO_ROOT / "src" / "cochem_spycfit" / "instruments" / "surf_bridge_client.py",
+    REPO_ROOT / "src" / "cochem_spyfy" / "instruments" / "surf_safety.py",
+    REPO_ROOT / "src" / "cochem_spyfy" / "instruments" / "surf_bridge_client.py",
     REPO_ROOT / "tests" / "test_surf_bridge_and_safety.py",
 )
 OWNED_DOC_FILE = REPO_ROOT / "docs" / "SURF_UPSTREAM_BRIDGE_PR_SPEC.md"

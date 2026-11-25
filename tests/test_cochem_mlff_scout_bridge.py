@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Comprehensive Unit & Integration Test Suite for MLFF Scout-to-GVPT2 Bridge.
+CoChem-SPYFY: Comprehensive Unit & Integration Test Suite for MLFF Scout-to-GVPT2 Bridge.
 
 Validates Method Matrix §8A.2, §8A.3, §8A.5, §9B.4, §10, and WBS Phase 1.3:
 1. Dynamic isotopic mass resolution via mendeleev.
@@ -28,7 +28,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pytest
 
-from cochem_spycfit.physics_core.cochem_mlff_scout_bridge import (
+from cochem_spyfy.physics_core.cochem_mlff_scout_bridge import (
     AMU_ANGSTROM2_TO_MHZ,
     AuditRecord,
     AuthorityLevel,

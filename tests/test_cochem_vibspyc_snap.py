@@ -31,7 +31,7 @@ import pytest
 import zstandard
 from pydantic import ValidationError
 
-from cochem_spycfit.interfaces.cochem_vibspyc_snap import (
+from cochem_spyfy.interfaces.cochem_vibspyc_snap import (
     FitProvenancePayload,
     evaluate_compression_strategy,
     export_spycfit_snapshot,

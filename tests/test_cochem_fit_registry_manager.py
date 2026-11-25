@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit Physical Unit & Concurrency Test Suite: Fit Registry Manager & Zarr Persistence.
+CoChem-SPYFY Physical Unit & Concurrency Test Suite: Fit Registry Manager & Zarr Persistence.
 
 Strictly adheres to Zero-Mock mandate.
 Validates:
@@ -36,7 +36,7 @@ import pytest
 import zarr
 from pydantic import ValidationError
 
-from cochem_spycfit.core_engine.cochem_fit_registry_manager import (
+from cochem_spyfy.core_engine.cochem_fit_registry_manager import (
     DEFAULT_CHUNK_SIZE,
     DEFAULT_LOCAL_LOCK_TIMEOUT,
     DEFAULT_LUSTRE_LOCK_TIMEOUT,
