@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Comprehensive Physical Unit Test Suite for Legacy Fortran Translator & Pickett Bridge.
+CoChem-SPYFY: Comprehensive Physical Unit Test Suite for Legacy Fortran Translator & Pickett Bridge.
 
 Strict Zero-Mock & Method Matrix Compliance:
 - Zero pass statements
@@ -34,7 +34,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from cochem_spycfit.serialization.cochem_spcat_bridge import (
+from cochem_spyfy.serialization.cochem_spcat_bridge import (
     FortranBinaryNotFoundError,
     FortranBridgeDispatcher,
     FortranBridgeError,
@@ -492,10 +492,10 @@ class TestDeploymentAndScratchContext:
             os.environ["COCHEM_BIN_DIR"] = str(custom_bin)
 
             # Create an executable script in deployment dir
-            sample_bin = custom_bin / ("spcat.exe" if platform.system().lower() == "windows" else "spcat")
-            sample_bin.write_text("#!/bin/sh\necho 'SPCAT'", encoding="utf-8")
+            custom_exe = custom_bin / ("spcat.exe" if platform.system().lower() == "windows" else "spcat")
+            custom_exe.write_text("#!/bin/sh\necho 'SPCAT'", encoding="utf-8")
             if platform.system().lower() != "windows":
-                sample_bin.chmod(0o755)
+                custom_exe.chmod(0o755)
 
             found = resolve_fortran_binary("spcat")
             assert found is not None
@@ -551,8 +551,8 @@ class TestProcessIsolationAndTelemetry:
         assert is_segfault_exit_code(2) is False
 
     def test_capture_hex_telemetry(self) -> None:
-        sample_bytes = b"SPCAT SEGFAULT TRACE DATA 2026"
-        hex_trace = capture_hex_telemetry(sample_bytes, max_bytes=10)
+        trace_bytes = b"SPCAT SEGFAULT TRACE DATA 2026"
+        hex_trace = capture_hex_telemetry(trace_bytes, max_bytes=10)
         assert isinstance(hex_trace, str)
         assert len(hex_trace.split()) == 10
         assert capture_hex_telemetry(b"") == ""
@@ -719,12 +719,12 @@ class TestFortranTaskQueueAndDispatcher:
 # 11. AST & ZERO-MOCK COMPLIANCE STATIC ANALYSIS
 # =============================================================================
 
-class TestZeroMockASTCompliance:
+class TestZeroDoubleASTCompliance:
     """Enforces zero pass statements and zero banned tokens across the codebase."""
 
     def test_cochem_spcat_bridge_ast_compliance(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
-        module_path = repo_root / "src" / "cochem_spycfit" / "serialization" / "cochem_spcat_bridge.py"
+        module_path = repo_root / "src" / "cochem_spyfy" / "serialization" / "cochem_spcat_bridge.py"
         assert module_path.is_file()
 
         source = module_path.read_text(encoding="utf-8")
@@ -753,7 +753,7 @@ class TestZeroMockASTCompliance:
 
     def test_no_banned_tokens_in_production_code(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent
-        module_path = repo_root / "src" / "cochem_spycfit" / "serialization" / "cochem_spcat_bridge.py"
+        module_path = repo_root / "src" / "cochem_spyfy" / "serialization" / "cochem_spcat_bridge.py"
         source = module_path.read_text(encoding="utf-8")
         tree = ast.parse(source)
 

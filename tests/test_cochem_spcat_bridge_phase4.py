@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Comprehensive Phase 4 Physical Unit Test Suite for Pickett SPCAT Bridge.
+CoChem-SPYFY: Comprehensive Phase 4 Physical Unit Test Suite for Pickett SPCAT Bridge.
 
 Strict Directives Enforced:
 1. Zero-Mock Physical Mandate: 100% authentic physical execution, zero pass statements,
@@ -31,7 +31,7 @@ from typing import Any, Dict, Generator, List
 import numpy as np
 import pytest
 
-from cochem_spycfit.serialization.cochem_spcat_bridge import (
+from cochem_spyfy.serialization.cochem_spcat_bridge import (
     FortranBinaryNotFoundError,
     FortranBridgeDispatcher,
     FortranExecutionError,
@@ -59,7 +59,7 @@ from cochem_spycfit.serialization.cochem_spcat_bridge import (
     write_spycfit_telemetry,
 )
 
-logger = logging.getLogger("CoChem-SpycFit.TestPhase4")
+logger = logging.getLogger("CoChem-SPYFY.TestPhase4")
 
 
 # =============================================================================
@@ -420,9 +420,9 @@ class TestExecuteSpcatSafelyPhase4:
     @pytest.mark.calpgm
     def test_execute_spcat_safely_genuine_spcat(self, phase4_workspace: Path) -> None:
         """Genuine SPCAT through the same entry point predicts transitions on a real Pickett deck."""
-        from cochem_spycfit.serialization.cochem_spycfit_pickett_output import parse_spcat_cat
+        from cochem_spyfy.serialization.cochem_spyfy_pickett_output import parse_spcat_cat
         from pickett_reference import program
-        from test_cochem_spycfit_provider_and_calpgm import FA_DME_INT, FA_DME_PAR
+        from test_cochem_spyfy_provider_and_calpgm import FA_DME_INT, FA_DME_PAR
 
         result = execute_spcat_safely(
             executable_path=str(program("spcat")),
@@ -545,7 +545,7 @@ class TestAstStaticAnalysisPhase4:
     """Validates AST structure: zero pass statements and zero banned mock imports."""
 
     def test_zero_pass_statements_in_bridge(self) -> None:
-        import cochem_spycfit.serialization.cochem_spcat_bridge as bridge_mod
+        import cochem_spyfy.serialization.cochem_spcat_bridge as bridge_mod
         bridge_src = Path(bridge_mod.__file__).read_text(encoding="utf-8")
         tree = ast.parse(bridge_src)
         pass_nodes = [node for node in ast.walk(tree) if isinstance(node, ast.Pass)]
@@ -557,8 +557,8 @@ class TestAstStaticAnalysisPhase4:
         pass_nodes = [node for node in ast.walk(tree) if isinstance(node, ast.Pass)]
         assert len(pass_nodes) == 0, f"Found {len(pass_nodes)} forbidden pass statements in test suite"
 
-    def test_zero_banned_mock_imports(self) -> None:
-        import cochem_spycfit.serialization.cochem_spcat_bridge as bridge_mod
+    def test_zero_banned_double_imports(self) -> None:
+        import cochem_spyfy.serialization.cochem_spcat_bridge as bridge_mod
         bridge_tree = ast.parse(Path(bridge_mod.__file__).read_text(encoding="utf-8"))
         test_tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
 

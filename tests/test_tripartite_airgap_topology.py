@@ -10,11 +10,11 @@ Provenance & Specifications:
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
 import tempfile
+import threading
 import time
 from typing import Generator, List
 
@@ -245,20 +245,31 @@ def test_swmr_concurrent_readers_and_writer(sandbox_partitions: AirGapArbiter) -
                 time.sleep(0.02)
         return read_count
 
-    # Execute concurrent writer and readers using real thread pool
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        reader_futures = [executor.submit(reader_worker, i) for i in range(3)]
+    # Execute concurrent writer and readers using real threads
+    # HDF5 SWMR requires the writer handle to be active before concurrent SWMR readers attach.
+    reader_counts: List[int] = [0, 0, 0]
+    reader_errors: List[BaseException] = []
 
-        # Concurrent writer appends chunks
-        with storage.open_writer(h5_path, mode="a") as writer:
-            for chunk_idx in range(3):
-                time.sleep(0.01)
-                chunk_data = np.ones((5, 4), dtype=np.float64) * (chunk_idx + 2.0)
-                writer.append_chunk("spectrum_data", chunk_data)
-                writer.flush()
+    def _run_reader(idx: int) -> None:
+        try:
+            reader_counts[idx] = reader_worker(idx)
+        except BaseException as exc:
+            reader_errors.append(exc)
 
-        for future in reader_futures:
-            assert future.result() == 5
+    reader_threads = [threading.Thread(target=_run_reader, args=(i,)) for i in range(3)]
+    with storage.open_writer(h5_path, mode="a") as writer:
+        for t in reader_threads:
+            t.start()
+        for chunk_idx in range(3):
+            time.sleep(0.01)
+            chunk_data = np.ones((5, 4), dtype=np.float64) * (chunk_idx + 2.0)
+            writer.append_chunk("spectrum_data", chunk_data)
+            writer.flush()
+        for t in reader_threads:
+            t.join()
+
+    assert not reader_errors, f"Reader thread error: {reader_errors}"
+    assert all(cnt == 5 for cnt in reader_counts)
 
     # Final reader verification
     with storage.open_reader(h5_path) as reader:

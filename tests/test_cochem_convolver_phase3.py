@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Comprehensive Phase 3 Physical Unit Test Suite for Macroscopic Spectral Broadener.
+CoChem-SPYFY: Comprehensive Phase 3 Physical Unit Test Suite for Macroscopic Spectral Broadener.
 
 Strict Anti-Spoofing & Method Matrix Compliance:
 - Zero pass statements
@@ -27,7 +27,7 @@ import numpy as np
 import pytest
 import scipy.special as scipy_sp
 
-from cochem_spycfit.physics_core.cochem_convolver import (
+from cochem_spyfy.physics_core.cochem_convolver import (
     C2_RADIATION_CONST,
     DEFAULT_MAX_VRAM_MB,
     FOUR_LN_2,
@@ -459,7 +459,7 @@ def test_ast_loop_free_compliance() -> None:
     AST structural verification ensuring that JAX kernels use pure vectorization and jax.lax.scan,
     with ZERO Python for/while loops in performance-critical paths.
     """
-    from cochem_spycfit.physics_core import cochem_convolver
+    from cochem_spyfy.physics_core import cochem_convolver
 
     source_code = inspect.getsource(cochem_convolver)
     tree = ast.parse(source_code)
@@ -495,7 +495,7 @@ def test_zero_pass_and_ast_integrity_mandate() -> None:
     Authenticity and zero-pass mandate audit:
     Verifies that cochem_convolver contains zero pass statements and maintains pure functional structure.
     """
-    from cochem_spycfit.physics_core import cochem_convolver
+    from cochem_spyfy.physics_core import cochem_convolver
 
     source_code = inspect.getsource(cochem_convolver)
     tree = ast.parse(source_code)

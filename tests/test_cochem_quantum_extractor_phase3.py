@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Comprehensive Phase 3 Unit Test Suite.
+CoChem-SPYFY: Comprehensive Phase 3 Unit Test Suite.
 
 Method Matrix & Zero-Trust Compliance:
 - Zero pass statements
@@ -25,7 +25,7 @@ import numpy as np
 import pytest
 import zarr
 
-from cochem_spycfit.physics_core.cochem_quantum_extractor import (
+from cochem_spyfy.physics_core.cochem_quantum_extractor import (
     AMU_ANGSTROM2_TO_MHZ,
     HARTREE_BOHR2_AMU_TO_CM1,
     MASS_DICT,
@@ -156,7 +156,7 @@ def test_get_monoisotopic_mass_by_atomic_number() -> None:
         get_monoisotopic_mass(999)
 
 
-def test_get_monoisotopic_mass_from_cochem_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_monoisotopic_mass_from_cochem_data_dir(tmp_path: Path) -> None:
     """Verifies custom isotope database retrieval from $COCHEM_DATA_DIR/Databases/masses.json."""
     db_dir = tmp_path / "Databases"
     db_dir.mkdir(parents=True, exist_ok=True)
@@ -168,10 +168,16 @@ def test_get_monoisotopic_mass_from_cochem_data_dir(tmp_path: Path, monkeypatch:
     }
     masses_json.write_text(json.dumps(custom_masses), encoding="utf-8")
 
-    monkeypatch.setenv("COCHEM_DATA_DIR", str(tmp_path))
-
-    retrieved_x = get_monoisotopic_mass("CustomX", data_dir=tmp_path)
-    assert retrieved_x == pytest.approx(123.456789, abs=1e-6)
+    prev = os.environ.get("COCHEM_DATA_DIR")
+    try:
+        os.environ["COCHEM_DATA_DIR"] = str(tmp_path)
+        retrieved_x = get_monoisotopic_mass("CustomX", data_dir=tmp_path)
+        assert retrieved_x == pytest.approx(123.456789, abs=1e-6)
+    finally:
+        if prev is None:
+            os.environ.pop("COCHEM_DATA_DIR", None)
+        else:
+            os.environ["COCHEM_DATA_DIR"] = prev
 
 
 # =============================================================================
@@ -519,8 +525,8 @@ def test_static_code_inspection_phase3_mandate() -> None:
     3. Zero synthetic linspace/sin generator calls.
     """
     target_files = [
-        REPO_ROOT / "src" / "cochem_spycfit" / "physics_core" / "cochem_quantum_extractor.py",
-        REPO_ROOT / "src" / "cochem_spycfit" / "physics_core" / "__init__.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "physics_core" / "cochem_quantum_extractor.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "physics_core" / "__init__.py",
         Path(__file__).resolve(),
     ]
 

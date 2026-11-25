@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Unit Test Suite for Automated AUTOFIT Triples Pattern Matching Engine.
+CoChem-SPYFY: Unit Test Suite for Automated AUTOFIT Triples Pattern Matching Engine.
 
 Strict Anti-Spoofing & Method Matrix Compliance:
 - Zero pass statements
@@ -21,7 +21,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from cochem_spycfit.physics_core.cochem_autofit_engine import (
+from cochem_spyfy.physics_core.cochem_autofit_engine import (
     AMU_ANGSTROM2_TO_MHZ,
     AssignedTransition,
     AutofitCandidateResult,
@@ -352,7 +352,7 @@ def test_execute_autofit_search_and_throughput() -> None:
 
     # Format and verify markdown report
     report = format_autofit_report(result)
-    assert "CoChem-SpycFit: AUTOFIT Triples Search Report" in report
+    assert "CoChem-SPYFY: AUTOFIT Triples Search Report" in report
     assert "Throughput Rate:" in report
     assert "Fitted Rotational Constants:" in report
 

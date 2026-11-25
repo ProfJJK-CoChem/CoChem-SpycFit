@@ -1,6 +1,6 @@
 """Full closed-loop end-to-end verification suite for SPYC-SURF-05.
 
-Exercises the complete CoChem-SpycFit <-> GruLabRotSpec/SURF workflow with zero
+Exercises the complete CoChem-SPYFY <-> GruLabRotSpec/SURF workflow with zero
 synthetic shortcuts:
 1. Cycle 1 -> GP residual learning -> SURF-aware SmartScanNavigator &
    SurfScanPlanner -> HITL SurfParameterOverrideTable -> SurfExporter TOMLs
@@ -41,14 +41,14 @@ import pandas as pd
 import pytest
 
 from ci_tools.anti_spoof_linter import check_script
-import cochem_spycfit.instruments as surf_instruments
-from cochem_spycfit.core_engine.cochem_fit_registry_manager import (
+import cochem_spyfy.instruments as surf_instruments
+from cochem_spyfy.core_engine.cochem_fit_registry_manager import (
     FitRegistryManager,
     FitRegistryState,
     compute_file_sha256 as registry_compute_file_sha256,
 )
-from cochem_spycfit.core_engine.cochem_spycfit_state import CommitManager
-from cochem_spycfit.instruments import (
+from cochem_spyfy.core_engine.cochem_spyfy_state import CommitManager
+from cochem_spyfy.instruments import (
     DEFAULT_INSTRUMENT_PROFILE,
     GRULAB_SURF_PROFILE,
     SafetyInterlockError,
@@ -69,32 +69,32 @@ from cochem_spycfit.instruments import (
     expected_doppler_splitting_mhz,
     get_instrument_profile,
 )
-from cochem_spycfit.interfaces.cochem_spycfit_ui import (
+from cochem_spyfy.interfaces.cochem_spyfy_ui import (
     AssignmentStatus,
     BipartiteConfig,
     HITLApprovalError,
     HITLAssignmentManager,
     SpectralPeak,
 )
-from cochem_spycfit.module_provider import (
+from cochem_spyfy.module_provider import (
     execute_handoff,
     ingest_surf_run,
     plan_surf_scan,
-    spycfit_provider,
+    spyfy_provider,
 )
-from cochem_spycfit.physics_core.cochem_assign_ml import (
+from cochem_spyfy.physics_core.cochem_assign_ml import (
     InformationCriterion,
     calculate_information_gain,
 )
-from cochem_spycfit.physics_core.cochem_spycfit_features import QuantumFeatureExtractor
-from cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
+from cochem_spyfy.physics_core.cochem_spyfy_features import QuantumFeatureExtractor
+from cochem_spyfy.physics_core.cochem_spyfy_ml_core import (
     ProvenanceTag,
     SpycFitGPRegressor,
 )
-from cochem_spycfit.physics_core.cochem_spycfit_navigator import SmartScanNavigator
-from cochem_spycfit.physics_core.cochem_spycfit_resolvability import ResolvabilityFilter
-from cochem_spycfit.serialization.cochem_spycfit_pickett_output import parse_spcat_cat
-from cochem_spycfit.serialization.cochem_spycfit_spcat_wrapper import SpfitSandbox
+from cochem_spyfy.physics_core.cochem_spyfy_navigator import SmartScanNavigator
+from cochem_spyfy.physics_core.cochem_spyfy_resolvability import ResolvabilityFilter
+from cochem_spyfy.serialization.cochem_spyfy_pickett_output import parse_spcat_cat
+from cochem_spyfy.serialization.cochem_spyfy_spcat_wrapper import SpfitSandbox
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_RUN_DIR = REPO_ROOT / "tests" / "fixtures" / "surf" / "sample_run_0"
@@ -828,8 +828,8 @@ def test_full_surf_closed_loop_cycle1_to_cycle2_e2e(tmp_path: Path) -> None:
 
 
 def test_module_provider_surf_operations_direct_and_handoff(tmp_path: Path) -> None:
-    """Exercise plan_surf_scan and ingest_surf_run through spycfit_provider() and execute_handoff()."""
-    meta = spycfit_provider()
+    """Exercise plan_surf_scan and ingest_surf_run through spyfy_provider() and execute_handoff()."""
+    meta = spyfy_provider()
     encoded = json.dumps(meta, allow_nan=False)
     assert isinstance(encoded, str) and len(encoded) > 0
 
@@ -845,7 +845,7 @@ def test_module_provider_surf_operations_direct_and_handoff(tmp_path: Path) -> N
         assert entry["available"] is True
         assert entry["required_engines"] == []
         assert entry["supported_engines"] == []
-        assert entry["handler"] == f"cochem_spycfit.module_provider:{surf_op}"
+        assert entry["handler"] == f"cochem_spyfy.module_provider:{surf_op}"
         assert isinstance(entry["scope"], str) and len(entry["scope"]) > 10
 
     # Direct call: plan_surf_scan with ML predictions + operator overrides
@@ -939,10 +939,10 @@ def test_module_provider_surf_operations_direct_and_handoff(tmp_path: Path) -> N
         "schema_version": "cochem.module-handoff/1",
         "handoff_id": "surf-plan-handoff-001",
         "created_at": "2026-11-24T13:50:00Z",
-        "module_id": "spycfit",
+        "module_id": "spyfy",
         "operation": "plan_surf_scan",
         "status": "pending_integration",
-        "capability": {"module_id": "spycfit", "execution_verified": False},
+        "capability": {"module_id": "spyfy", "execution_verified": False},
         "artifact": {
             "kind": "surf_plan_request",
             "filename": "plan_request.json",
@@ -983,10 +983,10 @@ def test_module_provider_surf_operations_direct_and_handoff(tmp_path: Path) -> N
         "schema_version": "cochem.module-handoff/1",
         "handoff_id": "surf-ingest-handoff-001",
         "created_at": "2026-11-24T13:51:00Z",
-        "module_id": "spycfit",
+        "module_id": "spyfy",
         "operation": "ingest_surf_run",
         "status": "pending_integration",
-        "capability": {"module_id": "spycfit", "execution_verified": False},
+        "capability": {"module_id": "spyfy", "execution_verified": False},
         "artifact": {
             "kind": "surf_ingest_request",
             "filename": "ingest_request.json",
@@ -1151,7 +1151,7 @@ def test_real_calpgm_spfit_spcat_to_grulab_surf_exporter(tmp_path: Path) -> None
 
 
 def test_instruments_public_api_completeness_and_clean_import() -> None:
-    """Verify cochem_spycfit.instruments re-exports all 8 submodules cleanly with zero circular imports."""
+    """Verify cochem_spyfy.instruments re-exports all 8 submodules cleanly with zero circular imports."""
     submodule_names = (
         "profiles",
         "surf_schemas",
@@ -1164,7 +1164,7 @@ def test_instruments_public_api_completeness_and_clean_import() -> None:
     )
     expected_symbols = set()
     for mod_name in submodule_names:
-        submod = importlib.import_module(f"cochem_spycfit.instruments.{mod_name}")
+        submod = importlib.import_module(f"cochem_spyfy.instruments.{mod_name}")
         for symbol in submod.__all__:
             expected_symbols.add(symbol)
             assert hasattr(surf_instruments, symbol), f"Missing re-export {symbol!r} from {mod_name}"
@@ -1177,7 +1177,7 @@ def test_instruments_public_api_completeness_and_clean_import() -> None:
     # Verify clean isolated subprocess import with src/ on sys.path (zero circular loops)
     script = (
         "import sys; sys.path.insert(0, 'src'); "
-        "import cochem_spycfit.instruments as inst; "
+        "import cochem_spyfy.instruments as inst; "
         "assert inst.DEFAULT_INSTRUMENT_PROFILE == 'grulab_surf'; "
         "assert len(inst.__all__) >= 120; "
         "print('SURF_INSTRUMENTS_IMPORT_OK')"
@@ -1197,13 +1197,13 @@ def test_instruments_public_api_completeness_and_clean_import() -> None:
 
 def test_surf_suite_ast_lf_anti_spoof_and_airgap_invariants() -> None:
     """Verify all instruments/*.py, module_provider.py, e2e test, and pytest.ini pass strict invariants."""
-    instruments_dir = REPO_ROOT / "src" / "cochem_spycfit" / "instruments"
+    instruments_dir = REPO_ROOT / "src" / "cochem_spyfy" / "instruments"
     instrument_py_files = sorted(instruments_dir.glob("*.py"))
     assert len(instrument_py_files) == 9  # __init__.py + 8 SURF modules
 
     py_targets = [
         *instrument_py_files,
-        REPO_ROOT / "src" / "cochem_spycfit" / "module_provider.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "module_provider.py",
         Path(__file__).resolve(),
     ]
     text_targets = [*py_targets, REPO_ROOT / "pytest.ini"]

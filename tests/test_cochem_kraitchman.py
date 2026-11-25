@@ -23,7 +23,7 @@ import pytest
 import jax
 import jax.numpy as jnp
 
-from cochem_spycfit.physics_core.cochem_kraitchman import (
+from cochem_spyfy.physics_core.cochem_kraitchman import (
     AMU_ANGSTROM2_TO_MHZ,
     CONV_MHZ_AMU_ANG2,
     CODATA_CONV_EXACT,

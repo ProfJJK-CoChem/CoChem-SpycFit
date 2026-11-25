@@ -48,7 +48,7 @@ def test_detect_banned_imports(tmp_path: Path) -> None:
     assert any("dask" in v for v in violations)
 
 
-def test_detect_mock_modules(tmp_path: Path) -> None:
+def test_detect_banned_double_modules(tmp_path: Path) -> None:
     pkg = "".join(["unit", "test", ".", "m", "ock"])
     cls = "".join(["Magic", "M", "ock"])
     bad_script = tmp_path / "bad_double.py"
@@ -57,7 +57,7 @@ def test_detect_mock_modules(tmp_path: Path) -> None:
     assert any(pkg in v or cls in v for v in violations)
 
 
-def test_detect_pass_stub(tmp_path: Path) -> None:
+def test_detect_empty_pass_body(tmp_path: Path) -> None:
     bad_script = tmp_path / "bad_stub.py"
     bad_script.write_text("def solve():\n    pass\n", encoding="utf-8")
     violations = check_script(bad_script, strict_mode=True)

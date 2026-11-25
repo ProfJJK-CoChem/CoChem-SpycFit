@@ -2,7 +2,7 @@ import h5py
 import numpy as np
 from pathlib import Path
 
-FIXTURES_DIR = Path(r"D:\__CoChem\GitHub-Repo\CoChem-SpycFit\tests\fixtures")
+FIXTURES_DIR = Path(r"D:\__CoChem\GitHub-Repo\CoChem-SPYFY\tests\fixtures")
 FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
 
 def generate_landscape():

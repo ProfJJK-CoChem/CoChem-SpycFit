@@ -1,7 +1,7 @@
-"""CoChem-SpycFit CI Tools Package (ci_tools/__init__.py).
+"""CoChem-SPYFY CI Tools Package (ci_tools/__init__.py).
 
 Continuous integration, air-gap enforcement, anti-spoofing verification,
-and zero-trust quarantine runner utilities for CoChem-SpycFit pipelines
+and zero-trust quarantine runner utilities for CoChem-SPYFY pipelines
 across Windows, Linux, and macOS platforms.
 
 Complies with Method Matrix v4 and CoChem Anti-Spoofing Protocol v2.

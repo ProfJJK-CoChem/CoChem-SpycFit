@@ -12,7 +12,7 @@ Covers:
 5. Coaxial Fabry-Perot Doppler doublet peak picker across Ne, Ar, He, N2 carrier gases:
    paired doublet midpoint + raw components, uncollapsed singlets and overlapping blends,
    and strict HITL AssignmentStatus.PROPOSED enforcement (never auto-APPROVED).
-6. Auto-detection of SURF FFT CSVs in cochem_spycfit_ingest without regressing assigned CSVs.
+6. Auto-detection of SURF FFT CSVs in cochem_spyfy_ingest without regressing assigned CSVs.
 7. Live SURF spectrum overlay & cavity-track health telemetry in SpectralViewport.
 8. Strict UTF-8 LF, zero-pass, zero-mock, and fixture air-gap invariants.
 """
@@ -39,7 +39,7 @@ SPYCFIT_SRC = SPYCFIT_ROOT / "src"
 if str(SPYCFIT_SRC) not in sys.path:
     sys.path.insert(0, str(SPYCFIT_SRC))
 
-from cochem_spycfit.instruments.surf_ingest import (
+from cochem_spyfy.instruments.surf_ingest import (
     CARRIER_GAS_BEAM_VELOCITIES_M_S,
     SPEED_OF_LIGHT_M_S,
     StepDirection,
@@ -52,20 +52,20 @@ from cochem_spycfit.instruments.surf_ingest import (
     expected_doppler_splitting_mhz,
     pick_surf_doppler_peaks,
 )
-from cochem_spycfit.instruments.surf_schemas import (
+from cochem_spyfy.instruments.surf_schemas import (
     SurfCavitySearchSettings,
     SurfConfig,
     SurfFrequencyScanSettings,
 )
-from cochem_spycfit.instruments.surf_watcher import SurfRunWatcher
-from cochem_spycfit.intake.cochem_spycfit_ingest import (
+from cochem_spyfy.instruments.surf_watcher import SurfRunWatcher
+from cochem_spyfy.intake.cochem_spyfy_ingest import (
     FileFormat,
     is_surf_fft_csv,
     parse_csv_spectroscopy,
     parse_spectroscopy_data,
 )
-from cochem_spycfit.interfaces.cochem_spycfit_ui import AssignmentStatus
-from cochem_spycfit.interfaces.cochem_spycfit_ui_viewport import (
+from cochem_spyfy.interfaces.cochem_spyfy_ui import AssignmentStatus
+from cochem_spyfy.interfaces.cochem_spyfy_ui_viewport import (
     SpectralViewport,
     ViewportError,
 )
@@ -691,7 +691,7 @@ def test_doppler_picker_preserves_blends_uncollapsed_and_forbids_auto_approval()
 
 
 def test_ingest_auto_detects_surf_csv_without_breaking_assigned_csv(tmp_path: Path) -> None:
-    """Verify cochem_spycfit_ingest auto-dispatches SURF FFT CSVs while keeping assigned CSVs intact."""
+    """Verify cochem_spyfy_ingest auto-dispatches SURF FFT CSVs while keeping assigned CSVs intact."""
     step_csv = FIXTURE_RUN_DIR / "CavityFiles" / "10899.0.csv"
     finalized_csv = FIXTURE_RUN_DIR / "sample_run.csv"
 
@@ -850,10 +850,10 @@ def test_watcher_resets_stability_gate_when_step_file_still_growing(tmp_path: Pa
 def test_spyc_surf_03_files_lf_zero_pass_ast_integrity() -> None:
     """Verify UTF-8 LF, zero pass statements, and zero banned test-double imports across owned SPYC-SURF-03 files."""
     owned_py_files = [
-        SPYCFIT_SRC / "cochem_spycfit" / "instruments" / "surf_ingest.py",
-        SPYCFIT_SRC / "cochem_spycfit" / "instruments" / "surf_watcher.py",
-        SPYCFIT_SRC / "cochem_spycfit" / "intake" / "cochem_spycfit_ingest.py",
-        SPYCFIT_SRC / "cochem_spycfit" / "interfaces" / "cochem_spycfit_ui_viewport.py",
+        SPYCFIT_SRC / "cochem_spyfy" / "instruments" / "surf_ingest.py",
+        SPYCFIT_SRC / "cochem_spyfy" / "instruments" / "surf_watcher.py",
+        SPYCFIT_SRC / "cochem_spyfy" / "intake" / "cochem_spyfy_ingest.py",
+        SPYCFIT_SRC / "cochem_spyfy" / "interfaces" / "cochem_spyfy_ui_viewport.py",
         Path(__file__).resolve(),
     ]
 

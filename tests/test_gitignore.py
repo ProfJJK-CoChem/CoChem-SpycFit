@@ -1,4 +1,4 @@
-"""Physical unit tests for CoChem-SpycFit .gitignore air-gap configuration.
+"""Physical unit tests for CoChem-SPYFY .gitignore air-gap configuration.
 
 Validates:
 - Physical presence of .gitignore at repository root.
@@ -188,7 +188,7 @@ def _ensure_git_repository(repo_dir: Path) -> None:
         ("deep/nested/execution_lock.lock", True),
         # Standard Python Runtime Exclusions
         ("__pycache__/engine.cpython-311.pyc", True),
-        ("src/cochem_spycfit/__pycache__/module.pyc", True),
+        ("src/cochem_spyfy/__pycache__/module.pyc", True),
         ("engine.pyc", True),
         ("engine.pyo", True),
         ("native.pyd", True),
@@ -203,7 +203,7 @@ def _ensure_git_repository(repo_dir: Path) -> None:
         ("LICENSE", False),
         ("verify_core_integrity.py", False),
         ("ci_tools/anti_spoof_linter.py", False),
-        ("src/cochem_spycfit/__init__.py", False),
+        ("src/cochem_spyfy/__init__.py", False),
         ("tests/test_gitignore.py", False),
     ],
 )

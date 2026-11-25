@@ -2,7 +2,7 @@
 
 **Target Upstream Repository:** `GruLabRotSpec/SURF`  
 **Verified Base Commit:** `0486b877d2a38f5bbe50be3cb333d34e27c7c22d` (`version = "0.1.0"`, MIT License)  
-**Companion Client:** `CoChem-SpycFit` (`src/cochem_spycfit/instruments/surf_bridge_client.py`, `src/cochem_spycfit/instruments/surf_safety.py`)  
+**Companion Client:** `CoChem-SPYFY` (`src/cochem_spyfy/instruments/surf_bridge_client.py`, `src/cochem_spyfy/instruments/surf_safety.py`)  
 **Total Upstream Diff Budget:** ~250 LOC (zero new third-party dependencies; stdlib `asyncio`, `hmac`, `json`, `secrets`, `tomllib` only)  
 **Default Activation State:** **DISABLED by default** — requires explicit `--enable-local-bridge` CLI flag or `[bridge] enabled = true` in `settings.toml`.
 
@@ -316,7 +316,7 @@ Forensic audit of `GruLabRotSpec/SURF@0486b877` uncovered three real defects tha
 
 1. Launching `python -m spectrometer_gui` without `--enable-local-bridge` opens zero listening sockets and creates no `bridge.json`.
 2. Launching with `--enable-local-bridge` binds strictly to `127.0.0.1` on an ephemeral port and writes owner-only `%LOCALAPPDATA%\SURF\bridge.json`.
-3. `CoChem-SpycFit`'s `SurfLocalBridgeClient` passes all loopback integration checks (`tests/test_surf_bridge_and_safety.py`) against the live bridge: auth rejection, bounds rejection, unconfirmed start refusal, two-step confirmed start, pause/resume, live `ScanSignals` stream, dead-man expiration, and immediate unconditional `abort_scan`.
+3. `CoChem-SPYFY`'s `SurfLocalBridgeClient` passes all loopback integration checks (`tests/test_surf_bridge_and_safety.py`) against the live bridge: auth rejection, bounds rejection, unconfirmed start refusal, two-step confirmed start, pause/resume, live `ScanSignals` stream, dead-man expiration, and immediate unconditional `abort_scan`.
 4. `AWGController.initialize()` reports `is_initialized() == True` after successful VISA open.
 5. Clicking `Stop` during `Cavity Map` cleanly breaks `Spectrometer.cavity_search()` and runs `cleanup()`.
 6. Passing `step_size <= 0` raises `ValueError` before any Zaber movement, folder creation, or delay-generator arming.

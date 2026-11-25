@@ -35,20 +35,20 @@ import pytest
 from pydantic import ValidationError
 
 from ci_tools.anti_spoof_linter import check_script
-from cochem_spycfit.core_engine.cochem_spycfit_state import FitState
-from cochem_spycfit.gui import (
+from cochem_spyfy.core_engine.cochem_spyfy_state import FitState
+from cochem_spyfy.gui import (
     HAS_PYSIDE6,
     INSTRUMENT_PROFILE_LABELS,
     SpycFitTab,
     SurfOverridePanelController,
 )
-from cochem_spycfit.instruments.profiles import (
+from cochem_spyfy.instruments.profiles import (
     DEFAULT_INSTRUMENT_PROFILE,
     GRULAB_SURF_PROFILE,
     get_instrument_profile,
 )
-from cochem_spycfit.instruments.surf_exporter import SurfExporter
-from cochem_spycfit.instruments.surf_planner import (
+from cochem_spyfy.instruments.surf_exporter import SurfExporter
+from cochem_spyfy.instruments.surf_planner import (
     SURF_OVERRIDE_FIELD_SPECS,
     SurfCavityMap,
     SurfParameterOverrideTable,
@@ -56,12 +56,12 @@ from cochem_spycfit.instruments.surf_planner import (
     estimate_surf_scan_duration,
     estimate_surf_scan_minutes,
 )
-from cochem_spycfit.instruments.surf_schemas import (
+from cochem_spyfy.instruments.surf_schemas import (
     SurfConfig,
     SurfFrequencyScanSettings,
     SurfScanManifest,
 )
-from cochem_spycfit.interfaces.cochem_spycfit_ui import (
+from cochem_spyfy.interfaces.cochem_spyfy_ui import (
     DashboardConfig,
     HITLAssignmentManager,
     SpectralPeak,
@@ -69,17 +69,17 @@ from cochem_spycfit.interfaces.cochem_spycfit_ui import (
     WhatIfParameterState,
     WhatIfSpectrumEngine,
 )
-from cochem_spycfit.physics_core.cochem_assign_ml import (
+from cochem_spyfy.physics_core.cochem_assign_ml import (
     InformationCriterion,
     calculate_information_gain,
 )
-from cochem_spycfit.physics_core.cochem_spycfit_features import QuantumFeatureExtractor
-from cochem_spycfit.physics_core.cochem_spycfit_ml_core import (
+from cochem_spyfy.physics_core.cochem_spyfy_features import QuantumFeatureExtractor
+from cochem_spyfy.physics_core.cochem_spyfy_ml_core import (
     ProvenanceTag,
     SpycFitGPRegressor,
 )
-from cochem_spycfit.physics_core.cochem_spycfit_navigator import SmartScanNavigator
-from cochem_spycfit.physics_core.cochem_spycfit_resolvability import ResolvabilityFilter
+from cochem_spyfy.physics_core.cochem_spyfy_navigator import SmartScanNavigator
+from cochem_spyfy.physics_core.cochem_spyfy_resolvability import ResolvabilityFilter
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -811,12 +811,12 @@ def test_interactive_dashboard_profile_selector_and_surf_export(tmp_path: Path) 
 def test_spyc_surf_02_owned_files_utf8_lf_zero_pass_and_anti_spoof() -> None:
     """Verify strict UTF-8 LF, zero pass statements, zero mocks, and strict lint cleanliness."""
     owned_files = [
-        REPO_ROOT / "src" / "cochem_spycfit" / "instruments" / "surf_planner.py",
-        REPO_ROOT / "src" / "cochem_spycfit" / "instruments" / "surf_exporter.py",
-        REPO_ROOT / "src" / "cochem_spycfit" / "physics_core" / "cochem_spycfit_navigator.py",
-        REPO_ROOT / "src" / "cochem_spycfit" / "physics_core" / "cochem_spycfit_resolvability.py",
-        REPO_ROOT / "src" / "cochem_spycfit" / "gui.py",
-        REPO_ROOT / "src" / "cochem_spycfit" / "interfaces" / "cochem_spycfit_ui.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "instruments" / "surf_planner.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "instruments" / "surf_exporter.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "physics_core" / "cochem_spyfy_navigator.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "physics_core" / "cochem_spyfy_resolvability.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "gui.py",
+        REPO_ROOT / "src" / "cochem_spyfy" / "interfaces" / "cochem_spyfy_ui.py",
         Path(__file__).resolve(),
     ]
 
@@ -840,6 +840,6 @@ def test_spyc_surf_02_owned_files_utf8_lf_zero_pass_and_anti_spoof() -> None:
                     assert "mock" not in node.module.lower(), f"Prohibited mock import in {py_path}"
 
         # Enforce strict anti-spoof linter on all non-amnesty files
-        if py_path.name != "cochem_spycfit_ui.py":
+        if py_path.name != "cochem_spyfy_ui.py":
             violations = check_script(py_path, strict_mode=True)
             assert violations == [], f"Anti-spoof strict violations in {py_path}: {violations}"

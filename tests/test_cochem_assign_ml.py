@@ -1,5 +1,5 @@
 """
-CoChem-SpycFit: Unit Test Suite for AI Assigner & Active PES Refinement Core.
+CoChem-SPYFY: Unit Test Suite for AI Assigner & Active PES Refinement Core.
 
 Strict Anti-Spoofing & Method Matrix Compliance:
 - Zero pass statements
@@ -23,7 +23,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from cochem_spycfit.physics_core.cochem_assign_ml import (
+from cochem_spyfy.physics_core.cochem_assign_ml import (
     ActivePESHealingConfig,
     AssignMLError,
     DLPNOForbiddenError,
@@ -453,7 +453,7 @@ def test_invalid_covariance_and_jacobian_dimensions() -> None:
 
 def test_cochem_assign_ml_zero_pass_statements() -> None:
     """Strict AST audit verifying zero pass statements in cochem_assign_ml.py and this test file."""
-    import cochem_spycfit.physics_core.cochem_assign_ml as assign_mod
+    import cochem_spyfy.physics_core.cochem_assign_ml as assign_mod
 
     # Audit source module
     source_mod = inspect.getsource(assign_mod)
