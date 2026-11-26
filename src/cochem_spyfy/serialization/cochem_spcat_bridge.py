@@ -739,8 +739,77 @@ def parse_pickett_egy(content_or_path: Union[str, Path, bytes, io.StringIO]) -> 
 def parse_pickett_fit(content_or_path: Union[str, Path, bytes, io.StringIO]) -> PickettFitResult:
     """
     Parses a Pickett SPFIT fitting output log (.fit).
+
+    Supports both genuine JPL ``calpgm`` SPFIT ``.fit`` logs (multi-iteration
+    ``EXP.FREQ.`` / ``NEW PARAMETER (EST. ERROR)`` / ``END OF ITERATION`` layout
+    followed by a pairwise correlation matrix) and simplified ``PARAMETERS:`` /
+    ``RESIDUALS (OBS-CALC):`` summary logs. Always exits the parameter section
+    cleanly before correlation matrices, summary footers, or blank-section
+    boundaries so negative correlation coefficients are never misparsed as
+    parameter uncertainties.
     """
     lines = _read_content_lines(content_or_path)
+    joined_text = "\n".join(lines)
+
+    # 1. Genuine JPL calpgm SPFIT .fit output: delegate to strict iteration-aware parser
+    #    so converged final-iteration parameters, residuals, RMS, and rejected counts are
+    #    extracted accurately and correlation matrix rows after END OF ITERATION are ignored.
+    if "END OF ITERATION" in joined_text or "NEW PARAMETER (EST. ERROR)" in joined_text:
+        from .cochem_spyfy_pickett_output import PickettOutputError, parse_spfit_fit
+
+        try:
+            report = parse_spfit_fit(joined_text)
+        except PickettOutputError:
+            report = None
+
+        if report is not None and report.iterations:
+            final = report.final
+            spfit_params: List[PickettParameterRecord] = [
+                PickettParameterRecord(
+                    param_id=p.code,
+                    value=p.value,
+                    uncertainty=p.est_error if (p.est_error is not None and p.est_error >= 0.0) else 0.0,
+                    label=p.label,
+                )
+                for p in final.parameters
+            ]
+            spfit_residuals: List[PickettFitResidual] = []
+            for r in final.residuals:
+                half = len(r.quantum_numbers) // 2
+                spfit_residuals.append(
+                    PickettFitResidual(
+                        line_number=r.line,
+                        quantum_upper=r.quantum_numbers[:half],
+                        quantum_lower=r.quantum_numbers[half:],
+                        frequency_obs_mhz=r.obs,
+                        frequency_calc_mhz=r.calc,
+                        residual_mhz=r.obs_minus_calc,
+                        uncertainty_mhz=r.exp_err,
+                        weight=r.blend_weight if r.blend_weight is not None else 1.0,
+                    )
+                )
+
+            std_err_val = (
+                final.microwave_rms_mhz
+                if final.microwave_rms_mhz is not None
+                else (final.rms_error_new if final.rms_error_new is not None else 0.0)
+            )
+            var_val = (final.rms_error_new ** 2) if final.rms_error_new is not None else 0.0
+            used_count = sum(1 for r in final.residuals if r.used_in_fit)
+            if used_count == 0 and report.lines_requested is not None:
+                used_count = max(0, report.lines_requested - final.lines_rejected)
+
+            return PickettFitResult(
+                title=report.title,
+                standard_error=std_err_val,
+                variance=var_val,
+                lines_fitted=used_count,
+                lines_omitted=final.lines_rejected,
+                parameters=spfit_params,
+                residuals=spfit_residuals,
+            )
+
+    # 2. Simplified/legacy .fit summary format or 0-iteration SPFIT header-only logs
     title = ""
     std_err = 0.0
     variance = 0.0
@@ -750,22 +819,50 @@ def parse_pickett_fit(content_or_path: Union[str, Path, bytes, io.StringIO]) -> 
     residuals: List[PickettFitResidual] = []
 
     param_pattern = re.compile(
-        r"^\s*(\d+)\s+([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)(?:\s*(?:/|!)\s*(.*))?"
+        r"^\s*(-?\d+)\s+([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)(?:\s*(?:/|!)\s*(.*))?\s*$"
     )
-
+    apriori_param_pattern = re.compile(
+        r"^\s*\d+\s+\d+\s+(-?\d+)\s+([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)\s+([+-]?\d+\.?\d*(?:[dDeE][+-]?\d+)?)(?:\s+(.*))?\s*$"
+    )
     res_pattern = re.compile(
         r"^\s*(\d+)\s+((?:\s*[+-]?\d+){2,6})\s+((?:\s*[+-]?\d+){2,6})\s+([+-]?\d+\.?\d*)\s+([+-]?\d+\.?\d*)\s+([+-]?\d+\.?\d*)\s+([+-]?\d+\.?\d*)\s+([+-]?\d+\.?\d*)"
     )
 
+    section_exit_markers = (
+        "CORRELATION",
+        "MICROWAVE AVG",
+        "MICROWAVE RMS",
+        "END OF ITERATION",
+        "NORMALIZED DIAGONAL",
+        "MARQUARDT",
+        "PARAMETERS READ",
+        "ENERGY SORT",
+        "PROLATE ROTOR",
+        "OBLATE ROTOR",
+        "MAXIMUM DIMENSION",
+        "EXP.FREQ.",
+        "LINES REJECTED",
+        "NEW PARAMETER",
+    )
+
     in_residuals = False
     in_parameters = False
+    in_apriori_parameters = False
+    section_has_rows = False
 
     for line in lines:
         s_line = line.strip()
         if not s_line:
+            if section_has_rows:
+                in_parameters = False
+                in_apriori_parameters = False
+                in_residuals = False
+                section_has_rows = False
             continue
 
-        if not title and not s_line.startswith(("MICROWAVE", "STANDARD", "VARIANCE", "LINES")):
+        s_upper = s_line.upper()
+
+        if not title and not s_upper.startswith(("MICROWAVE", "STANDARD", "VARIANCE", "LINES")):
             title = s_line
 
         # Extract summary statistics via regex
@@ -785,15 +882,60 @@ def parse_pickett_fit(content_or_path: Union[str, Path, bytes, io.StringIO]) -> 
         if lines_fit_match:
             lines_fitted = int(lines_fit_match.group(1))
 
-        # Detect sections
-        if "PARAMETERS" in s_line.upper():
-            in_parameters = True
-            in_residuals = False
+        lines_rej_match = re.search(r"(\d+)\s+LINES\s+REJECTED", s_line, re.IGNORECASE)
+        if lines_rej_match:
+            lines_omitted = int(lines_rej_match.group(1))
+
+        # Detect non-parameter / footer / correlation section boundaries first
+        if any(marker in s_upper for marker in section_exit_markers):
+            in_parameters = False
+            in_apriori_parameters = False
+            if any(
+                m in s_upper
+                for m in ("CORRELATION", "MICROWAVE AVG", "MICROWAVE RMS", "END OF ITERATION", "NORMALIZED DIAGONAL")
+            ):
+                in_residuals = False
+            section_has_rows = False
             continue
 
-        if "RESIDUALS" in s_line.upper() or "OBS-CALC" in s_line.upper():
+        # Detect parameter and residual section headers strictly (never match "NUMBER OF PARAMETERS=")
+        if s_upper.startswith("PARAMETERS - A.PRIORI"):
+            in_apriori_parameters = True
+            in_parameters = False
+            in_residuals = False
+            section_has_rows = False
+            continue
+
+        if re.match(r"^PARAMETERS\b", s_upper):
+            in_parameters = True
+            in_apriori_parameters = False
+            in_residuals = False
+            section_has_rows = False
+            continue
+
+        if "RESIDUALS" in s_upper or "OBS-CALC" in s_upper:
             in_residuals = True
             in_parameters = False
+            in_apriori_parameters = False
+            section_has_rows = False
+            continue
+
+        if in_apriori_parameters:
+            amatch = apriori_param_pattern.match(s_line)
+            if amatch:
+                pid = int(amatch.group(1))
+                val = fortran_float_converter(amatch.group(2))
+                unc = fortran_float_converter(amatch.group(3))
+                lbl = (amatch.group(4) or "").strip()
+                if unc < 0.0:
+                    in_apriori_parameters = False
+                    section_has_rows = False
+                    continue
+                params.append(PickettParameterRecord(param_id=pid, value=val, uncertainty=unc, label=lbl))
+                section_has_rows = True
+            elif section_has_rows:
+                in_apriori_parameters = False
+                section_has_rows = False
             continue
 
         if in_parameters:
@@ -803,7 +945,16 @@ def parse_pickett_fit(content_or_path: Union[str, Path, bytes, io.StringIO]) -> 
                 val = fortran_float_converter(pmatch.group(2))
                 unc = fortran_float_converter(pmatch.group(3))
                 lbl = (pmatch.group(4) or "").strip()
+                if unc < 0.0:
+                    in_parameters = False
+                    section_has_rows = False
+                    continue
                 params.append(PickettParameterRecord(param_id=pid, value=val, uncertainty=unc, label=lbl))
+                section_has_rows = True
+            elif section_has_rows:
+                in_parameters = False
+                section_has_rows = False
+            continue
 
         if in_residuals:
             rmatch = res_pattern.match(s_line)
@@ -828,6 +979,10 @@ def parse_pickett_fit(content_or_path: Union[str, Path, bytes, io.StringIO]) -> 
                         weight=wt,
                     )
                 )
+                section_has_rows = True
+            elif section_has_rows:
+                in_residuals = False
+                section_has_rows = False
 
     return PickettFitResult(
         title=title,
