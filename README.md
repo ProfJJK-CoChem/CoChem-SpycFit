@@ -123,7 +123,7 @@ python -B ci_tools/anti_spoof_linter.py --strict src/cochem_spyfy tests
 - **[User Guide (`docs/USER_GUIDE.md`)](docs/USER_GUIDE.md)** — End-to-end rotational fitting (`SPFIT`/`SPCAT` + JAX + GP), `GruLabRotSpec/SURF` Tier-1 side-by-side workflow, and Tier-2 loopback bridge safety controls.
 - **[Primary `SURF` Integration Plan (`docs/SURF_PRIMARY_INTEGRATION_PLAN.md`)](docs/SURF_PRIMARY_INTEGRATION_PLAN.md)** — Verified `SURF@0486b877` schemas, hardware envelopes, and closed-loop architecture.
 - **[Upstream `SURF` Bridge PR Spec (`docs/SURF_UPSTREAM_BRIDGE_PR_SPEC.md`)](docs/SURF_UPSTREAM_BRIDGE_PR_SPEC.md)** — Minimal opt-in loopback JSON-RPC bridge specification for `GruLabRotSpec/SURF`.
-- **[Comprehensive SRS](docs/wiki/CoChem-SpycFit_Comprehensive_SRS.md)** & **[October 16 Amendment](docs/wiki/CoChem-SpycFit_SRS_2026-10-16_Amendment.md)** — Normative scientific & independent-engine comparison requirements (`SF-CMP-001`–`015`).
+- **[Canonical Pipeline 5.0.0 SRS](docs/SRS.md)** (with non-normative historical specs archived in **[docs/archive/README.md](docs/archive/README.md)**) — Normative scientific, `SURF`, packaging, and independent-engine comparison requirements (`SF-CMP-001`–`015`, `SF-SURF-001`–`008`).
 - **[Next-Agent Handoff (`docs/HANDOFF.md`)](docs/HANDOFF.md)** — Architectural conventions and verification baseline notes.
 
 ---

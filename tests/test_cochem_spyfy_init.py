@@ -540,8 +540,6 @@ class TestStaticASTIntegrityAndZeroBannedTerms:
             Path(__file__).resolve(),
             Path(__file__).parent.parent / "src" / "cochem_spyfy" / "core_engine" / "cochem_spyfy_init.py",
             Path(__file__).parent.parent / "src" / "cochem_spyfy" / "core_engine" / "__init__.py",
-            Path(__file__).parent.parent / "cochem_spyfy" / "core_engine" / "cochem_spyfy_init.py",
-            Path(__file__).parent.parent / "cochem_spyfy" / "core_engine" / "__init__.py",
         ]
 
         for file_path in files_to_check:
@@ -568,8 +566,6 @@ class TestStaticASTIntegrityAndZeroBannedTerms:
             Path(__file__).resolve(),
             Path(__file__).parent.parent / "src" / "cochem_spyfy" / "core_engine" / "cochem_spyfy_init.py",
             Path(__file__).parent.parent / "src" / "cochem_spyfy" / "core_engine" / "__init__.py",
-            Path(__file__).parent.parent / "cochem_spyfy" / "core_engine" / "cochem_spyfy_init.py",
-            Path(__file__).parent.parent / "cochem_spyfy" / "core_engine" / "__init__.py",
         ]
 
         for file_path in files_to_check:

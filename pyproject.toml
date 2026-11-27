@@ -21,6 +21,9 @@ dependencies = [
     "pyzmq"
 ]
 
+[project.scripts]
+cochem-spyfy = "cochem_spyfy.cli:main"
+
 [project.entry-points."cochem.modules"]
 spyfy = "cochem_spyfy.module_provider:spyfy_provider"
 
@@ -31,3 +34,4 @@ gpu = ["cupy-cuda12x"]
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["cochem_spyfy*"]
+exclude = ["cochem_base*", "cochem", "cochem.*", "cochem_topos*", "core*", "calc*", "gui*"]
