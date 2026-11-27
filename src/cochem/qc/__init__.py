@@ -1,5 +1,12 @@
 """CoChem Quantum Chemistry Module."""
 
+from cochem.qc.cochem_qtaim import (
+    MultiwfnNCIResult,
+    MultiwfnQTAIMResult,
+    probe_multiwfn,
+    run_multiwfn_nci,
+    run_multiwfn_qtaim,
+)
 from cochem.qc.exceptions import (
     CoChemQCException,
     IRCDisconnectionError,
@@ -44,6 +51,11 @@ __all__ = [
     "IsotopeSubstitutionPayload",
     "WavefunctionStabilityReport",
     "BondCriticalPointDescriptor",
+    "MultiwfnNCIResult",
+    "MultiwfnQTAIMResult",
     "SOCMEResult",
     "ProjectedFrequencyResult",
+    "probe_multiwfn",
+    "run_multiwfn_nci",
+    "run_multiwfn_qtaim",
 ]

@@ -462,6 +462,103 @@ class TestPickettOutputParsers:
         assert parsed_fit.residuals[0].residual_mhz == pytest.approx(0.0050)
         assert parsed_fit.residuals[1].residual_mhz == pytest.approx(0.0020)
 
+    def test_parse_pickett_fit_genuine_spfit_with_negative_correlation_matrix(self, temp_workspace: Path) -> None:
+        """Regression DEF-S1-09: genuine multi-parameter SPFIT .fit with negative correlations."""
+        genuine_spfit_fit = (
+            "SO2 genuine experimental SPFIT from ab initio seed (WatsWed Nov 25 23:30:12 2026\n"
+            "LINES REQUESTED=   12 NUMBER OF PARAMETERS=  8 NUMBER OF ITERATIONS= 25\n"
+            "  MARQUARDT PARAMETER = 0.0000E+00 max (OBS-CALC)/ERROR =1.0000E+06\n"
+            "                              PARAMETERS - A.PRIORI ERROR \n"
+            "     1      1         10000   5.4266288973390E+04    1.000000E+05 A\n"
+            "     2      2         20000   9.6742676015300E+03    1.000000E+05 B\n"
+            "     3      3         30000   8.1911603052600E+03    1.000000E+05 C\n"
+            "     4      4           200   0.0000000000000E+00    1.000000E+02 -Delta_J\n"
+            "     5      5          1100   0.0000000000000E+00    1.000000E+02 -Delta_JK\n"
+            "     6      6          2000   0.0000000000000E+00    1.000000E+02 -Delta_K\n"
+            "     7      7         40100   0.0000000000000E+00    1.000000E+02 -delta_J\n"
+            "     8      8         41000   0.0000000000000E+00    1.000000E+02 -delta_K\n"
+            "8 parameters read, 8 independent parameters\n"
+            "ENERGY SORT OF WANG SUB-BLOCKS\n"
+            "PROLATE ROTOR\n"
+            "                                        EXP.FREQ.  -  CALC.FREQ. -   DIFF.  - EXP.ERR.- EST.ERR.-AVG. CALC.FREQ. -  DIFF. - WT.\n"
+            "    1:   1  1  1  2  0  2                     12256.58300   12256.58375   -0.00075    0.02000   0.01795\n"
+            "    2:   4  0  4  3  1  3                     29321.33300   29321.33190    0.00110    0.02000   0.01574\n"
+            "    3:   2  1  1  2  0  2                     53528.86510   53528.86512   -0.00002    0.00300   0.00299\n"
+            "    4:   4  1  3  4  0  4                     59224.87140   59224.87135    0.00005    0.00300   0.00300\n"
+            "    5:   1  1  1  0  0  0                     69575.92710   69575.92718   -0.00008    0.00300   0.00294\n"
+            "    6:   3  2  2  4  1  3                     69653.57880   69653.57876    0.00004    0.00300   0.00299\n"
+            "    7:   2  2  0  3  1  3                    100878.10530  100878.10524    0.00006    0.00300   0.00299\n"
+            "    8:   3  1  3  2  0  2                    104029.41830  104029.41821    0.00009    0.00300   0.00296\n"
+            "    9:   4  2  2  4  1  3                    146605.52000  146605.52630   -0.00630    0.08000   0.06253\n"
+            "   10:   2  2  0  2  1  1                    151378.63000  151378.65833   -0.02833    0.08000   0.00516\n"
+            "   11:   3  2  2  3  1  3                    158199.74000  158199.78201   -0.04201    0.08000   0.01606\n"
+            "   12:   2  2  0  1  1  1                    192651.02000  192650.93970    0.08030    0.30000   0.01810\n"
+            "NORMALIZED DIAGONAL:\n"
+            "    1   1.00000E+00    2   3.73232E-03    3   3.59307E-02    4   6.93036E-01    5   4.80073E-01    6   2.03314E-01\n"
+            "    7   1.35436E-01    8   9.99994E-01\n"
+            "MARQUARDT PARAMETER = 0, TRUST EXPANSION = 1.00\n"
+            "                                NEW PARAMETER (EST. ERROR) -- CHANGE THIS ITERATION\n"
+            "   1         10000          A       60778.5484( 39)          -0.0000    \n"
+            "   2         20000          B        10318.072( 68)           -0.000    \n"
+            "   3         30000          C         8799.705( 70)            0.000    \n"
+            "   4           200   -Delta_J           -6.593(204)E-03        0.000E-03\n"
+            "   5          1100  -Delta_JK          0.11700(125)         -0.00000    \n"
+            "   6          2000   -Delta_K         -2.58891(206)          0.00000    \n"
+            "   7         40100   -delta_J           -1.721( 53)E-03        0.000E-03\n"
+            "   8         41000   -delta_K           -0.024( 35)            0.000    \n"
+            " MICROWAVE AVG =        0.000346 MHz, IR AVG =        0.00000\n"
+            " MICROWAVE RMS =        0.027473 MHz, IR RMS =        0.00000\n"
+            " END OF ITERATION  4 OLD, NEW RMS ERROR=        0.20225         0.20225\n"
+            "  1  2  0.022936  1  3 -0.076919  1  4  0.171932  1  5 -0.049752  1  6 -0.624107  1  7  0.492891  1  8 -0.067082  2  1  0.022936\n"
+            "  2  3 -0.994570  2  4 -0.860123  2  5  0.982814  2  6 -0.633374  2  7  0.325025  2  8 -0.996822  3  1 -0.076919  3  2 -0.994570\n"
+            "  3  4  0.804163  3  5 -0.984735  3  6  0.702513  3  7 -0.392860  3  8  0.999503  4  1  0.171932  4  2 -0.860123  4  3  0.804163\n"
+            "  7  8 -0.387394  8  1 -0.067082  8  2 -0.996822  8  3  0.999503  8  4  0.820295  8  5 -0.983606  8  6  0.685698  8  7 -0.387394\n"
+            "SO2 genuine experimental SPFIT from ab initio seed (WatsWed Nov 25 23:30:12 2026\n"
+        )
+        fit_path = temp_workspace / "genuine_spfit_with_corr.fit"
+        fit_path.write_text(genuine_spfit_fit, encoding="utf-8")
+
+        parsed = parse_pickett_fit(fit_path)
+        assert len(parsed.parameters) == 8
+        assert all(p.uncertainty >= 0.0 for p in parsed.parameters)
+        by_id = {p.param_id: p for p in parsed.parameters}
+        assert by_id[10000].label == "A"
+        assert by_id[10000].value == pytest.approx(60778.5484)
+        assert by_id[10000].uncertainty == pytest.approx(0.0039)
+        assert by_id[20000].value == pytest.approx(10318.072)
+        assert by_id[20000].uncertainty == pytest.approx(0.068)
+        assert by_id[200].value == pytest.approx(-6.593e-3)
+        assert by_id[200].uncertainty == pytest.approx(2.04e-4)
+        assert by_id[41000].value == pytest.approx(-0.024)
+        assert by_id[41000].uncertainty == pytest.approx(0.035)
+        assert parsed.standard_error == pytest.approx(0.027473)
+        assert parsed.variance == pytest.approx(0.20225 ** 2)
+        assert parsed.lines_fitted == 12
+        assert len(parsed.residuals) == 12
+        assert parsed.residuals[0].quantum_upper == (1, 1, 1)
+        assert parsed.residuals[0].quantum_lower == (2, 0, 2)
+        assert parsed.residuals[0].residual_mhz == pytest.approx(-0.00075)
+
+        # Also verify simplified PARAMETERS: layout exits cleanly at correlation / blank boundaries
+        summary_with_corr = (
+            "ASYMMETRIC ROTOR SUMMARY FIT\n"
+            "STANDARD ERROR OF FIT = 0.0150   VARIANCE = 0.000225\n"
+            "LINES FITTED = 2\n"
+            "PARAMETERS:\n"
+            "    10000   6.0778548400D+04   3.9000000000D-03 / A\n"
+            "    20000   1.0318072000D+04   6.8000000000D-02 / B\n"
+            "    30000   8.7997050000D+03   7.0000000000D-02 / C\n"
+            "\n"
+            "CORRELATION MATRIX:\n"
+            "  2  3 -0.994570\n"
+            "MICROWAVE AVG = 0.000346 MHz\n"
+            "  1  2 -0.860123  2  3 -0.994570\n"
+        )
+        parsed_summary = parse_pickett_fit(summary_with_corr)
+        assert len(parsed_summary.parameters) == 3
+        assert [p.param_id for p in parsed_summary.parameters] == [10000, 20000, 30000]
+        assert all(p.uncertainty >= 0.0 for p in parsed_summary.parameters)
+
 
 # =============================================================================
 # 8. DEPLOYMENT ROUTING & EPHEMERAL SCRATCH CONTEXT TESTS

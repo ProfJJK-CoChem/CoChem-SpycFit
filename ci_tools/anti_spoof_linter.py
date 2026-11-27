@@ -128,7 +128,7 @@ def check_script(
     amnesty_set: Optional[Set[str]] = None,
 ) -> List[str]:
     """Analyze a single Python script for banned imports, stubs, and keywords."""
-    if amnesty_set and is_file_exempt(filepath, amnesty_set):
+    if is_file_exempt(filepath, amnesty_set or set()):
         return []
 
     try:
