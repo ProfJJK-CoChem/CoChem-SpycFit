@@ -221,13 +221,16 @@ class TestNoCircularImports:
             "assert SmartScanNavigator is not None; "
             "print('PHYSICS_CORE_IMPORT_SUCCESS')"
         )
-        repo_root = str(Path(__file__).resolve().parent.parent)
+        repo_root = Path(__file__).resolve().parent.parent
         clean_env = {k: v for k, v in os.environ.items() if k != "XLA_FLAGS"}
+        existing_pp = clean_env.get("PYTHONPATH", "")
+        src_path = str(repo_root / "src")
+        clean_env["PYTHONPATH"] = f"{src_path}{os.pathsep}{existing_pp}" if existing_pp else src_path
         result = subprocess.run(
             [sys.executable, "-c", script],
             capture_output=True,
             text=True,
-            cwd=repo_root,
+            cwd=str(repo_root),
             env=clean_env,
         )
         assert result.returncode == 0, f"Subprocess import failed: {result.stderr}"
@@ -358,7 +361,6 @@ class TestStaticASTIntegrityAndZeroBannedTerms:
         files_to_check = [
             Path(__file__).resolve(),
             repo_root / "src" / "cochem_spyfy" / "physics_core" / "__init__.py",
-            repo_root / "cochem_spyfy" / "physics_core" / "__init__.py",
         ]
 
         for file_path in files_to_check:
@@ -384,7 +386,6 @@ class TestStaticASTIntegrityAndZeroBannedTerms:
         files_to_check = [
             Path(__file__).resolve(),
             repo_root / "src" / "cochem_spyfy" / "physics_core" / "__init__.py",
-            repo_root / "cochem_spyfy" / "physics_core" / "__init__.py",
         ]
 
         for file_path in files_to_check:

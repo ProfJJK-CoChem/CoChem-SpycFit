@@ -26,14 +26,16 @@ if not os.environ.get("COCHEM_ARTIFACT_DIR"):
 if not os.environ.get("COCHEM_TARGET_ISOMER"):
     os.environ["COCHEM_TARGET_ISOMER"] = "isomer_001"
 
-# Ensure module is in path
-if str(module_dir) not in sys.path:
-    sys.path.insert(0, str(module_dir))
+# Ensure canonical src/ module root is in path
+src_dir = module_dir / "src"
+for candidate_dir in (src_dir, module_dir):
+    if candidate_dir.is_dir() and str(candidate_dir) not in sys.path:
+        sys.path.insert(0, str(candidate_dir))
 
 # Import the actual domain logic
 try:
-    from cochem_spycfit import quantum_extractor
-    from cochem_spycfit import convolver
+    from cochem_spyfy import quantum_extractor
+    from cochem_spyfy import convolver
 except ImportError as e:
     logger.error(f"[MISSING DATA] Failed to import domain logic modules. Ensure they are present in {module_dir}. Reason: {e}")
     sys.exit(1)

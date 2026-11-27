@@ -1,6 +1,19 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
-from cochem_base.plugins.loader import hookimpl
+try:
+    from cochem_base.plugins.loader import hookimpl
+except ImportError:
+    try:
+        import pluggy
+
+        hookimpl = pluggy.HookimplMarker("cochem")
+    except ImportError:
+        _F = TypeVar("_F", bound=Callable[..., Any])
+
+        def hookimpl(func: _F) -> _F:
+            """Identity decorator fallback when neither cochem_base nor pluggy is installed."""
+            return func
+
 from cochem_spyfy.gui import SpycFitTab
 
 if TYPE_CHECKING:

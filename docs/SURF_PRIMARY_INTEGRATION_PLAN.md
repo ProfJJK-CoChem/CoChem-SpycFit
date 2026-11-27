@@ -5,7 +5,7 @@
 **Primary Collaborator Instrument Software:** [`GruLabRotSpec/SURF`](https://github.com/GruLabRotSpec/SURF)  
 **Verified Upstream Reference Commit:** `0486b877d2a38f5bbe50be3cb333d34e27c7c22d` (`pushed_at: 2026-10-07T22:00:51Z`, `version = "0.1.0"`, MIT License)  
 **Collaborator Institution & Lab:** Gurusinghe Research Lab (GruLab), Tennessee Tech University ([`https://sites.tntech.edu/grulab/`](https://sites.tntech.edu/grulab/); *Rev. Sci. Instrum.* **97**, 024704 (2026), [`doi:10.1063/5.0311736`](https://doi.org/10.1063/5.0311736))  
-**Related Specifications:** [Comprehensive SRS](wiki/CoChem-SpycFit_Comprehensive_SRS.md), [October 16 Amendment](wiki/CoChem-SpycFit_SRS_2026-10-16_Amendment.md), [Next-Agent Handoff](HANDOFF.md)
+**Related Specifications:** [Canonical Pipeline 5.0.0 SRS](SRS.md), [Archived Specs (non-normative)](archive/README.md), [Next-Agent Handoff](HANDOFF.md)
 
 ---
 
